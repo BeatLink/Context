@@ -64,6 +64,27 @@ Apps that can open *at* something show a pencil button once selected, leading to
 page where you say what. For Firefox that's a list of URLs, one per line; the row
 subtitle then summarises them (`reddit.com +2 more`).
 
+### As a sidebar
+
+On a Wayland compositor supporting `zwlr-layer-shell` (Hyprland does), it runs as a
+**persistent sidebar**: docked to a screen edge, spanning its full length, with the
+space reserved so tiled windows sit beside it rather than underneath. It stays put
+across workspace switches, and <kbd>Esc</kbd> clears the search rather than
+dismissing it, since a docked panel has no way to be reopened.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CONTEXT_SIDEBAR_EDGE` | `left` | `left`, `right`, `top`, or `bottom` |
+| `CONTEXT_SIDEBAR_WIDTH` | `380` | Thickness in px, minimum 200 |
+
+Elsewhere — X11, or a compositor without layer-shell — it falls back to an ordinary
+window with no loss of function.
+
+`gtk4-layer-shell` must be loaded before `libwayland-client` or its GDK hooks never
+install and anchoring silently does nothing. `python3 -m context` re-execs itself
+once with the right `LD_PRELOAD` to arrange that; the dev shell exports
+`CONTEXT_LAYER_SHELL_LIB` so it knows what to preload.
+
 ## Resources and adapters
 
 A context holds **resources**: an app plus what it should open.
@@ -156,6 +177,7 @@ backend exists so everything else stays developable meanwhile.
 | `context/window.py` | Launcher window, entry bar, context rows, navigation |
 | `context/app_picker.py` | App selector, and the edit page |
 | `context/apps.py` | Installed-app discovery via `Gio.AppInfo` |
+| `context/sidebar.py` | Layer-shell docking and the LD_PRELOAD re-exec |
 | `context/resources.py` | `Resource`, URL parsing, legacy `apps` migration |
 | `context/resource_page.py` | The "what should this open?" page |
 | `context/adapters/base.py` | The `Adapter` protocol and `GenericAdapter` |

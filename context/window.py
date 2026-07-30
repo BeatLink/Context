@@ -11,6 +11,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, GLib, Gtk
 
+from . import sidebar
 from .app_picker import AppPickerPage
 from .launcher import context_is_open
 from .resources import Resource
@@ -85,12 +86,18 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.on_close = on_close
 
         self.set_default_size(560, 620)
+        # Docks the window to a screen edge where the compositor supports it.
+        self.is_sidebar = sidebar.apply(self)
 
         self.nav = Adw.NavigationView()
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.add_css_class("flat")
+        if self.is_sidebar:
+            # Nothing to minimise or close when docked.
+            header.set_show_start_title_buttons(False)
+            header.set_show_end_title_buttons(False)
         toolbar.add_top_bar(header)
 
         self.toasts = Adw.ToastOverlay()
@@ -244,6 +251,10 @@ class LauncherWindow(Adw.ApplicationWindow):
     def _on_escape(self) -> bool:
         if self.nav.get_visible_page() is not self.home_page:
             self.nav.pop()
+        elif self.is_sidebar:
+            # A docked sidebar has no way to be reopened, so Escape only clears
+            # the search rather than dismissing it.
+            self.entry.set_text("")
         else:
             self.close()
         return True
