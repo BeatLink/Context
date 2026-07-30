@@ -12,6 +12,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk
 
 from .app_picker import AppPickerPage
+from .resources import Resource
 from .store import Context, ContextStore
 
 
@@ -233,8 +234,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.picker = AppPickerPage(ctx, self._on_apps_chosen)
         self.nav.push(self.picker)
 
-    def _on_apps_chosen(self, ctx: Context, app_ids: list[str]) -> None:
-        ctx.apps = app_ids
+    def _on_apps_chosen(self, ctx: Context, resources: list[Resource]) -> None:
+        ctx.resources = resources
         self.store.save()
         self.nav.pop()
         self.refresh()
@@ -245,9 +246,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.nav.push(self.editor)
 
     def _on_edit_saved(
-        self, ctx: Context, app_ids: list[str], title: str, ephemeral: bool
+        self, ctx: Context, resources: list[Resource], title: str, ephemeral: bool
     ) -> None:
-        ctx.apps = app_ids
+        ctx.resources = resources
         ctx.title = title
         ctx.ephemeral = ephemeral
         self.store.save()

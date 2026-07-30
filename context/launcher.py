@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from gi.repository import Gio, GLib
+from gi.repository import GLib
 
-from . import backends
+from . import adapters, backends
 from .backends import Backend, Workspace
 from .store import Context
 
@@ -25,24 +25,18 @@ class LaunchResult:
 
 
 def launch_app(app_id: str) -> None:
-    try:
-        info = Gio.DesktopAppInfo.new(app_id)
-    except TypeError as exc:
-        raise LookupError(f"no desktop entry for {app_id}") from exc
-    if info is None:
-        raise LookupError(f"no desktop entry for {app_id}")
-    info.launch([], Gio.AppLaunchContext())
+    adapters.launch_desktop_entry(app_id)
 
 
-def _launch_apps(ctx: Context) -> tuple[list[str], list[tuple[str, str]]]:
+def _launch_resources(ctx: Context) -> tuple[list[str], list[tuple[str, str]]]:
     launched: list[str] = []
     failed: list[tuple[str, str]] = []
-    for app_id in ctx.apps:
+    for resource in ctx.resources:
         try:
-            launch_app(app_id)
-            launched.append(app_id)
-        except (GLib.Error, LookupError) as exc:
-            failed.append((app_id, str(exc)))
+            adapters.adapter_for(resource).launch(resource, ctx.id)
+            launched.append(resource.app_id)
+        except (GLib.Error, LookupError, OSError) as exc:
+            failed.append((resource.app_id, str(exc)))
     return launched, failed
 
 
@@ -69,5 +63,5 @@ def launch_context(
             result.reused_workspace = True
             return result
 
-    result.launched, result.failed = _launch_apps(ctx)
+    result.launched, result.failed = _launch_resources(ctx)
     return result

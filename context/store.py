@@ -9,6 +9,8 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+from .resources import Resource, parse_resources
+
 
 def data_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
@@ -19,11 +21,21 @@ def data_dir() -> Path:
 class Context:
     title: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    apps: list[str] = field(default_factory=list)
+    resources: list[Resource] = field(default_factory=list)
     ephemeral: bool = False
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
     workspaces: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def apps(self) -> list[str]:
+        return [r.app_id for r in self.resources]
+
+    def resource_for(self, app_id: str) -> Resource | None:
+        for resource in self.resources:
+            if resource.app_id == app_id:
+                return resource
+        return None
 
     def handle_for(self, backend: str) -> str | None:
         return self.workspaces.get(backend)
@@ -34,7 +46,15 @@ class Context:
     @classmethod
     def from_dict(cls, raw: dict) -> "Context":
         known = {f for f in cls.__dataclass_fields__}
-        return cls(**{k: v for k, v in raw.items() if k in known})
+        data = {k: v for k, v in raw.items() if k in known}
+        # `apps` is the pre-resource form: a plain list of desktop-entry ids.
+        data["resources"] = parse_resources(raw.get("resources") or raw.get("apps"))
+        return cls(**data)
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["resources"] = [r.to_dict() for r in self.resources]
+        return data
 
 
 class ContextStore:
@@ -55,7 +75,7 @@ class ContextStore:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 1, "contexts": [asdict(c) for c in self.contexts]}
+        payload = {"version": 2, "contexts": [c.to_dict() for c in self.contexts]}
         tmp = self.path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, indent=2))
         tmp.replace(self.path)
@@ -63,8 +83,13 @@ class ContextStore:
     def _sort(self) -> None:
         self.contexts.sort(key=lambda c: c.last_used_at, reverse=True)
 
-    def create(self, title: str, apps: list[str] | None = None, ephemeral: bool = False) -> Context:
-        ctx = Context(title=title.strip(), apps=apps or [], ephemeral=ephemeral)
+    def create(
+        self,
+        title: str,
+        resources: list[Resource] | None = None,
+        ephemeral: bool = False,
+    ) -> Context:
+        ctx = Context(title=title.strip(), resources=resources or [], ephemeral=ephemeral)
         self.contexts.append(ctx)
         self._sort()
         self.save()

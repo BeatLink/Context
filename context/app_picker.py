@@ -9,17 +9,24 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gtk
 
+from .adapters import configurable, describe
 from .apps import App, installed_apps, search_apps
+from .resource_page import ResourcePage
+from .resources import Resource
 from .store import Context
 
 
 class AppRow(Adw.ActionRow):
-    def __init__(self, app: App, selected: bool, on_toggle) -> None:
+    def __init__(
+        self,
+        app: App,
+        resource: Resource | None,
+        on_toggle,
+        on_configure,
+    ) -> None:
         super().__init__()
         self.app = app
         self.set_title(app.name)
-        if app.description:
-            self.set_subtitle(app.description)
         self.set_activatable(True)
 
         if app.icon is not None:
@@ -29,12 +36,25 @@ class AppRow(Adw.ActionRow):
         image.set_pixel_size(32)
         self.add_prefix(image)
 
+        self.configure = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER)
+        self.configure.add_css_class("flat")
+        self.configure.set_tooltip_text(f"Choose what {app.name} opens")
+        self.configure.connect("clicked", lambda _b: on_configure(app))
+        self.add_suffix(self.configure)
+
         self.check = Gtk.CheckButton(valign=Gtk.Align.CENTER)
-        self.check.set_active(selected)
+        self.check.set_active(resource is not None)
         self.check.connect("toggled", lambda btn: on_toggle(app, btn.get_active()))
         self.add_suffix(self.check)
 
         self.connect("activated", lambda _r: self.check.set_active(not self.check.get_active()))
+        self.refresh_subtitle(resource)
+
+    def refresh_subtitle(self, resource: Resource | None) -> None:
+        summary = describe(resource) if resource is not None else ""
+        self.set_subtitle(summary or self.app.description)
+        # Configuring only makes sense once the app is part of the context.
+        self.configure.set_visible(resource is not None and configurable(resource))
 
 
 class AppPickerPage(Adw.NavigationPage):
@@ -44,7 +64,7 @@ class AppPickerPage(Adw.NavigationPage):
         self.on_done = on_done
         self.edit_mode = edit_mode
         self.apps = installed_apps()
-        self.selected: set[str] = set(ctx.apps)
+        self.chosen: dict[str, Resource] = {r.app_id: r for r in ctx.resources}
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -127,9 +147,11 @@ class AppPickerPage(Adw.NavigationPage):
 
         self.refresh()
 
-    def _ordered(self) -> list[str]:
-        known = [a.id for a in self.apps if a.id in self.selected]
-        missing = [i for i in self.ctx.apps if i in self.selected and i not in set(known)]
+    def _ordered(self) -> list[Resource]:
+        known = [self.chosen[a.id] for a in self.apps if a.id in self.chosen]
+        seen = {r.app_id for r in known}
+        # Keep resources whose desktop entry is missing rather than dropping them.
+        missing = [r for r in self.chosen.values() if r.app_id not in seen]
         return known + missing
 
     def current_title(self) -> str:
@@ -153,13 +175,34 @@ class AppPickerPage(Adw.NavigationPage):
 
     def _on_toggle(self, app: App, active: bool) -> None:
         if active:
-            self.selected.add(app.id)
+            self.chosen.setdefault(app.id, Resource(app_id=app.id))
         else:
-            self.selected.discard(app.id)
+            self.chosen.pop(app.id, None)
+        for row in self.visible_rows():
+            if row.app.id == app.id:
+                row.refresh_subtitle(self.chosen.get(app.id))
+        self._update_labels()
+
+    def _on_configure(self, app: App) -> None:
+        resource = self.chosen.setdefault(app.id, Resource(app_id=app.id))
+        nav = self.get_parent()
+        if not isinstance(nav, Adw.NavigationView):
+            return
+        self.resource_page = ResourcePage(app, resource, self._on_resource_done)
+        nav.push(self.resource_page)
+
+    def _on_resource_done(self, resource: Resource) -> None:
+        self.chosen[resource.app_id] = resource
+        nav = self.get_parent()
+        if isinstance(nav, Adw.NavigationView):
+            nav.pop()
+        for row in self.visible_rows():
+            if row.app.id == resource.app_id:
+                row.refresh_subtitle(resource)
         self._update_labels()
 
     def _update_labels(self) -> None:
-        count = len(self.selected)
+        count = len(self.chosen)
         if self.edit_mode:
             self.done_button.set_label("Save")
             self.done_button.set_sensitive(bool(self.current_title()))
@@ -173,7 +216,9 @@ class AppPickerPage(Adw.NavigationPage):
         matches = search_apps(self.apps, self.search.get_text())
         self.listbox.remove_all()
         for app in matches:
-            self.listbox.append(AppRow(app, app.id in self.selected, self._on_toggle))
+            self.listbox.append(
+                AppRow(app, self.chosen.get(app.id), self._on_toggle, self._on_configure)
+            )
         self.stack.set_visible_child_name("list" if matches else "empty")
         self._update_labels()
 

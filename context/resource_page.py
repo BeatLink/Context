@@ -1,0 +1,96 @@
+"""Configuring what a selected app should open."""
+
+from __future__ import annotations
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Adw, Gtk
+
+from .apps import App
+from .resources import Resource, split_urls
+
+
+class ResourcePage(Adw.NavigationPage):
+    """Edit the URLs a resource opens with."""
+
+    def __init__(self, app: App, resource: Resource, on_done) -> None:
+        super().__init__(title=app.name)
+        self.app = app
+        self.resource = resource
+        self.on_done = on_done
+
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+
+        self.done_button = Gtk.Button(label="Done")
+        self.done_button.add_css_class("suggested-action")
+        self.done_button.connect("clicked", lambda _b: self._commit())
+        header.pack_end(self.done_button)
+        toolbar.add_top_bar(header)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.set_margin_top(6)
+        content.set_margin_bottom(18)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+
+        heading = Gtk.Label(
+            label=f"What should {app.name} open?",
+            xalign=0.0,
+            wrap=True,
+        )
+        heading.add_css_class("title-4")
+        content.append(heading)
+
+        hint = Gtk.Label(
+            label="One URL per line. Each opens as a tab in this context's window.",
+            xalign=0.0,
+            wrap=True,
+        )
+        hint.add_css_class("dim-label")
+        content.append(hint)
+
+        frame = Gtk.Frame()
+        self.text = Gtk.TextView(
+            wrap_mode=Gtk.WrapMode.WORD_CHAR,
+            top_margin=8,
+            bottom_margin=8,
+            left_margin=8,
+            right_margin=8,
+        )
+        self.text.get_buffer().set_text("\n".join(resource.urls))
+        self.text.get_buffer().connect("changed", lambda _b: self._update_count())
+        scroller = Gtk.ScrolledWindow(vexpand=True)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_child(self.text)
+        frame.set_child(scroller)
+        content.append(frame)
+
+        self.count_label = Gtk.Label(xalign=0.0)
+        self.count_label.add_css_class("dim-label")
+        content.append(self.count_label)
+
+        toolbar.set_content(content)
+        self.set_child(toolbar)
+
+        self._update_count()
+
+    def current_text(self) -> str:
+        buffer = self.text.get_buffer()
+        return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
+
+    def current_urls(self) -> list[str]:
+        return split_urls(self.current_text())
+
+    def _update_count(self) -> None:
+        count = len(self.current_urls())
+        self.count_label.set_label(
+            f"{count} URL{'s' if count != 1 else ''}" if count else "No URLs yet"
+        )
+
+    def _commit(self) -> None:
+        self.resource.urls = self.current_urls()
+        self.on_done(self.resource)

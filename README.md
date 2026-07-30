@@ -59,6 +59,38 @@ Creating a context opens the **app selector**: a searchable list of installed
 applications from their desktop entries, with icons and checkboxes. The **edit
 page** is the same selector plus the context's title and an ephemeral toggle.
 
+Apps that can open *at* something show a pencil button once selected, leading to a
+page where you say what. For Firefox that's a list of URLs, one per line; the row
+subtitle then summarises them (`reddit.com +2 more`).
+
+## Resources and adapters
+
+A context holds **resources**: an app plus what it should open.
+
+```json
+{"app_id": "firefox.desktop", "urls": ["https://reddit.com"]}
+```
+
+An **adapter** turns a resource into a launch. `adapter_for()` picks the first one
+that claims it, falling back to a generic desktop-entry launch, so apps with no
+special handling still work and adding an adapter is always additive.
+
+### Firefox
+
+One **profile per context**, under `$XDG_DATA_HOME/context/firefox-profiles/<id>`.
+
+Verified on Firefox 153: a single invocation with several URLs opens one window
+with one tab each. There are no window-targeting flags, so a shared profile would
+send new tabs to whatever window was last focused — contexts would interleave and
+could not reliably reuse their own window. A separate profile also buys tab restore
+on reopen, an isolated cookie jar, and a distinct PID for window matching.
+
+First launch seeds the configured URLs. Later launches pass none, so Firefox's own
+session restore reopens what you actually left there rather than resetting to the
+original list. New profiles get a `user.js` that suppresses onboarding.
+
+Costs: ~150–250MB per live instance, and no shared history or bookmarks.
+
 ## Contexts and workspaces
 
 A context lives in a workspace. Opening one:
@@ -112,6 +144,11 @@ backend exists so everything else stays developable meanwhile.
 | `context/window.py` | Launcher window, entry bar, context rows, navigation |
 | `context/app_picker.py` | App selector, and the edit page |
 | `context/apps.py` | Installed-app discovery via `Gio.AppInfo` |
+| `context/resources.py` | `Resource`, URL parsing, legacy `apps` migration |
+| `context/resource_page.py` | The "what should this open?" page |
+| `context/adapters/base.py` | The `Adapter` protocol and `GenericAdapter` |
+| `context/adapters/__init__.py` | `adapter_for()` and the adapter registry |
+| `context/adapters/firefox.py` | Profile-per-context Firefox launching |
 | `context/store.py` | `Context` dataclass and JSON-backed `ContextStore` |
 | `context/launcher.py` | Instantiating a context: workspace + app launch |
 | `context/backends/base.py` | The `Backend` protocol, `Workspace`, `NullBackend` |
@@ -124,6 +161,6 @@ backend exists so everything else stays developable meanwhile.
 Contexts can be created, edited, listed, and launched: apps start from their desktop
 entries into a per-context workspace, and reopening switches rather than relaunching.
 
-Not yet built: opening apps *to specific resources* (the actual point — see
-[ROADMAP.md](ROADMAP.md)), window placement within a context, and teardown for
-ephemeral contexts.
+Firefox opens at a context's URLs in its own profile. Still to come: adapters for
+VS Code and terminals, window placement within a context, and teardown for
+ephemeral contexts (`FirefoxAdapter.teardown` exists but nothing calls it yet).

@@ -5,7 +5,7 @@ context actually *be* something, which means resources and app integration.
 
 ## Now
 
-### 1. Resource adapters
+### 1. Resource adapters — *done for Firefox*
 
 The core gap. A context is currently `apps: ["firefox.desktop"]` — a list of app
 IDs, which cannot express "Firefox at reddit" or "VS Code at this workspace". That
@@ -39,7 +39,11 @@ Adapter difficulty, from what's been verified:
 Keep `apps: list[str]` loading from old files (the store already filters unknown
 keys, so migration is additive).
 
-### 2. Firefox adapter
+### 2. Firefox adapter — *done*
+
+**Shipped.** URLs are configured per-resource in the UI and opened into a
+per-context profile. Remaining: VS Code and terminal adapters, which are the easy
+cases (`code <workspace>`, `cwd`).
 
 Verified on Firefox 153: one CLI call opens one window with all URLs as tabs.
 
