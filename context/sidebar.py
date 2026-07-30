@@ -59,8 +59,19 @@ def ensure_preloaded() -> None:
     env = dict(os.environ)
     env["LD_PRELOAD"] = f"{library}:{preload}" if preload else library
     env[_REEXEC_FLAG] = "1"
+
+    # Under `python -m context`, argv[0] is __main__.py's path. Re-running that
+    # as a plain script drops the package, breaking its relative imports, so the
+    # -m form has to be reconstructed.
+    main = sys.modules.get("__main__")
+    package = getattr(main, "__package__", None)
+    if package:
+        argv = [sys.executable, "-m", package, *sys.argv[1:]]
+    else:
+        argv = [sys.executable, *sys.argv]
+
     try:
-        os.execve(sys.executable, [sys.executable, *sys.argv], env)
+        os.execve(sys.executable, argv, env)
     except OSError:
         return
 
