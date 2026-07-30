@@ -30,6 +30,11 @@ def configurable(resource: Resource) -> bool:
     return adapter_for(resource) is not GENERIC
 
 
+def supports_profiles(resource: Resource) -> bool:
+    """Whether this resource can choose between a dedicated and the main profile."""
+    return isinstance(adapter_for(resource), FirefoxAdapter)
+
+
 __all__ = [
     "Adapter",
     "FirefoxAdapter",
@@ -38,4 +43,5 @@ __all__ = [
     "configurable",
     "describe",
     "launch_desktop_entry",
+    "supports_profiles",
 ]

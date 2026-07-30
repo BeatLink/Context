@@ -99,7 +99,10 @@ special handling still work and adding an adapter is always additive.
 
 ### Firefox
 
-One **profile per context**, under `$XDG_DATA_HOME/context/firefox-profiles/<id>`.
+Each Firefox resource picks one of two modes.
+
+**Dedicated profile** (default) — a profile per context under
+`$XDG_DATA_HOME/context/firefox-profiles/<id>`.
 
 Verified on Firefox 153: a single invocation with several URLs opens one window
 with one tab each. There are no window-targeting flags, so a shared profile would
@@ -111,7 +114,21 @@ First launch seeds the configured URLs. Later launches pass none, so Firefox's o
 session restore reopens what you actually left there rather than resetting to the
 original list. New profiles get a `user.js` that suppresses onboarding.
 
+A profile can only be held by one process, and the lock outlives a closing window,
+so a relaunch waits for the previous instance to let go. Firefox exits silently and
+non-zero when the profile is still busy, so the exit status is checked — otherwise a
+failed relaunch looks like a success and the context comes back empty.
+
 Costs: ~150–250MB per live instance, and no shared history or bookmarks.
+
+**Main profile** — opens in the browser you already use, so addons, logins, history
+and settings are the ones you have. The context's first URL opens a new window and
+the rest join it as tabs.
+
+Because the main profile is normally already running, a second instance is
+impossible; the URLs are handed to the running Firefox instead. That means tabs are
+not isolated between contexts, closing a context closes those windows like any
+other, and teardown never touches the profile.
 
 ## Contexts and workspaces
 

@@ -10,12 +10,18 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 
+PROFILE_DEDICATED = "dedicated"
+PROFILE_MAIN = "main"
+PROFILE_MODES = (PROFILE_DEDICATED, PROFILE_MAIN)
+
+
 @dataclass
 class Resource:
     app_id: str
     urls: list[str] = field(default_factory=list)
     path: str | None = None
     profile: str | None = None
+    profile_mode: str = PROFILE_DEDICATED
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Resource":
@@ -25,7 +31,13 @@ class Resource:
         if not isinstance(data.get("urls"), list):
             data["urls"] = []
         data["urls"] = [str(u) for u in data["urls"] if str(u).strip()]
+        if data.get("profile_mode") not in PROFILE_MODES:
+            data["profile_mode"] = PROFILE_DEDICATED
         return cls(**data)
+
+    @property
+    def uses_main_profile(self) -> bool:
+        return self.profile_mode == PROFILE_MAIN
 
     def to_dict(self) -> dict:
         return {k: v for k, v in asdict(self).items() if v not in (None, [], "")}

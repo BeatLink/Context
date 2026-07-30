@@ -9,8 +9,9 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gtk
 
+from .adapters import supports_profiles
 from .apps import App
-from .resources import Resource, split_urls
+from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, split_urls
 
 
 class ResourcePage(Adw.NavigationPage):
@@ -53,6 +54,25 @@ class ResourcePage(Adw.NavigationPage):
         hint.add_css_class("dim-label")
         content.append(hint)
 
+        self.main_profile_switch: Gtk.Switch | None = None
+        if supports_profiles(resource):
+            options = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+            options.add_css_class("boxed-list")
+
+            row = Adw.ActionRow(
+                title="Use my main profile",
+                subtitle=(
+                    "Opens in your existing browser, keeping addons, logins and "
+                    "history. Tabs are not kept separate between contexts."
+                ),
+            )
+            self.main_profile_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+            self.main_profile_switch.set_active(resource.uses_main_profile)
+            row.add_suffix(self.main_profile_switch)
+            row.set_activatable_widget(self.main_profile_switch)
+            options.append(row)
+            content.append(options)
+
         frame = Gtk.Frame()
         self.text = Gtk.TextView(
             wrap_mode=Gtk.WrapMode.WORD_CHAR,
@@ -93,4 +113,8 @@ class ResourcePage(Adw.NavigationPage):
 
     def _commit(self) -> None:
         self.resource.urls = self.current_urls()
+        if self.main_profile_switch is not None:
+            self.resource.profile_mode = (
+                PROFILE_MAIN if self.main_profile_switch.get_active() else PROFILE_DEDICATED
+            )
         self.on_done(self.resource)

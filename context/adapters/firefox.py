@@ -13,13 +13,20 @@ was actually left there instead of resetting to the original list.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import time
 
 from ..resources import Resource
 from ..store import data_dir
 
 APP_IDS = {"firefox.desktop", "firefox-esr.desktop", "org.mozilla.firefox.desktop"}
+
+# How long to wait for a closing instance to release the profile lock, and how
+# long to watch a new one before assuming it started successfully.
+LOCK_WAIT = 15.0
+STARTUP_GRACE = 3.0
 
 # Suppress first-run noise so a new context lands on its URLs, not onboarding.
 USER_JS = """\
@@ -50,6 +57,32 @@ class FirefoxAdapter:
             return profiles_root() / resource.profile
         return profiles_root() / context_id
 
+    def _is_locked(self, path) -> bool:
+        """Whether a live Firefox still holds this profile.
+
+        The lock symlink points at `<ip>:+<pid>`; a stale one from a crash names
+        a pid that is gone, and Firefox recovers from those by itself.
+        """
+        lock = path / "lock"
+        try:
+            target = os.readlink(lock)
+        except OSError:
+            return False
+        _, _, pid = target.rpartition("+")
+        if not pid.isdigit():
+            return False
+        try:
+            os.kill(int(pid), 0)
+        except (OSError, ProcessLookupError):
+            return False
+        return True
+
+    def _await_unlocked(self, path) -> None:
+        """Give a closing instance time to release the profile."""
+        deadline = time.monotonic() + LOCK_WAIT
+        while self._is_locked(path) and time.monotonic() < deadline:
+            time.sleep(0.25)
+
     def _prepare_profile(self, path) -> bool:
         """Create the profile if absent. Returns True if it is new."""
         if path.exists():
@@ -58,10 +91,35 @@ class FirefoxAdapter:
         (path / "user.js").write_text(USER_JS)
         return True
 
+    def _launch_in_main_profile(self, binary: str, resource: Resource) -> None:
+        """Open the context's URLs in the user's existing Firefox.
+
+        The main profile is almost always already running and a profile can only
+        be held by one process, so a new instance is impossible. Instead each URL
+        is handed to the running Firefox, which opens it in a new window — the
+        first URL creates the window and the rest become tabs beside it.
+        """
+        urls = resource.urls or ["about:blank"]
+        first, rest = urls[0], urls[1:]
+
+        opened = subprocess.run(
+            [binary, "--new-window", first], capture_output=True, text=True
+        )
+        if opened.returncode != 0:
+            raise LookupError(
+                f"firefox exited with status {opened.returncode} opening {first}"
+            )
+        for url in rest:
+            subprocess.run([binary, "--new-tab", url], capture_output=True, text=True)
+
     def launch(self, resource: Resource, context_id: str) -> None:
         binary = self.executable()
         if binary is None:
             raise LookupError("firefox is not installed")
+
+        if resource.uses_main_profile:
+            self._launch_in_main_profile(binary, resource)
+            return
 
         path = self.profile_dir(resource, context_id)
         is_new = self._prepare_profile(path)
@@ -73,8 +131,10 @@ class FirefoxAdapter:
         elif not resource.urls:
             command.append("about:blank")
 
+        self._await_unlocked(path)
+
         try:
-            subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -83,14 +143,33 @@ class FirefoxAdapter:
         except OSError as exc:
             raise LookupError(f"could not start firefox: {exc}") from exc
 
+        # Firefox exits immediately, silently, and non-zero when the profile is
+        # still held by a previous instance. Without this check a failed relaunch
+        # looks like a success and the context comes back empty.
+        try:
+            code = process.wait(timeout=STARTUP_GRACE)
+        except subprocess.TimeoutExpired:
+            return  # Still running, which is what success looks like.
+        if code != 0:
+            raise LookupError(
+                f"firefox exited with status {code}; its profile may still be in use"
+            )
+
     def describe(self, resource: Resource) -> str:
         if not resource.urls:
-            return "no URLs yet"
-        if len(resource.urls) == 1:
-            return _pretty(resource.urls[0])
-        return f"{_pretty(resource.urls[0])} +{len(resource.urls) - 1} more"
+            summary = "no URLs yet"
+        elif len(resource.urls) == 1:
+            summary = _pretty(resource.urls[0])
+        else:
+            summary = f"{_pretty(resource.urls[0])} +{len(resource.urls) - 1} more"
+        if resource.uses_main_profile:
+            summary += " · main profile"
+        return summary
 
     def teardown(self, resource: Resource, context_id: str) -> None:
+        if resource.uses_main_profile:
+            # Never touch the user's own profile.
+            return
         path = self.profile_dir(resource, context_id)
         root = profiles_root()
         # Refuse to remove anything outside the profiles root.
