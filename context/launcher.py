@@ -24,6 +24,47 @@ class LaunchResult:
         return not self.failed
 
 
+@dataclass
+class CloseResult:
+    closed: int = 0
+    backend: str = "none"
+    was_open: bool = False
+    workspace_removed: bool = False
+
+
+def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
+    wm: Backend = backend or backends.detect()
+    handle = ctx.handle_for(wm.name)
+    if handle is None:
+        return False
+    return wm.workspace_exists(handle) and wm.window_count(handle) != 0
+
+
+def close_context(ctx: Context, backend: Backend | None = None) -> CloseResult:
+    """Shut a context down without forgetting it.
+
+    The context keeps its definition and its workspace handle, so reopening it
+    rebuilds the same workspace and relaunches its apps.
+    """
+    wm: Backend = backend or backends.detect()
+    result = CloseResult(backend=wm.name)
+
+    handle = ctx.handle_for(wm.name)
+    if handle is None or not wm.workspace_exists(handle):
+        return result
+
+    result.was_open = True
+    result.closed = wm.close_workspace(handle)
+
+    # Windows close asynchronously, so this only succeeds once they are gone —
+    # otherwise the workspace is left in place and reclaimed on the next close.
+    if wm.remove_workspace(handle):
+        result.workspace_removed = True
+        ctx.workspaces.pop(wm.name, None)
+
+    return result
+
+
 def launch_app(app_id: str) -> None:
     adapters.launch_desktop_entry(app_id)
 
@@ -58,8 +99,10 @@ def launch_context(
         wm.switch_to(workspace)
         wm.prepare_launch(workspace)
 
-        if not workspace.created:
-            # The workspace is already populated; going there is the whole job.
+        # An existing workspace may still be empty — a closed context keeps its
+        # handle, and Cinnamon workspaces outlive their windows. Only skip
+        # launching when something is actually there.
+        if not workspace.created and wm.window_count(workspace.handle) != 0:
             result.reused_workspace = True
             return result
 

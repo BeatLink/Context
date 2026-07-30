@@ -12,6 +12,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw
 
 from . import backends
+from .launcher import close_context as close_ctx
 from .launcher import launch_context as launch_ctx
 from .store import Context, ContextStore
 from .window import LauncherWindow
@@ -26,7 +27,9 @@ class ContextApplication(Adw.Application):
 
     def do_activate(self) -> None:
         if self.window is None:
-            self.window = LauncherWindow(self, self.store, self.launch_context)
+            self.window = LauncherWindow(
+                self, self.store, self.launch_context, self.close_context
+            )
         self.window.present()
 
     def launch_context(self, ctx: Context) -> None:
@@ -39,6 +42,14 @@ class ContextApplication(Adw.Application):
             print(f"failed {app_id}: {error}", file=sys.stderr, flush=True)
         if self.window is not None:
             self.window.report_launch(ctx, result)
+
+    def close_context(self, ctx: Context) -> None:
+        result = close_ctx(ctx, backend=self.backend)
+        # close_context may drop the workspace handle.
+        self.store.save()
+        print(f"closed {result.closed} window(s) for {ctx.title}", flush=True)
+        if self.window is not None:
+            self.window.report_close(ctx, result)
 
 
 def main(argv: list[str] | None = None) -> int:

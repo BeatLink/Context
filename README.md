@@ -51,7 +51,8 @@ The entrypoint you see when you log in.
   insensitive) opens the existing context rather than duplicating it, and the button
   flips `Start` → `Open` so you can see which will happen.
 - **Context list** — previous contexts, most recently used first. Click a row to
-  launch it, the pencil to edit it, the × to forget it.
+  launch it, the pencil to edit it, the × to forget it. Open contexts are marked
+  `open` and gain a stop button that closes them.
 - <kbd>Down</kbd> moves from the bar into the list. <kbd>Esc</kbd> goes back a page,
   or closes the launcher from the top level.
 
@@ -95,9 +96,20 @@ Costs: ~150–250MB per live instance, and no shared history or bookmarks.
 
 A context lives in a workspace. Opening one:
 
-- **Workspace already exists** → switch to it, launch nothing. The apps are
-  already there.
-- **Workspace doesn't exist** → create it, switch to it, launch the apps.
+- **Workspace exists and holds windows** → switch to it, launch nothing.
+- **Otherwise** → create it if needed, switch to it, launch the apps. An existing
+  but *empty* workspace still relaunches, which is what makes a closed context
+  reopen properly.
+
+**Closing** a context is distinct from forgetting it: its windows are asked to
+close, and the definition, URLs, and history stay. Reopening rebuilds it.
+
+Closing only ever touches windows on that context's own workspace — never sticky
+windows, never another workspace. Whether the empty workspace is then removed is
+per-backend: Hyprland's named workspaces disappear by themselves, while Cinnamon
+can only drop the *last* workspace, since `num-workspaces` is a count and removing
+one from the middle would renumber the rest and repoint other contexts' handles.
+When it can't be removed the workspace is simply left in place.
 
 Which window manager provides the workspace is behind a backend interface, so the
 app stays testable on whatever session is actually running.

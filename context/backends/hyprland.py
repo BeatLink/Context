@@ -82,3 +82,38 @@ class HyprlandBackend:
         # Focusing the workspace is enough: Hyprland places new windows on the
         # active workspace. Switching happens before launch in the launcher.
         return None
+
+    def workspace_exists(self, handle: str) -> bool:
+        return handle in self.workspace_names()
+
+    def _windows_on(self, handle: str) -> list[str]:
+        data = self._query("clients")
+        if not isinstance(data, list):
+            return []
+        addresses = []
+        for client in data:
+            if not isinstance(client, dict):
+                continue
+            workspace = client.get("workspace") or {}
+            if str(workspace.get("name", "")) != handle:
+                continue
+            address = client.get("address")
+            if address:
+                addresses.append(str(address))
+        return addresses
+
+    def window_count(self, handle: str) -> int:
+        return len(self._windows_on(handle))
+
+    def close_workspace(self, handle: str) -> int:
+        closed = 0
+        for address in self._windows_on(handle):
+            result = self._run("dispatch", "closewindow", f"address:{address}")
+            if result is not None and result.returncode == 0:
+                closed += 1
+        return closed
+
+    def remove_workspace(self, handle: str) -> bool:
+        # Named workspaces disappear on their own once the last window closes,
+        # and the handle stays valid because it is a name, not a position.
+        return not self.workspace_exists(handle)

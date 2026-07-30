@@ -101,3 +101,67 @@ class CinnamonBackend:
 
     def prepare_launch(self, workspace: Workspace) -> None:
         return None
+
+    def workspace_exists(self, handle: str) -> bool:
+        return handle.isdigit() and int(handle) < self.workspace_count()
+
+    def _windows_on(self, handle: str) -> list[str]:
+        """Window ids on this workspace only.
+
+        Windows report their desktop in field 2. Sticky windows (-1) appear on
+        every workspace and are never owned by a context, so they are excluded.
+        """
+        if not handle.isdigit():
+            return []
+        result = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True)
+        if result.returncode != 0:
+            return []
+        windows = []
+        for line in result.stdout.splitlines():
+            parts = line.split(None, 3)
+            if len(parts) < 3:
+                continue
+            window_id, desktop = parts[0], parts[1]
+            if desktop == handle and desktop != "-1":
+                windows.append(window_id)
+        return windows
+
+    def window_count(self, handle: str) -> int:
+        if not self.workspace_exists(handle):
+            return 0
+        return len(self._windows_on(handle))
+
+    def close_workspace(self, handle: str) -> int:
+        closed = 0
+        for window_id in self._windows_on(handle):
+            result = subprocess.run(
+                ["wmctrl", "-i", "-c", window_id], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                closed += 1
+        return closed
+
+    def remove_workspace(self, handle: str) -> bool:
+        """Drop the workspace, but only when it is the last one.
+
+        `num-workspaces` is a count, so lowering it always removes from the end.
+        Removing a workspace from the middle would renumber every workspace after
+        it, silently repointing other contexts' handles at the wrong workspace.
+        """
+        if not handle.isdigit():
+            return False
+        index = int(handle)
+        count = self.workspace_count()
+        if index != count - 1 or count <= 1:
+            return False
+        if self.window_count(handle):
+            return False
+
+        settings = self._settings()
+        names = list(settings.get_strv(NAMES_KEY))
+        if len(names) > index:
+            del names[index:]
+            settings.set_strv(NAMES_KEY, names)
+        settings.set_int(NUM_KEY, count - 1)
+        Gio.Settings.sync()
+        return True

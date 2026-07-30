@@ -12,6 +12,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk
 
 from .app_picker import AppPickerPage
+from .launcher import context_is_open
 from .resources import Resource
 from .store import Context, ContextStore
 
@@ -34,7 +35,7 @@ def relative_time(stamp: float) -> str:
 
 
 class ContextRow(Adw.ActionRow):
-    def __init__(self, ctx: Context, on_open, on_edit, on_delete) -> None:
+    def __init__(self, ctx: Context, on_open, on_edit, on_delete, on_close, is_open=False) -> None:
         super().__init__()
         self.ctx = ctx
         self.set_title(GLib.markup_escape_text(ctx.title))
@@ -45,12 +46,21 @@ class ContextRow(Adw.ActionRow):
             subtitle.append(f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}")
         if ctx.ephemeral:
             subtitle.append("ephemeral")
+        if is_open:
+            subtitle.insert(0, "open")
         self.set_subtitle(" · ".join(subtitle))
 
         icon = Gtk.Image.new_from_icon_name(
             "user-trash-symbolic" if ctx.ephemeral else "view-grid-symbolic"
         )
         self.add_prefix(icon)
+
+        self.close = Gtk.Button(icon_name="media-playback-stop-symbolic", valign=Gtk.Align.CENTER)
+        self.close.add_css_class("flat")
+        self.close.set_tooltip_text("Close this context, keeping it for later")
+        self.close.set_visible(is_open)
+        self.close.connect("clicked", lambda _b: on_close(ctx))
+        self.add_suffix(self.close)
 
         self.edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER)
         self.edit.add_css_class("flat")
@@ -68,10 +78,11 @@ class ContextRow(Adw.ActionRow):
 
 
 class LauncherWindow(Adw.ApplicationWindow):
-    def __init__(self, app: Adw.Application, store: ContextStore, on_open) -> None:
+    def __init__(self, app: Adw.Application, store: ContextStore, on_open, on_close=None) -> None:
         super().__init__(application=app, title="Context")
         self.store = store
         self.on_open = on_open
+        self.on_close = on_close
 
         self.set_default_size(560, 620)
 
@@ -176,7 +187,16 @@ class LauncherWindow(Adw.ApplicationWindow):
 
         self.listbox.remove_all()
         for ctx in matches:
-            self.listbox.append(ContextRow(ctx, self._open, self._edit, self._delete))
+            self.listbox.append(
+                ContextRow(
+                    ctx,
+                    self._open,
+                    self._edit,
+                    self._delete,
+                    self._close,
+                    is_open=self._is_open(ctx),
+                )
+            )
 
         if not self.store.contexts:
             self.stack.set_visible_child_name("empty")
@@ -276,6 +296,30 @@ class LauncherWindow(Adw.ApplicationWindow):
         if result.workspace is not None:
             message += f" · {result.backend} {result.workspace}"
         self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+
+    def _is_open(self, ctx: Context) -> bool:
+        if self.on_close is None:
+            return False
+        try:
+            return context_is_open(ctx)
+        except OSError:
+            return False
+
+    def _close(self, ctx: Context) -> None:
+        if self.on_close is not None:
+            self.on_close(ctx)
+
+    def report_close(self, ctx: Context, result) -> None:
+        if not result.was_open:
+            message = f"“{ctx.title}” wasn't open"
+        elif result.closed:
+            message = f"Closed {result.closed} window{'s' if result.closed != 1 else ''}"
+            if not result.workspace_removed:
+                message += " · workspace kept"
+        else:
+            message = f"Nothing to close in “{ctx.title}”"
+        self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+        self.refresh()
 
     def _delete(self, ctx: Context) -> None:
         self.store.delete(ctx)

@@ -48,6 +48,20 @@ class Backend(Protocol):
         """Hook run before apps launch, for backends that bind launches to a
         workspace rather than relying on focus."""
 
+    def workspace_exists(self, handle: str) -> bool:
+        """Whether the workspace for `handle` is still around."""
+
+    def window_count(self, handle: str) -> int:
+        """How many windows the workspace holds. -1 when unknown."""
+
+    def close_workspace(self, handle: str) -> int:
+        """Ask every window on the workspace to close. Returns how many were
+        asked. Must never touch windows outside this workspace."""
+
+    def remove_workspace(self, handle: str) -> bool:
+        """Discard the now-empty workspace itself, if the backend can do so
+        without invalidating other contexts' handles."""
+
 
 class NullBackend:
     """Used when no window manager can be driven: apps just launch here."""
@@ -68,3 +82,15 @@ class NullBackend:
 
     def prepare_launch(self, workspace: Workspace) -> None:
         return None
+
+    def workspace_exists(self, handle: str) -> bool:
+        return False
+
+    def window_count(self, handle: str) -> int:
+        return -1
+
+    def close_workspace(self, handle: str) -> int:
+        return 0
+
+    def remove_workspace(self, handle: str) -> bool:
+        return False
