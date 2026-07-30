@@ -20,6 +20,7 @@ import time
 
 from ..resources import Resource
 from ..store import data_dir
+from .base import child_env
 
 APP_IDS = {"firefox.desktop", "firefox-esr.desktop", "org.mozilla.firefox.desktop"}
 
@@ -103,14 +104,22 @@ class FirefoxAdapter:
         first, rest = urls[0], urls[1:]
 
         opened = subprocess.run(
-            [binary, "--new-window", first], capture_output=True, text=True
+            [binary, "--new-window", first],
+            capture_output=True,
+            text=True,
+            env=child_env(),
         )
         if opened.returncode != 0:
             raise LookupError(
                 f"firefox exited with status {opened.returncode} opening {first}"
             )
         for url in rest:
-            subprocess.run([binary, "--new-tab", url], capture_output=True, text=True)
+            subprocess.run(
+                [binary, "--new-tab", url],
+                capture_output=True,
+                text=True,
+                env=child_env(),
+            )
 
     def launch(self, resource: Resource, context_id: str) -> None:
         binary = self.executable()
@@ -139,6 +148,7 @@ class FirefoxAdapter:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=child_env(),
             )
         except OSError as exc:
             raise LookupError(f"could not start firefox: {exc}") from exc
@@ -151,9 +161,14 @@ class FirefoxAdapter:
         except subprocess.TimeoutExpired:
             return  # Still running, which is what success looks like.
         if code != 0:
-            raise LookupError(
-                f"firefox exited with status {code}; its profile may still be in use"
+            hint = (
+                "its profile may still be in use"
+                if code == 1
+                else f"it exited abnormally (signal {-code})"
+                if code < 0
+                else "it crashed on startup"
             )
+            raise LookupError(f"firefox exited with status {code}; {hint}")
 
     def describe(self, resource: Resource) -> str:
         if not resource.urls:

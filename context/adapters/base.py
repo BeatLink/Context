@@ -11,9 +11,30 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+import os
+
 from gi.repository import Gio
 
 from ..resources import Resource
+
+
+def child_env() -> dict[str, str]:
+    """The environment launched apps should get.
+
+    The launcher may be running with gtk4-layer-shell in LD_PRELOAD so it can
+    dock itself. Inheriting that injects the library into every app it starts,
+    which segfaults Firefox — nothing launched should see it.
+    """
+    env = dict(os.environ)
+    preload = env.get("LD_PRELOAD")
+    if preload:
+        kept = [p for p in preload.split(":") if p and "gtk4-layer-shell" not in p]
+        if kept:
+            env["LD_PRELOAD"] = ":".join(kept)
+        else:
+            env.pop("LD_PRELOAD", None)
+    env.pop("CONTEXT_LAYER_SHELL_PRELOADED", None)
+    return env
 
 
 def launch_desktop_entry(app_id: str, uris: list[str] | None = None) -> None:
@@ -23,7 +44,14 @@ def launch_desktop_entry(app_id: str, uris: list[str] | None = None) -> None:
         raise LookupError(f"no desktop entry for {app_id}") from exc
     if info is None:
         raise LookupError(f"no desktop entry for {app_id}")
+
     context = Gio.AppLaunchContext()
+    # Gio copies the launcher's own environment, so scrub it here too.
+    for key, value in child_env().items():
+        context.setenv(key, value)
+    if "LD_PRELOAD" not in child_env():
+        context.unsetenv("LD_PRELOAD")
+
     if uris:
         info.launch_uris(uris, context)
     else:
