@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.direnv/
+result
+result-*
+
+# points at a sibling checkout outside this repo
+Context.code-workspace
