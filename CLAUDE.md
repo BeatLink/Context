@@ -95,6 +95,13 @@ launching real applications, and point `XDG_DATA_DIRS` at it.
 
 - **`Gio.DesktopAppInfo.new` raises `TypeError`** on a missing entry rather than
   returning `None`. Catch both; a stale app ID otherwise crashes the launcher.
+- **Never let a launched app inherit `LD_PRELOAD`.** The sidebar re-execs with
+  gtk4-layer-shell preloaded, and injecting that into Firefox segfaults it. Launch
+  through `child_env()` — both `subprocess` and `Gio.AppLaunchContext`, since Gio
+  copies the process environment rather than taking a dict.
+- **Firefox exits non-zero and silently** when its profile is still held by a
+  closing instance. `Popen` without checking the status makes a failed launch look
+  like a success. Status 1 means the profile is busy; other codes are crashes.
 - **Nix `''` strings**: escape shell `${...}` as `''${...}`. `$\{` leaks a literal
   backslash into the output.
 - **Hyprland cannot be nested** in an X11 or Cinnamon-Wayland session — every host

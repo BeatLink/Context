@@ -41,9 +41,14 @@ keys, so migration is additive).
 
 ### 2. Firefox adapter — *done*
 
-**Shipped.** URLs are configured per-resource in the UI and opened into a
-per-context profile. Remaining: VS Code and terminal adapters, which are the easy
-cases (`code <workspace>`, `cwd`).
+**Shipped.** URLs are configured per-resource in the UI, and each resource chooses
+between a dedicated per-context profile and the user's main profile. Remaining: VS
+Code and terminal adapters, which are the easy cases (`code <workspace>`, `cwd`).
+
+The profile-per-context design below is a workaround for Firefox having no
+window-targeting flags. Once contexts track windows directly (item 3), dedicated
+profiles become a choice about *isolation* — separate cookies and history — rather
+than the only way for a context to own its window.
 
 Verified on Firefox 153: one CLI call opens one window with all URLs as tabs.
 
@@ -72,13 +77,38 @@ one window, reading back live tab state, Firefox Containers (no CLI surface at a
 or sharing one process across contexts. All are v2, and an extension costs signing,
 distribution, a native messaging host, and per-release breakage.
 
-### 3. Window placement
+### 3. Window placement, and tracking by window rather than profile
 
 `prepare_launch()` is currently a no-op in both real backends — they rely on
 focus-then-launch, which is racy: a slow-mapping app can land on whatever workspace
 you switched to since. Fix properly on Hyprland with workspace rules or
 workspace-bound `exec` dispatch. Cinnamon largely can't do this, which is fine — it
 is a development stand-in, not a target.
+
+**Track windows, not profiles.** Per-context Firefox profiles were never really
+about identity; they were a workaround for Firefox having no window-targeting
+flags. Tracking the *window* instead lets any window belong to a context whatever
+spawned it, which dissolves several problems at once:
+
+- the main-profile mode gets real per-context grouping, so shared addons, cookies
+  and history stop costing tab isolation
+- no profile lock contention, so no waiting for a closing instance to let go
+- no duplicated profile storage per context
+- windows a context didn't spawn can be adopted into it
+
+Hyprland has the pieces: `hyprctl clients -j` reports every window's address, pid,
+class and workspace, and `dispatch movetoworkspacesilent address:0x…` moves a
+specific one. The `Context` already carries a per-backend handle, so window
+addresses fit the existing shape.
+
+The hard part is the same one that makes `prepare_launch()` a no-op: **Wayland has
+no general way to match a new window back to the launch that spawned it.** In
+practice that means diffing `hyprctl clients` around a launch, or matching on pid —
+workable but racy, and the reason this needs a real Hyprland session to get right.
+`xdg-toplevel-tag-v1` exists for exactly this but is opt-in per app, so it can't be
+relied on.
+
+Do this together with placement: same IPC, same blocker, same session needed.
 
 Then: layout within a context (the "VS Code docked left, docs right" case), which
 needs Hyprland IPC and is a reason to treat Hyprland as the real target.
