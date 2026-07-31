@@ -125,26 +125,40 @@ changed and what forced it.
 
 ## Theming
 
-**Context does not have a light mode, and adding one is harder than it looks.**
-Three attempts failed. A desktop GTK4 theme arrives as user CSS —
-home-manager's `gtk.theme` writes `~/.config/gtk-4.0/gtk.css` importing one —
-at `STYLE_PROVIDER_PRIORITY_USER` (800), above libadwaita's stylesheet and
-above anything an application installs. Redefining named colours does not reach
-a Sass-built theme, which inlines literals (Mint-Y-Dark-Aqua has 126 hard-coded
-`background-color` rules). Outranking the provider does not either, since there
-is no competing rule for the theme's own selectors. `GTK_THEME` skips theme
-loading and measured light in a screenshot, and still did not look right in
-use.
+Context is themed the way waybar or swaync are: one built-in stylesheet, with
+`$XDG_CONFIG_HOME/context/style.css` loaded over it and watched for changes.
+There is no scheme setting and no preset system, deliberately — a look is a
+style.css someone (or something — matugen, a home-manager template) writes.
 
-If this is revisited: verify by sampling pixels from a screenshot, never by
-looking up a colour. A colour can resolve correctly and be painted over, which
-is what made the first two attempts look like they had worked.
+The contract, and the constraints holding it up:
 
-Context draws its own app tiles and layout preview, so libadwaita has no styling
-for them. Colours live in `context/theme.py` and are read from
-`$XDG_CONFIG_HOME/context/theme.json`, falling back to the defaults. Never
-hard-code a colour in a widget or a Cairo call — add it to `Theme` instead, so
-both the stylesheet and the drawing code get it from the same place.
+- Every colour is published as `@define-color ctx_<field>` and the built-in
+  rules only reference the names. A redefinition in style.css overrides the
+  built-in definition across providers — measured on a real widget in
+  `test_a_user_redefinition_reaches_the_widgets`, since the whole design rests
+  on it.
+- The user provider sits at `STYLE_PROVIDER_PRIORITY_USER + 1`: the desktop
+  theme's own user CSS arrives at USER (800), and Context's colours have to be
+  the last word on its own windows.
+- Cairo drawing (app tiles, layout preview) cannot read CSS, so `Theme.load`
+  parses the `@define-color ctx_*` lines out of style.css itself. Never
+  hard-code a colour in a widget or a Cairo call — add a field to `Theme` so
+  the stylesheet and the drawing stay one palette.
+- Styles revalidate on the next frame, not at the reload call. A test that
+  reads a colour back synchronously after `reinstall()` reads the old value
+  and proves nothing; present the window and wait.
+
+**Do not add a light/dark scheme system back.** One existed and was removed:
+three attempts at a built-in light mode failed while libadwaita resolved
+light/dark before the application got a say, and the scheme machinery that
+replaced it (portal reading, per-scheme palettes, a settings dropdown) was a
+theming system nothing else on a Hyprland desktop has — waybar ships one look
+and a CSS file, and so does Context. A light look is a style.css.
+
+If theming is ever debugged again: verify by sampling pixels from a
+screenshot, never by looking up a colour. A colour can resolve correctly and
+be painted over, which is what made two light-mode attempts look like they had
+worked.
 
 ## Keyboard focus in the sidebar
 

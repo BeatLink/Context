@@ -246,23 +246,29 @@ edited by hand. Environment variables override them for a single run:
 
 ## Theming
 
-Colours come from `$XDG_CONFIG_HOME/context/theme.json`. Anything it does not
-set keeps the default:
+Context is styled the way waybar or swaync are: it ships a stylesheet, and
+`$XDG_CONFIG_HOME/context/style.css` loads over it. Redefine any of the
+published colours, write ordinary CSS against the `ctx-*` style classes, or
+both:
 
-```json
-{
-  "accent": "#5ac0c0",
-  "surface": "#1e1e1e",
-  "slot_fill": "#5ac0c052",
-  "tile_selected": "#5ac0c038"
+```css
+@define-color ctx_accent #ff8800;
+@define-color ctx_surface #101010;
+
+.ctx-rail-button {
+    border-radius: 0;
 }
 ```
 
-Light and dark have separate palettes, so a colour that works on one does not
-disappear on the other — light mode uses a deeper accent, since a pale one
-washes out on a light background. Anything you set explicitly is used in both. **Write the
-default theme** in settings creates the file for you. Set `CONTEXT_THEME` to
-load one from elsewhere.
+The colour names cover everything Context draws, including the parts it paints
+itself — the app tiles and the layout preview follow the same definitions.
+**Write the style file** in settings creates the file with every colour
+spelled out. The file is watched, so saving it restyles the running launcher.
+Set `CONTEXT_STYLE` to load a file from elsewhere.
+
+Because it is one CSS file with `@define-color` names, whatever generates the
+rest of the desktop's colours — matugen, pywal, a home-manager template — can
+emit Context's theme the same way it emits waybar's.
 
 ## Where things are kept
 
@@ -273,7 +279,7 @@ load one from elsewhere.
 | `$XDG_STATE_HOME/context/context.log` | Log, rotated |
 | `$XDG_STATE_HOME/context/ui.json` | Whether the sidebar is collapsed |
 | `$XDG_CONFIG_HOME/context/settings.json` | Settings |
-| `$XDG_CONFIG_HOME/context/theme.json` | Theme |
+| `$XDG_CONFIG_HOME/context/style.css` | Stylesheet loaded over the built-in one |
 
 ## Window managers
 

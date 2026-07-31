@@ -357,15 +357,15 @@ their right-hand display opened on the left whenever they launched from there.
 ### 9. Settings — *page done, per-context visibility planned*
 
 **Shipped.** A settings page reached from the launcher's header, covering the
-colour scheme, the sidebar edge, both widths, hover-to-expand and its delay, the
-backend, the refresh interval and the log level. Settings live in
+sidebar edge, both widths, hover-to-expand and its delay, the backend, the
+refresh interval and the log level. Settings live in
 `$XDG_CONFIG_HOME/context/settings.json` and are hand-editable; environment
 variables still override them for a single run. The page also lists where every
-file lives and can write out the default theme.
+file lives and can write out the style file.
 
-Changes apply as they are made. The widths and the colour scheme take effect
-immediately; the edge, the backend and the log level say that they apply on
-restart rather than pretending otherwise.
+Changes apply as they are made. The widths take effect immediately; the edge,
+the backend and the log level say that they apply on restart rather than
+pretending otherwise.
 
 **Still to do — a flag for every setting.** Three ways to set a value exist
 already: the settings page, `settings.json`, and a handful of environment
@@ -423,6 +423,15 @@ the window active again without re-sending the keyboard enter, so dropping the
 layer's keyboard mode alone revives nothing. The same explicit hand-back runs
 when the switcher, pickers or the editor overlay close. Constraints recorded in
 CLAUDE.md under "Keyboard focus in the sidebar".
+
+### 16. Theming like the rest of the session — *done*
+
+One built-in look, and `$XDG_CONFIG_HOME/context/style.css` loaded over it —
+the same contract as waybar or swaync, so whatever generates the desktop's
+colours can template Context's too. Colours are `@define-color ctx_*` names
+that reach both the widgets and the Cairo drawing, the file is watched so
+saving restyles the running launcher, and the scheme setting is gone: a look
+is a file, not an option. Constraints recorded in CLAUDE.md under "Theming".
 
 ## Next
 

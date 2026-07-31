@@ -410,7 +410,7 @@ class SettingsPage(widgets.NavigationPage):
         )
         for title, path in (
             ("Settings", settings.settings_path()),
-            ("Theme", theme.theme_path()),
+            ("Style", theme.style_path()),
             ("Contexts", data_dir() / "contexts.json"),
             ("Interface state", state_path()),
             ("Log", log_path()),
@@ -419,12 +419,13 @@ class SettingsPage(widgets.NavigationPage):
             row.add_css_class("property")
             group.add(row)
 
-        write = Gtk.Button(label="Write the theme file", halign=Gtk.Align.START)
+        write = Gtk.Button(label="Write the style file", halign=Gtk.Align.START)
         write.connect("clicked", lambda _b: self._write_theme())
         group.add(
             _stacked(
-                "Write the default theme",
-                "Creates the theme file with the current colours, ready to edit.",
+                "Write the style file",
+                "Creates style.css with every colour spelled out, ready to edit. "
+                "Saved changes apply immediately.",
                 write,
             )
         )
@@ -477,6 +478,6 @@ class SettingsPage(widgets.NavigationPage):
             app.restart()
 
     def _write_theme(self) -> None:
-        path = theme.current().write_default()
-        log.info("wrote the default theme to %s", path)
+        path = theme.current().write_template()
+        log.info("wrote the style file to %s", path)
         self.window.toasts.add_toast(widgets.Toast(title=f"Wrote {path}", timeout=4))
