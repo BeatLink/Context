@@ -217,6 +217,15 @@ class HyprlandBackend:
         return found
 
     @traced(log)
+    def cursor_position(self) -> tuple[int, int] | None:
+        found = self._query("cursorpos")
+        if not isinstance(found, dict):
+            return None
+        try:
+            return int(found["x"]), int(found["y"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
     def focus_window(self, window_id: str, warp: bool = True) -> bool:
         if not warp:
             # Focusing warps the cursor into the window unless cursor:no_warps

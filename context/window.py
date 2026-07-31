@@ -470,23 +470,68 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self._auto_expand_source = None
         if not self._auto_expanded:
             return
-        # A grace period rather than collapsing on the spot. The surface
-        # floats off the screen edges now, so grazing the gap sends a leave —
-        # and the expand's own resize can send a spurious leave/enter pair —
-        # either of which snapped a freshly opened sidebar shut under the
-        # pointer. Collapse only if the pointer stays gone.
+        # Not collapsed on the spot: triggering the expansion established a
+        # zone — the sidebar's column plus its floating margins — and the
+        # sidebar retracts only once the cursor leaves it. The gaps around
+        # the surface send pointer-leave while the cursor is, visibly, still
+        # at the sidebar, so leaving the *surface* proves nothing.
         if self._collapse_source is None:
-            self._collapse_source = GLib.timeout_add(300, self._collapse_after_leave)
+            self._collapse_source = GLib.timeout_add(200, self._collapse_after_leave)
 
     def _collapse_after_leave(self) -> bool:
         self._collapse_source = None
         if self._pointer_inside or not self._auto_expanded:
+            return GLib.SOURCE_REMOVE
+        if self._inside_hover_zone():
+            self._collapse_source = GLib.timeout_add(200, self._collapse_after_leave)
             return GLib.SOURCE_REMOVE
         self._auto_expanded = False
         self.collapsed = True
         self._apply_collapsed()
         self.refresh()
         return GLib.SOURCE_REMOVE
+
+    def _inside_hover_zone(self) -> bool:
+        """Whether the cursor is still inside the expanded sidebar's zone.
+
+        The zone is the sidebar's size plus its margins, measured from the
+        docked edge. The window cannot see the cursor once it leaves the
+        surface — the compositor can, so it is asked.
+        """
+        backend = getattr(self.get_application(), "backend", None)
+        if backend is None:
+            return False
+        position = backend.cursor_position()
+        if position is None:
+            return False
+        monitor = self._own_monitor(backend)
+        if monitor is None:
+            return False
+        x, y = position
+        if not (
+            monitor.x <= x < monitor.x + monitor.width
+            and monitor.y <= y < monitor.y + monitor.height
+        ):
+            return False
+        band = sidebar.configured_width() + 2 * sidebar.GAP
+        edge = sidebar.configured_edge()
+        if edge == "left":
+            return x - monitor.x <= band
+        if edge == "right":
+            return (monitor.x + monitor.width) - x <= band
+        if edge == "top":
+            return y - monitor.y <= band
+        return (monitor.y + monitor.height) - y <= band
+
+    def _own_monitor(self, backend):
+        found = backend.monitors()
+        if not found:
+            return None
+        if self.monitor:
+            for monitor in found:
+                if monitor.name == self.monitor:
+                    return monitor
+        return next((m for m in found if m.focused), found[0])
 
     def toggle_collapsed(self) -> None:
         if not self.collapses:

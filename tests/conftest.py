@@ -133,6 +133,9 @@ class FakeBackend:
             )
         self.workspaces[handle] = self.workspaces.get(handle, 0) + len(app_ids)
 
+    def cursor_position(self) -> tuple[int, int] | None:
+        return getattr(self, "cursor", None)
+
     def focus_window(self, window_id: str, warp: bool = True) -> bool:
         self.calls.append(("focus", window_id))
         self.focused = window_id

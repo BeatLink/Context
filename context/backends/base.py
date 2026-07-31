@@ -109,6 +109,13 @@ class Backend(Protocol):
         the backend can see.
         """
 
+    def cursor_position(self) -> tuple[int, int] | None:
+        """Where the pointer is in global coordinates, or None if unknown.
+
+        Layer surfaces stop receiving pointer events the moment the cursor
+        leaves them; the compositor still knows where it went.
+        """
+
     def focus_window(self, window_id: str, warp: bool = True) -> bool:
         """Focus one window by its backend-specific id.
 
@@ -177,6 +184,9 @@ class NullBackend:
 
     def windows(self, handle: str | None = None) -> list[WindowInfo]:
         return []
+
+    def cursor_position(self) -> tuple[int, int] | None:
+        return None
 
     def focus_window(self, window_id: str, warp: bool = True) -> bool:
         return False

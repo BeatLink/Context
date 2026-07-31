@@ -1954,3 +1954,51 @@ def test_a_grazed_edge_does_not_snap_the_sidebar_shut(gtk_app, isolated_store, m
     assert seen["still_open_during_grace"] is True
     assert seen["timer_cancelled"] is True
     assert seen["collapses_when_gone"] is True
+
+
+def test_the_hover_zone_holds_the_sidebar_open(
+    gtk_app, isolated_store, backend, monkeypatch
+):
+    """Once hover expands the sidebar, its zone — size plus margins from the
+    docked edge — is what keeps it open. The gap between the trigger and the
+    surface sends pointer-leave while the cursor never left the zone."""
+    from context import sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = True
+        window._apply_collapsed()
+        window._auto_expand()
+        window._on_pointer_leave()
+        window._pointer_inside = False
+
+        backend.cursor = (200, 500)  # inside the zone: 380 + two 8px margins
+        window._collapse_after_leave()
+        seen["held_open"] = not window.collapsed
+        seen["still_watching"] = window._collapse_source is not None
+        if window._collapse_source is not None:
+            from gi.repository import GLib
+
+            GLib.source_remove(window._collapse_source)
+            window._collapse_source = None
+
+        backend.cursor = (900, 500)  # well outside the zone
+        window._collapse_after_leave()
+        seen["retracted"] = window.collapsed
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["held_open"] is True
+    assert seen["still_watching"] is True
+    assert seen["retracted"] is True
