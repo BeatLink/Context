@@ -33,12 +33,20 @@ from this repo or pass absolute paths. Scripts run from elsewhere need
 Two extension points, both the same shape — a Protocol plus a registry with
 `detect()`, and a Null implementation so calling code never branches on absence:
 
-- **`backends/`** — where a context lives (workspace create/find/switch). Done.
-- **Resource adapters** — how an app opens to a resource. Not built yet; this is
-  next and is the point of the project.
+- **`backends/`** — where a context lives (workspace create/find/switch).
+  Hyprland is the only one; anything else falls back to `NullBackend`.
+- **`adapters/`** — how an app opens to a resource. Firefox, VS Code and
+  terminals are adapted; everything else uses `GenericAdapter`.
 
 When adding either, follow `backends/base.py`: a Protocol, a null/generic fallback,
 and registration in `__init__.py`.
+
+**Hyprland is the only backend, deliberately.** Cinnamon was dropped rather than
+maintained: it could not preselect a split or resize a tiled window, and it could
+only remove its *last* workspace, so closing a context from the middle renumbered
+every other context's handle. Supporting it capped every feature at what the
+weaker backend could express. Don't add a second window manager back without a
+reason stronger than "it would also work".
 
 ## Invariants
 
@@ -121,20 +129,30 @@ Traps found the hard way:
 
 ### Touching the live desktop
 
-The Cinnamon backend mutates the real session. **Snapshot and restore** around any
-test that runs it — the user has their own named workspaces:
-
-```sh
-gsettings get org.cinnamon.desktop.wm.preferences workspace-names
-gsettings get org.cinnamon.desktop.wm.preferences num-workspaces
-wmctrl -d | awk '/\*/{print $1}'
-```
-
-Prefer a fake app for launch tests (a `.desktop` whose `Exec` touches a file) over
+The Hyprland backend drives the real session. Prefer `FakeBackend` for anything
+that would create or close a workspace. Where a real one is unavoidable, use a
+fake app for launch tests (a `.desktop` whose `Exec` touches a file) rather than
 launching real applications, and point `XDG_DATA_DIRS` at it.
 
 ## Gotchas
 
+- **Nothing slow may run on the GTK main loop.** Launching a context starts apps
+  one at a time and waits up to 10s for each to map, which froze the launcher for
+  the whole run. `app.launch_context` does the work on a thread and returns the
+  result through `GLib.idle_add`; nothing in `_launch_worker` may touch GTK.
+- **Never wait on a launched app to exit.** `subprocess.run` on Firefox looked
+  safe because an already-running browser makes the invocation hand its URL over
+  and exit within a moment. With no browser running the invocation *becomes* the
+  browser, and the launcher hung for as long as it lived. Spawn with `Popen`,
+  watch for `STARTUP_GRACE`, and treat "still running" as success.
+- **The process you spawn is not the process that owns the window.** Verified on
+  a live session: the spawned Firefox had exited before its window appeared, and
+  the window's pid was parented to the session. VSCodium behaves the same. Pid
+  matching cannot be the basis of window tracking — see ROADMAP §3.
+- **`--class` does not set the Wayland app_id** for Electron apps; it is an X11
+  flag. Measured: VSCodium reports `codium` with `--class=ctx-test-class`, even
+  with a separate `--user-data-dir` forcing a genuinely new process. Firefox is
+  the exception, via `MOZ_APP_REMOTINGNAME` — measured working.
 - **`Gio.DesktopAppInfo.new` raises `TypeError`** on a missing entry rather than
   returning `None`. Catch both; a stale app ID otherwise crashes the launcher.
 - **Never let a launched app inherit `LD_PRELOAD`.** The sidebar re-execs with

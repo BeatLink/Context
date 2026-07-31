@@ -20,6 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from context import logging_setup  # noqa: E402
 from context.backends.base import Workspace  # noqa: E402
 from context.layout import Slot  # noqa: E402
 
@@ -32,9 +33,12 @@ def isolated_store(tmp_path, monkeypatch):
     contexts, and one that read from it would depend on what they happen to have.
     """
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
-    # State too: logging_setup resolves the log path at import, so without this
-    # the suite writes its own fixture names into the real log.
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # Modules bind their logger at import, which happens during collection —
+    # before this fixture runs. Re-configuring moves the file handler onto the
+    # temporary path; without it the suite writes its fixture names into the
+    # real log, which is misleading when reading it to debug a live session.
+    logging_setup.configure()
     # Never touch a real window manager from a test.
     monkeypatch.setenv("CONTEXT_BACKEND", "none")
     yield tmp_path
@@ -85,6 +89,10 @@ class FakeBackend:
 
     def window_count(self, handle: str) -> int:
         return self.workspaces.get(handle, 0)
+
+    def live_handles(self) -> set[str]:
+        self.calls.append(("live",))
+        return {h for h, count in self.workspaces.items() if count > 0}
 
     def close_workspace(self, handle: str) -> int:
         count = self.workspaces.get(handle, 0)

@@ -202,3 +202,49 @@ def test_reconnect_drops_stale_handles(backend):
 def test_reconnect_ignores_contexts_never_launched(backend):
     never = Context(title="never")
     assert launcher.reconnect([never], backend=backend) == []
+
+
+def test_open_state_answers_for_every_context_at_once(backend):
+    """One query for the whole list, not two per context.
+
+    The launcher polls this every couple of seconds. Asking per context spawned
+    two subprocesses each, which is enough work on the main loop to be felt.
+    """
+    open_ctx = Context(title="open", resources=[])
+    shut_ctx = Context(title="shut", resources=[])
+    never = Context(title="never", resources=[])
+
+    open_ctx.set_handle("fake", "ctx-open")
+    shut_ctx.set_handle("fake", "ctx-shut")
+
+    backend.workspaces = {"ctx-open": 2, "ctx-shut": 0}
+    backend.current = "ctx-open"
+
+    open_ids, active_id = launcher.open_state(
+        [open_ctx, shut_ctx, never], backend=backend
+    )
+
+    assert open_ids == {open_ctx.id}
+    assert active_id == open_ctx.id
+    assert len(backend.sequence("live")) == 1
+
+
+def test_open_state_ignores_contexts_with_no_handle(backend):
+    unplaced = Context(title="unplaced", resources=[])
+    backend.workspaces = {"ctx-other": 1}
+
+    open_ids, active_id = launcher.open_state([unplaced], backend=backend)
+
+    assert open_ids == set()
+    assert active_id is None
+
+
+def test_open_state_reports_an_empty_workspace_as_closed(backend):
+    """A closed context keeps its handle, so the handle alone proves nothing."""
+    ctx = Context(title="emptied", resources=[])
+    ctx.set_handle("fake", "ctx-emptied")
+    backend.workspaces = {"ctx-emptied": 0}
+
+    open_ids, _ = launcher.open_state([ctx], backend=backend)
+
+    assert open_ids == set()

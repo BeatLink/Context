@@ -130,10 +130,13 @@ Context drives the compositor through a backend, chosen automatically:
 | Backend | Requires |
 | --- | --- |
 | `hyprland` | `hyprctl` and a running Hyprland |
-| `cinnamon` | `wmctrl` and the Cinnamon settings schema |
 | `none` | Nothing; apps open on the current workspace |
 
 `CONTEXT_BACKEND` overrides the choice.
+
+Under `none` a context is still a named group of apps opened to specific
+things — it just has no workspace of its own, so everything opens where you
+already are and closing a context is unavailable.
 
 Hyprland cannot run nested inside another session, so testing the Hyprland
 backend needs a real session — a spare VT or a VM.

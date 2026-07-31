@@ -4,9 +4,9 @@ A backend is responsible for the *container* a context lives in — creating it,
 finding it again, and switching to it. Launching applications is the launcher's
 job; a backend only says where they should land.
 
-Contexts are identified by an opaque handle the backend chooses (a Cinnamon
-workspace index, a Hyprland workspace name, …), stored on the context so renaming
-it doesn't orphan the container.
+Contexts are identified by an opaque handle the backend chooses (for Hyprland, a
+workspace name), stored on the context so renaming it doesn't orphan the
+container.
 """
 
 from __future__ import annotations
@@ -54,6 +54,13 @@ class Backend(Protocol):
     def window_count(self, handle: str) -> int:
         """How many windows the workspace holds. -1 when unknown."""
 
+    def live_handles(self) -> set[str]:
+        """Every handle that currently holds at least one window.
+
+        The launcher re-checks which contexts are open on a timer. Asking per
+        context costs two queries each; this answers for all of them at once.
+        """
+
     def close_workspace(self, handle: str) -> int:
         """Ask every window on the workspace to close. Returns how many were
         asked. Must never touch windows outside this workspace."""
@@ -88,6 +95,9 @@ class NullBackend:
 
     def window_count(self, handle: str) -> int:
         return -1
+
+    def live_handles(self) -> set[str]:
+        return set()
 
     def close_workspace(self, handle: str) -> int:
         return 0

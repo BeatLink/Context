@@ -46,36 +46,55 @@ def _level() -> int:
     }.get(raw, logging.INFO)
 
 
-def configure() -> logging.Logger:
-    """Set up the `context` logger. Safe to call more than once."""
-    logger = logging.getLogger(LOGGER_NAME)
-    if getattr(logger, "_context_configured", False):
-        return logger
-
-    logger.setLevel(_level())
-    logger.propagate = False
-
-    formatter = logging.Formatter(
+def _formatter() -> logging.Formatter:
+    return logging.Formatter(
         "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    stream = logging.StreamHandler()
-    stream.setFormatter(formatter)
-    logger.addHandler(stream)
 
+def _attach_file_handler(logger: logging.Logger, path: Path) -> None:
+    for handler in list(logger.handlers):
+        if isinstance(handler, RotatingFileHandler):
+            logger.removeHandler(handler)
+            handler.close()
+    # Recorded even when opening fails, so a broken path is not retried on
+    # every call.
+    logger._context_log_path = path
     try:
-        log_dir().mkdir(parents=True, exist_ok=True)
-        rotating = RotatingFileHandler(
-            log_path(), maxBytes=MAX_BYTES, backupCount=BACKUPS
-        )
-        rotating.setFormatter(formatter)
-        logger.addHandler(rotating)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rotating = RotatingFileHandler(path, maxBytes=MAX_BYTES, backupCount=BACKUPS)
     except OSError:
         # Logging must never be the reason the launcher fails to start.
         logger.warning("could not open the log file; logging to stderr only")
+        return
+    rotating.setFormatter(_formatter())
+    logger.addHandler(rotating)
 
-    logger._context_configured = True
+
+def configure() -> logging.Logger:
+    """Set up the `context` logger. Safe to call more than once.
+
+    The file handler follows `XDG_STATE_HOME` and is re-opened when it changes.
+    It has to be: `get_logger` runs at module import, which under pytest is
+    during collection — before the fixture that redirects the state directory.
+    Resolving the path once meant the suite wrote its fixture names into the
+    real log, which is actively misleading when reading it to debug a session.
+    """
+    logger = logging.getLogger(LOGGER_NAME)
+
+    if not getattr(logger, "_context_configured", False):
+        logger.setLevel(_level())
+        logger.propagate = False
+        stream = logging.StreamHandler()
+        stream.setFormatter(_formatter())
+        logger.addHandler(stream)
+        logger._context_configured = True
+        logger._context_log_path = None
+
+    wanted = log_path()
+    if logger._context_log_path != wanted:
+        _attach_file_handler(logger, wanted)
     return logger
 
 

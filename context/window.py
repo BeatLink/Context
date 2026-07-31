@@ -13,7 +13,7 @@ from gi.repository import Adw, Gdk, GLib, Gtk
 
 from . import sidebar
 from .editor_window import EditorWindow
-from .launcher import active_context, context_is_open
+from .launcher import open_state
 from .layout import Layout
 from .logging_setup import get_logger
 from .resources import Resource
@@ -91,6 +91,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.store = store
         self.on_open = on_open
         self.on_close = on_close
+        self._open_ids: set[str] = set()
+        self._active_id: str | None = None
+        self._open_signature: tuple | None = None
 
         self.set_default_size(560, 620)
         # Docks the window to a screen edge where the compositor supports it.
@@ -227,6 +230,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         pointer.connect("leave", lambda *_a: self._release_keyboard())
         self.add_controller(pointer)
 
+        self._read_open_state()
         self.refresh()
 
         # Which contexts are open changes outside this window — a context is
@@ -235,23 +239,38 @@ class LauncherWindow(Adw.ApplicationWindow):
         # timer; without it the list only updated when the user acted here.
         GLib.timeout_add_seconds(2, self._poll_open_state)
 
+    def _read_open_state(self) -> bool:
+        """Ask the backend what is open. Returns whether anything changed."""
+        if self.on_close is None:
+            self._open_ids, self._active_id = set(), None
+            return False
+        try:
+            open_ids, active_id = open_state(self.store.contexts)
+        except OSError:
+            return False
+
+        signature = (frozenset(open_ids), active_id)
+        if signature == self._open_signature:
+            return False
+        self._open_signature = signature
+        self._open_ids, self._active_id = open_ids, active_id
+        return True
+
     def _poll_open_state(self) -> bool:
         """Re-read which contexts are open, refreshing only when it changed."""
-        if self.on_close is None:
-            return True
-        try:
-            state = {c.id for c in self.store.contexts if self._is_open(c)}
-            active = self._active_context()
-            active_id = active.id if active else None
-        except OSError:
-            return True
-
-        signature = (frozenset(state), active_id)
-        if signature != getattr(self, "_open_signature", None):
-            self._open_signature = signature
-            log.debug("open contexts changed: %d open", len(state))
+        if self._read_open_state():
+            log.debug("open contexts changed: %d open", len(self._open_ids))
             self.refresh()
         return True
+
+    def refresh_open_state(self) -> None:
+        """Re-read the open list now, rather than waiting for the next poll.
+
+        Called when a launch finishes, so the context moves from Saved to Open
+        as soon as its windows are up instead of up to a poll interval later.
+        """
+        self._read_open_state()
+        self.refresh()
 
     def _visible_rows(self) -> list[ContextRow]:
         rows = []
@@ -475,20 +494,13 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
 
     def _active_context(self):
-        if self.on_close is None:
+        active_id = self._active_id
+        if active_id is None:
             return None
-        try:
-            return active_context(self.store.contexts)
-        except OSError:
-            return None
+        return next((c for c in self.store.contexts if c.id == active_id), None)
 
     def _is_open(self, ctx: Context) -> bool:
-        if self.on_close is None:
-            return False
-        try:
-            return context_is_open(ctx)
-        except OSError:
-            return False
+        return ctx.id in self._open_ids
 
     def _close(self, ctx: Context) -> None:
         if self.on_close is not None:

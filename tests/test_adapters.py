@@ -338,3 +338,104 @@ def test_compatibility_flags_survive_being_switched_off():
     """to_dict drops falsy values, which would lose a disabled switch."""
     resource = Resource(app_id="x.desktop", force_new_window=False)
     assert Resource.from_dict(resource.to_dict()).force_new_window is False
+
+
+def test_main_profile_launch_never_waits_for_the_browser(monkeypatch):
+    """Firefox must be watched, not waited on.
+
+    `subprocess.run` was used here on the assumption that a Firefox was already
+    running, so the invocation would hand its URL over and exit. When none was
+    running the invocation became the browser instead and never returned — it
+    held the launcher's main loop for as long as the browser lived, which read
+    as Context freezing on launch.
+    """
+    adapter = FirefoxAdapter()
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/firefox")
+
+    ran: list[list[str]] = []
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("firefox must not be waited on to completion")
+
+    monkeypatch.setattr("subprocess.run", forbidden)
+
+    class NeverExits:
+        def wait(self, timeout=None):
+            raise __import__("subprocess").TimeoutExpired("firefox", timeout)
+
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda cmd, **kw: ran.append(cmd) or NeverExits()
+    )
+
+    adapter.launch(
+        Resource(
+            app_id="firefox.desktop",
+            urls=["https://a.com"],
+            profile_mode=PROFILE_MAIN,
+        ),
+        "ctx-1",
+    )
+    assert ran == [["/bin/firefox", "--new-window", "https://a.com"]]
+
+
+def test_main_profile_launch_is_detached(monkeypatch):
+    """A browser that outlives the launcher must not be its child."""
+    adapter = FirefoxAdapter()
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/firefox")
+    seen: dict = {}
+
+    class NeverExits:
+        def wait(self, timeout=None):
+            raise __import__("subprocess").TimeoutExpired("firefox", timeout)
+
+    def record(cmd, **kwargs):
+        seen.update(kwargs)
+        return NeverExits()
+
+    monkeypatch.setattr("subprocess.Popen", record)
+    adapter.launch(
+        Resource(app_id="firefox.desktop", profile_mode=PROFILE_MAIN), "ctx-1"
+    )
+    assert seen["start_new_session"] is True
+
+
+def test_main_profile_opens_a_window_then_tabs(monkeypatch):
+    """The first URL makes the window; the rest join it."""
+    adapter = FirefoxAdapter()
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/firefox")
+    ran: list[list[str]] = []
+
+    class HandsOff:
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda cmd, **kw: ran.append(cmd) or HandsOff()
+    )
+
+    adapter.launch(
+        Resource(
+            app_id="firefox.desktop",
+            urls=["https://a.com", "https://b.com", "https://c.com"],
+            profile_mode=PROFILE_MAIN,
+        ),
+        "ctx-1",
+    )
+    assert [c[1] for c in ran] == ["--new-window", "--new-tab", "--new-tab"]
+
+
+def test_main_profile_reports_a_failed_launch(monkeypatch):
+    """A quick non-zero exit is still a failure, not a hand-off."""
+    adapter = FirefoxAdapter()
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/firefox")
+
+    class Crashes:
+        def wait(self, timeout=None):
+            return 2
+
+    monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: Crashes())
+
+    with pytest.raises(LookupError, match="crashed on startup"):
+        adapter.launch(
+            Resource(app_id="firefox.desktop", profile_mode=PROFILE_MAIN), "ctx-1"
+        )

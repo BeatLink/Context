@@ -26,10 +26,9 @@
                     pkgs.gtk4-layer-shell
                     pkgs.gobject-introspection
                     pkgs.pkg-config
-                    # Backend tooling: the hyprland and cinnamon backends shell
-                    # out to these, so they must be present to be detected.
+                    # The hyprland backend shells out to hyprctl, so it must be
+                    # present for the backend to be detected at all.
                     pkgs.hyprland
-                    pkgs.wmctrl
                     # GUI tests need a display; xvfb-run supplies a headless one.
                     pkgs.xvfb-run
                 ];

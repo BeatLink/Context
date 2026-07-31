@@ -86,6 +86,31 @@ def reconnect(contexts, backend: Backend | None = None) -> list:
 
 
 @traced(log)
+def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str | None]:
+    """Which contexts are open, and which one is focused, in two queries.
+
+    The launcher polls this every couple of seconds. Asking `context_is_open`
+    per context instead costs two subprocess calls each, which is enough work on
+    the main loop to be felt with only a handful of contexts.
+    """
+    wm: Backend = backend or backends.detect()
+    live = wm.live_handles()
+    current = wm.current_handle()
+
+    open_ids = set()
+    active_id = None
+    for ctx in contexts:
+        handle = ctx.handle_for(wm.name)
+        if handle is None:
+            continue
+        if handle in live:
+            open_ids.add(ctx.id)
+        if current is not None and handle == current:
+            active_id = ctx.id
+    return open_ids, active_id
+
+
+@traced(log)
 def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     wm: Backend = backend or backends.detect()
     handle = ctx.handle_for(wm.name)
@@ -145,9 +170,8 @@ def launch_context(
         wm.switch_to(workspace)
         wm.prepare_launch(workspace)
 
-        # An existing workspace may still be empty — a closed context keeps its
-        # handle, and Cinnamon workspaces outlive their windows. Only skip
-        # launching when something is actually there.
+        # An existing workspace may still be empty: a closed context keeps its
+        # handle. Only skip launching when something is actually there.
         if not workspace.created and wm.window_count(workspace.handle) != 0:
             result.reused_workspace = True
             return result

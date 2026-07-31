@@ -95,34 +95,57 @@ class FirefoxAdapter:
         (path / "user.js").write_text(USER_JS)
         return True
 
-    def _launch_in_main_profile(self, binary: str, resource: Resource) -> None:
-        """Open the context's URLs in the user's existing Firefox.
+    def _spawn(self, binary: str, args: list[str]) -> None:
+        """Start Firefox, watching only whether it fails on startup.
 
-        The main profile is almost always already running and a profile can only
-        be held by one process, so a new instance is impossible. Instead each URL
-        is handed to the running Firefox, which opens it in a new window — the
-        first URL creates the window and the rest become tabs beside it.
+        Firefox must never be waited on to completion. When one is already
+        running these invocations hand their URL over and exit within a moment,
+        but when none is, the invocation *becomes* the browser and runs for the
+        rest of the session — waiting on that blocks the caller for hours.
+
+        So it is watched for a grace period instead: still running means it
+        started, and a non-zero exit inside the grace period is a real failure.
+        """
+        try:
+            process = subprocess.Popen(
+                [binary, *args],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=child_env(),
+            )
+        except OSError as exc:
+            raise LookupError(f"could not start firefox: {exc}") from exc
+
+        try:
+            code = process.wait(timeout=STARTUP_GRACE)
+        except subprocess.TimeoutExpired:
+            return  # Still running: it is the browser now.
+        if code == 0:
+            return  # Handed off to a running instance and exited.
+
+        hint = (
+            "its profile may still be in use"
+            if code == 1
+            else f"it exited abnormally (signal {-code})"
+            if code < 0
+            else "it crashed on startup"
+        )
+        raise LookupError(f"firefox exited with status {code}; {hint}")
+
+    def _launch_in_main_profile(self, binary: str, resource: Resource) -> None:
+        """Open the context's URLs in the user's own Firefox.
+
+        A profile can only be held by one process, so the context cannot have an
+        instance of its own. Each URL is handed to Firefox instead: the first
+        opens a new window and the rest become tabs beside it.
         """
         urls = resource.urls or ["about:blank"]
         first, rest = urls[0], urls[1:]
 
-        opened = subprocess.run(
-            [binary, "--new-window", first],
-            capture_output=True,
-            text=True,
-            env=child_env(),
-        )
-        if opened.returncode != 0:
-            raise LookupError(
-                f"firefox exited with status {opened.returncode} opening {first}"
-            )
+        self._spawn(binary, ["--new-window", first])
         for url in rest:
-            subprocess.run(
-                [binary, "--new-tab", url],
-                capture_output=True,
-                text=True,
-                env=child_env(),
-            )
+            self._spawn(binary, ["--new-tab", url])
 
     @traced(log)
     def launch(self, resource: Resource, context_id: str) -> None:

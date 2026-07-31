@@ -219,3 +219,57 @@ def test_path_apps_get_a_picker_not_a_url_list(gtk_app, isolated_store):
     assert seen["urls_hidden"]
     assert seen["subtitle"] == "/tmp/project"
     assert seen["cleared"] == "nothing chosen"
+
+
+def test_a_launched_context_moves_from_saved_to_open(gtk_app, isolated_store):
+    """The open list is what tells you a launch worked.
+
+    A launch that blocked the main loop meant the poll never fired and the
+    context stayed under Saved even though its windows were up.
+    """
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    store = ContextStore()
+    ctx = store.create("work")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.refresh()
+        seen["before_open"] = len(rows(window.open_listbox))
+        seen["before_saved"] = len(rows(window.listbox))
+
+        window._open_ids = {ctx.id}
+        window.refresh()
+        seen["after_open"] = len(rows(window.open_listbox))
+        seen["after_saved"] = len(rows(window.listbox))
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert (seen["before_open"], seen["before_saved"]) == (0, 1)
+    assert (seen["after_open"], seen["after_saved"]) == (1, 0)
+
+
+def test_refresh_open_state_rereads_the_backend(gtk_app, isolated_store, monkeypatch):
+    """A finished launch refreshes the list instead of waiting for the poll."""
+    from context.store import ContextStore
+    from context import window as window_module
+
+    store = ContextStore()
+    ctx = store.create("work")
+    seen = {}
+
+    def body(app):
+        win = window_module.LauncherWindow(app, store, lambda c: None, lambda c: None)
+        monkeypatch.setattr(
+            window_module, "open_state", lambda contexts: ({ctx.id}, ctx.id)
+        )
+        win.refresh_open_state()
+        seen["open"] = len(rows(win.open_listbox))
+        seen["active"] = win._active_context().title
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["open"] == 1
+    assert seen["active"] == "work"

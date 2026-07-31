@@ -1,20 +1,22 @@
 """Window-manager backends.
 
-`detect()` picks the backend that can drive the running session. Hyprland is
-preferred when present; Cinnamon is the fallback for development on X11.
+`detect()` picks the backend that can drive the running session. Hyprland is the
+target; anywhere else falls back to `NullBackend`, where apps launch onto the
+current workspace and contexts are names without containers.
 """
 
 from __future__ import annotations
 
 import os
 
+from ..logging_setup import get_logger
 from .base import Backend, NullBackend, Workspace
-from .cinnamon import CinnamonBackend
 from .hyprland import HyprlandBackend
+
+log = get_logger("backends")
 
 BACKENDS: dict[str, type] = {
     "hyprland": HyprlandBackend,
-    "cinnamon": CinnamonBackend,
     "none": NullBackend,
 }
 
@@ -30,18 +32,18 @@ def detect(preferred: str | None = None) -> Backend:
             if candidate.available():
                 return candidate
             return NullBackend()
+        # A name that no longer exists shouldn't pin the session to nothing.
+        log.warning("unknown backend %r; detecting instead", name)
 
-    for factory in (HyprlandBackend, CinnamonBackend):
-        candidate = factory()
-        if candidate.available():
-            return candidate
+    candidate = HyprlandBackend()
+    if candidate.available():
+        return candidate
     return NullBackend()
 
 
 __all__ = [
     "Backend",
     "BACKENDS",
-    "CinnamonBackend",
     "HyprlandBackend",
     "NullBackend",
     "Workspace",

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import sys
+import threading
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio
+from gi.repository import Adw, Gio, GLib
 
 from . import backends
 from .backends import Workspace
@@ -33,6 +34,7 @@ class ContextApplication(Adw.Application):
         self.backend = backends.detect()
         self.log.info("backend: %s", self.backend.name)
         self.window: LauncherWindow | None = None
+        self.launching: set[str] = set()
 
     def do_command_line(self, command_line) -> int:
         """Entry point for every launch, first or subsequent.
@@ -76,7 +78,36 @@ class ContextApplication(Adw.Application):
         self.window.present()
 
     def launch_context(self, ctx: Context) -> None:
-        result = launch_ctx(ctx, backend=self.backend)
+        """Start a context on a worker thread.
+
+        Launching is unavoidably slow: applications are started one at a time
+        and each is waited for, so the compositor tiles it before the next one
+        opens. Doing that on the main loop froze the whole launcher for the
+        duration — and an application that never exits froze it for good.
+        Nothing here may touch GTK; the result goes back through `idle_add`.
+        """
+        if ctx.id in self.launching:
+            self.log.info("%s is already being launched", ctx.title)
+            return
+        self.launching.add(ctx.id)
+        threading.Thread(
+            target=self._launch_worker, args=(ctx,), daemon=True
+        ).start()
+
+    def _launch_worker(self, ctx: Context) -> None:
+        try:
+            result = launch_ctx(ctx, backend=self.backend)
+        except Exception:
+            # A launch must never leave the context wedged as in-flight, so even
+            # an unexpected failure has to reach the main loop.
+            self.log.exception("launching %s failed", ctx.title)
+            result = None
+        GLib.idle_add(self._launch_finished, ctx, result)
+
+    def _launch_finished(self, ctx: Context, result) -> bool:
+        self.launching.discard(ctx.id)
+        if result is None:
+            return False
         # launch_context records the workspace handle, and may have repaired the
         # layout, so both are written back.
         self.store.save()
@@ -90,6 +121,8 @@ class ContextApplication(Adw.Application):
             self.log.error("could not launch %s: %s", app_id, error)
         if self.window is not None:
             self.window.report_launch(ctx, result)
+            self.window.refresh_open_state()
+        return False
 
     def close_context(self, ctx: Context) -> None:
         result = close_ctx(ctx, backend=self.backend)

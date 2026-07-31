@@ -88,11 +88,9 @@ distribution, a native messaging host, and per-release breakage.
 
 ### 3. Window placement, and tracking by window rather than profile
 
-`prepare_launch()` is currently a no-op in both real backends — they rely on
-focus-then-launch, which is racy: a slow-mapping app can land on whatever workspace
-you switched to since. Fix properly on Hyprland with workspace rules or
-workspace-bound `exec` dispatch. Cinnamon largely can't do this, which is fine — it
-is a development stand-in, not a target.
+`prepare_launch()` is currently a no-op — it relies on focus-then-launch, which is
+racy: a slow-mapping app can land on whatever workspace you switched to since. Fix
+properly with Hyprland workspace rules or workspace-bound `exec` dispatch.
 
 **Track windows, not profiles.** Per-context Firefox profiles were never really
 about identity; they were a workaround for Firefox having no window-targeting
@@ -116,13 +114,58 @@ specific one. The `Context` already carries a per-backend handle, so window
 addresses fit the existing shape.
 
 The hard part is the same one that makes `prepare_launch()` a no-op: **Wayland has
-no general way to match a new window back to the launch that spawned it.** In
-practice that means diffing `hyprctl clients` around a launch, or matching on pid —
-workable but racy, and the reason this needs a real Hyprland session to get right.
+no general way to match a new window back to the launch that spawned it.**
 `xdg-toplevel-tag-v1` exists for exactly this but is opt-in per app, so it can't be
-relied on.
+relied on. Three approaches, none sufficient alone:
 
-Do this together with placement: same IPC, same blocker, same session needed.
+**Match on pid.** `hyprctl clients -j` reports a `pid` per window, so tracking the
+pid of each launch and correlating looks like the obvious answer. Measured on a
+live session, it does not hold for the apps that matter: the spawned Firefox had
+exited entirely by the time its window existed, and the window's pid belonged to a
+process parented to the session rather than to Context. VSCodium was the same.
+Both re-exec or hand off to a running instance, so the process started is not the
+process that owns the window. Pid matching works for a single-process app that
+owns its own window; it fails on exactly the multi-process and single-instance
+apps that need it most. Worth keeping as a fast path, never as the mechanism.
+
+**Launch each window under its own class.** The strongest option where it works:
+the window arrives already identifying itself, so there is nothing to correlate
+and no race. A unique class also lets a Hyprland `windowrule` pin the window to
+the context's workspace, which solves placement at the same time and survives an
+app that takes half a minute to start. Measured on a live session:
+
+| App | Mechanism | Result |
+| --- | --- | --- |
+| Firefox | `MOZ_APP_REMOTINGNAME=ctx-…` | **Works** — reports `class: ctx-probe` |
+| VSCodium | `--class=…` | No effect; stays `codium` |
+| VSCodium | `--class=…` with a separate `--user-data-dir` | Still `codium` |
+| Electron generally | `--class=…` | X11-only flag; Wayland `app_id` comes from the desktop entry |
+
+So it is per-app, not general. Firefox — the app the profile-per-context
+workaround exists for — is the one that supports it, which makes it worth doing
+even alone. Two caveats: a custom class breaks icon lookup and desktop-entry
+association, so Context has to map it back for the bar and its own app grid; and
+`MOZ_APP_REMOTINGNAME` forces a separate instance, so it does not by itself give
+main-profile mode per-context windows.
+
+**Watch `openwindow` on the event socket.** The general fallback for everything
+that cannot name its own class. Hyprland announces each window as it maps, with
+its address, class and title. Correlating "the next window of class X after I
+launched X" is racy in theory and reliable in practice, since Context launches
+one app at a time and waits. Note the event's address omits the `0x` prefix that
+`hyprctl` requires.
+
+**A Context Firefox addon.** The one case none of the above reaches is telling
+two windows of the *same* browser apart: in main-profile mode every window shares
+one process and one class, so there is nothing to distinguish them. An addon can
+label a window on the browser's own terms and report back over native messaging,
+which would give main-profile contexts real per-context grouping without a profile
+each. It also unlocks capturing open tabs into a context (see Later). The cost is
+a second codebase, a signed build, and an install step — so it should follow the
+compositor-level work rather than replace it, and stay optional.
+
+Do the first two together with placement: same IPC, same blocker, same session
+needed.
 
 Then: layout within a context (the "VS Code docked left, docs right" case), which
 needs Hyprland IPC and is a reason to treat Hyprland as the real target.
@@ -324,11 +367,17 @@ thing," and forcing a decision there is exactly the friction that made Activitie
 feel heavy. Needs a zero-friction default path — resume last context, or a plain
 desktop — before this becomes the login entrypoint.
 
-### 14. Hyprland as the primary target
+### 14. Hyprland as the primary target — *done*
 
-Once resources and placement land, Hyprland becomes the real target and Cinnamon
-stays only as a testing fallback. Requires a dev session on a spare VT or VM, since
-nesting is impossible (see README).
+Hyprland is the only backend. Cinnamon is gone: it could not preselect a split,
+could not resize a tiled window, and could only ever remove its *last* workspace,
+so closing a context from the middle renumbered every handle after it. Keeping it
+meant every feature had to be expressible in the weaker of the two.
+
+Anywhere Hyprland is not running now falls back to `NullBackend`, where apps
+launch onto the current workspace and contexts are names without containers.
+Development still needs a real session on a spare VT or VM, since nesting is
+impossible (see README).
 
 ## Later
 

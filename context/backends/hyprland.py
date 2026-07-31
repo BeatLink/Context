@@ -122,6 +122,19 @@ class HyprlandBackend:
     def window_count(self, handle: str) -> int:
         return len(self._windows_on(handle))
 
+    def live_handles(self) -> set[str]:
+        data = self._query("clients")
+        if not isinstance(data, list):
+            return set()
+        handles = set()
+        for client in data:
+            if not isinstance(client, dict):
+                continue
+            name = str((client.get("workspace") or {}).get("name", ""))
+            if name:
+                handles.add(name)
+        return handles
+
     @traced(log)
     def close_workspace(self, handle: str) -> int:
         closed = 0
