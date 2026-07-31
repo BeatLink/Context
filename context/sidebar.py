@@ -238,10 +238,15 @@ def apply(
 
     # Reserve the space so tiled windows do not sit underneath.
     LayerShell.auto_exclusive_zone_enable(window)
-    # NONE, not ON_DEMAND: a docked panel that takes keyboard focus pulls it away
-    # from the windows a context just opened. Focus is requested only while the
-    # user is actually typing in the launcher, via `grab_keyboard`.
-    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.NONE)
+    # ON_DEMAND: the compositor focuses and unfocuses this the way it does an
+    # ordinary window — clicking in gives it the keyboard, clicking away takes
+    # it back. It does not take focus on map, so a context's windows keep it.
+    #
+    # NONE was used here instead, with the keyboard raised while the pointer
+    # was inside. That made anything with a popover unusable: opening one sends
+    # the sidebar a pointer-leave, the keyboard was dropped, and the popover
+    # dismissed itself a frame later.
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
 
     if vertical:
         window.set_default_size(width, -1)
@@ -303,14 +308,16 @@ def resume_overlay(window) -> bool:
     return True
 
 
-def grab_keyboard(window, wanted: bool) -> None:
-    """Take or release keyboard focus for a docked window.
+def release_focus(window) -> None:
+    """Give the keyboard back to whatever the user turns to next.
 
-    With KeyboardMode.NONE the panel never steals focus, which is what makes
-    launching a context leave the new window focused. Typing in the launcher does
-    need keys though, so the mode is raised for as long as that lasts.
+    Dropping to NONE and straight back to ON_DEMAND, because there is no
+    "unfocus me" request in the protocol: the mode *is* the request, so the
+    only way to say "not now" is to stop being focusable for an instant.
+    ON_DEMAND is restored immediately, or the sidebar would stop accepting
+    clicks for the rest of the session.
     """
     if LayerShell is None or not available():
         return
-    mode = LayerShell.KeyboardMode.ON_DEMAND if wanted else LayerShell.KeyboardMode.NONE
-    LayerShell.set_keyboard_mode(window, mode)
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.NONE)
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)

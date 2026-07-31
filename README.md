@@ -38,7 +38,11 @@ beside it rather than underneath.
   is open and folds away once something is, one click from opening again.
 
 <kbd>Down</kbd> moves from the search bar into the list. <kbd>Esc</kbd> clears
-the search.
+the search and hands the keyboard back.
+
+The launcher takes the keyboard when you click into it and gives it up when you
+click away, like any other window. Opening a context hands focus to the windows
+it opens.
 
 **Collapsing.** The button in the top corner shrinks the sidebar, in whichever
 way the collapse mode says:

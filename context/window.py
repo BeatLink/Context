@@ -269,28 +269,14 @@ class LauncherWindow(Adw.ApplicationWindow):
         key.connect("key-pressed", self._on_key_pressed)
         self.entry.add_controller(key)
 
-        # Keyboard focus is taken only while the entry is actively being used.
+        # Hover is only ever about expanding a collapsed sidebar. Keyboard
+        # focus is the compositor's job — the layer is ON_DEMAND, so clicking
+        # in gives it the keyboard and clicking away takes it back, exactly as
+        # for an ordinary window.
         #
-        # It cannot be tied to GTK focus alone: once the layer takes keyboard
-        # focus the entry keeps it, so no `leave` ever arrives and clicking
-        # another window cannot take it back — the panel holds the keyboard until
-        # something outside GTK intervenes. Instead the grab is released whenever
-        # the pointer leaves the sidebar, which is the gesture that means "I am
-        # done here", and the entry drops GTK focus at the same time.
-        # The grab has to happen on the click itself. With KeyboardMode.NONE the
-        # layer has no keyboard, so GTK never gives the entry focus and a
-        # focus-enter handler would never run — the entry would be untypable.
-        # Capture phase, so the mode is raised before GTK routes the click.
-        # The keyboard is taken when the pointer enters the sidebar and released
-        # when it leaves.
-        #
-        # It cannot be taken on click: with KeyboardMode.NONE the layer has no
-        # keyboard, so raising the mode from a click handler happens too late for
-        # that same click to reach the entry — the first click was swallowed and
-        # only a second one landed. Entering is also the earliest unambiguous
-        # signal that the user is coming here to type, and leaving is what lets a
-        # click on another window take focus back, which GTK focus-leave never
-        # reports while the layer holds the keyboard.
+        # Driving focus from the pointer instead made anything with a popover
+        # unusable: a dropdown opening sends the sidebar a pointer-leave, the
+        # keyboard was dropped, and the popover dismissed itself a frame later.
         pointer = Gtk.EventControllerMotion()
         pointer.connect("enter", lambda *_a: self._on_pointer_enter())
         pointer.connect("leave", lambda *_a: self._on_pointer_leave())
@@ -386,7 +372,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         )
 
     def _on_pointer_enter(self) -> None:
-        self._take_keyboard(focus=False)
         if not (self.collapsed and self.collapses):
             return
         # Hiding always reveals on hover, whatever the setting says: with
@@ -410,7 +395,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         return False
 
     def _on_pointer_leave(self) -> None:
-        self._release_keyboard()
         if self._auto_expand_source is not None:
             GLib.source_remove(self._auto_expand_source)
             self._auto_expand_source = None
@@ -719,27 +703,19 @@ class LauncherWindow(Adw.ApplicationWindow):
                 return True
         return False
 
-    def _take_keyboard(self, focus: bool = True) -> None:
-        """Raise the layer's keyboard mode so the sidebar can be typed in.
+    def _release_keyboard(self) -> None:
+        """Give the keyboard back, for the two cases that mean "done here".
 
-        `focus` is False when this fires from the pointer entering: the keyboard
-        is made available, but which widget gets it is left to the click, so
-        hovering does not steal the caret from somewhere else.
+        The compositor handles focus the rest of the time — the layer is
+        ON_DEMAND, so a click elsewhere takes the keyboard away by itself.
+        This is only for leaving deliberately: Escape, and opening a context,
+        where the windows being opened should get the keyboard rather than the
+        launcher keeping it.
         """
         if not self.is_sidebar:
             return
-        sidebar.grab_keyboard(self, True)
-        if focus:
-            self.entry.grab_focus()
-
-    def _release_keyboard(self) -> None:
-        """Hand the keyboard back to whatever the user clicks next."""
-        if not self.is_sidebar:
-            return
-        # Dropping GTK focus as well, so the entry does not silently keep it and
-        # re-grab the keyboard the moment the pointer returns.
         self.set_focus(None)
-        sidebar.grab_keyboard(self, False)
+        sidebar.release_focus(self)
 
     def _on_escape(self) -> bool:
         if self.nav.get_visible_page() is not self.home_page:
@@ -815,8 +791,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.entry.set_text("")
         self.refresh()
         # Hand focus to the context being opened rather than keeping it here.
-        if self.is_sidebar:
-            sidebar.grab_keyboard(self, False)
+        self._release_keyboard()
         self.on_open(ctx)
 
     def report_launch(self, ctx: Context, result) -> None:

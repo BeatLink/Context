@@ -146,6 +146,23 @@ for them. Colours live in `context/theme.py` and are read from
 hard-code a colour in a widget or a Cairo call — add it to `Theme` instead, so
 both the stylesheet and the drawing code get it from the same place.
 
+## Keyboard focus in the sidebar
+
+The layer is `KeyboardMode.ON_DEMAND`, which is the protocol's "let the user
+focus and unfocus this the way they would an ordinary window". Clicking in
+gives it the keyboard, clicking away takes it back, and it does not take focus
+on map — measured: starting Context leaves the focused window focused.
+
+**Do not drive focus from the pointer.** It was `NONE` with the keyboard raised
+while the pointer was inside, which made every popover unusable: opening a
+dropdown sends the parent a pointer-leave, the keyboard was dropped, and the
+popover dismissed itself a frame later. Anything with a menu, a combo or a
+colour picker was unclickable.
+
+There is no "unfocus me" request — the mode *is* the request — so
+`release_focus` drops to NONE and straight back to ON_DEMAND. Staying on NONE
+leaves the sidebar unclickable for the rest of the session.
+
 ## Testing
 
 ```sh

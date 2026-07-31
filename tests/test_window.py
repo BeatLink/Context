@@ -1222,3 +1222,123 @@ def test_switching_mode_keeps_what_the_other_mode_had(
     # One screen keeps everything on screen 0; the two-screen edit survived.
     assert set(seen["one_screen"].values()) == {0}
     assert seen["two_screen"][1] == 1
+
+
+def test_the_sidebar_is_focusable_on_demand(gtk_app, isolated_store, monkeypatch):
+    """The compositor decides focus, the way it does for an ordinary window.
+
+    Driving it from the pointer made anything with a popover unusable: opening
+    a dropdown sends the sidebar a pointer-leave, the keyboard was dropped, and
+    the popover dismissed itself a frame later.
+    """
+    from context import sidebar
+
+    modes = []
+
+    class FakeLayerShell:
+        class KeyboardMode:
+            NONE = 0
+            ON_DEMAND = 1
+            EXCLUSIVE = 2
+
+        class Layer:
+            TOP = 0
+            OVERLAY = 3
+
+        class Edge:
+            LEFT = RIGHT = TOP = BOTTOM = 0
+
+        @staticmethod
+        def init_for_window(_w):
+            return None
+
+        @staticmethod
+        def set_namespace(_w, _n):
+            return None
+
+        @staticmethod
+        def set_layer(_w, _l):
+            return None
+
+        @staticmethod
+        def set_anchor(_w, _e, _a):
+            return None
+
+        @staticmethod
+        def auto_exclusive_zone_enable(_w):
+            return None
+
+        @staticmethod
+        def set_keyboard_mode(_w, mode):
+            modes.append(mode)
+
+    monkeypatch.setattr(sidebar, "LayerShell", FakeLayerShell)
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "place", lambda *a_, **k_: None)
+
+    def body(app):
+        window = Adw.ApplicationWindow(application=app)
+        sidebar.apply(window)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert modes == [FakeLayerShell.KeyboardMode.ON_DEMAND]
+
+
+def test_releasing_focus_returns_to_on_demand(gtk_app, isolated_store, monkeypatch):
+    """There is no "unfocus me" request, so it drops out and straight back in.
+
+    Staying on NONE would leave the sidebar unclickable for the rest of the
+    session.
+    """
+    from context import sidebar
+
+    modes = []
+
+    class FakeLayerShell:
+        class KeyboardMode:
+            NONE = 0
+            ON_DEMAND = 1
+
+        @staticmethod
+        def set_keyboard_mode(_w, mode):
+            modes.append(mode)
+
+    monkeypatch.setattr(sidebar, "LayerShell", FakeLayerShell)
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+
+    def body(app):
+        sidebar.release_focus(Adw.ApplicationWindow(application=app))
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert modes == [
+        FakeLayerShell.KeyboardMode.NONE,
+        FakeLayerShell.KeyboardMode.ON_DEMAND,
+    ]
+
+
+def test_hovering_no_longer_touches_the_keyboard(gtk_app, isolated_store, monkeypatch):
+    """Hover is only about expanding a collapsed sidebar now."""
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    released = []
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._on_pointer_enter()
+        window._on_pointer_leave()
+        seen["released"] = list(released)
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["released"] == []
