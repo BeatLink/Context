@@ -133,9 +133,10 @@ class FakeBackend:
             )
         self.workspaces[handle] = self.workspaces.get(handle, 0) + len(app_ids)
 
-    def focus_window(self, window_id: str) -> bool:
+    def focus_window(self, window_id: str, warp: bool = True) -> bool:
         self.calls.append(("focus", window_id))
         self.focused = window_id
+        self.focus_warped = warp
         return True
 
     def monitors(self) -> list[MonitorInfo]:

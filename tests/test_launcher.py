@@ -542,3 +542,23 @@ def test_an_unrelated_window_is_not_stolen(backend, monkeypatch):
     launch_context(ctx, backend=backend)
 
     assert not any(c[0] == "move_window" for c in backend.calls)
+
+
+def test_the_hand_back_does_not_move_the_pointer(backend):
+    """It runs as the pointer leaves the sidebar; Hyprland's focus warp would
+    snap the cursor into the window mid-gesture and collapse the sidebar."""
+    from context.backends.base import WindowInfo
+
+    backend.open_windows = [WindowInfo(id="0xrecent", title="e", app_id="e")]
+
+    launcher.hand_keyboard_back(backend=backend)
+
+    assert backend.focused == "0xrecent"
+    assert backend.focus_warped is False
+
+
+def test_the_switcher_still_warps_to_a_chosen_window(backend):
+    """Picking a window deliberately keeps the compositor's normal warp."""
+    backend.focus_window("0xpicked")
+
+    assert backend.focus_warped is True

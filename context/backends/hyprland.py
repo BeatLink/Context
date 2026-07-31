@@ -217,7 +217,22 @@ class HyprlandBackend:
         return found
 
     @traced(log)
-    def focus_window(self, window_id: str) -> bool:
+    def focus_window(self, window_id: str, warp: bool = True) -> bool:
+        if not warp:
+            # Focusing warps the cursor into the window unless cursor:no_warps
+            # says otherwise — ruinous for the keyboard hand-back that runs as
+            # the pointer leaves the sidebar, which yanked the cursor away
+            # mid-gesture. The option is flipped around the dispatch and put
+            # back, unless the user already has it on.
+            option = self._query("getoption", "cursor:no_warps")
+            if not (option and option.get("int")):
+                result = self._run(
+                    "--batch",
+                    "keyword cursor:no_warps 1 ; "
+                    f"dispatch focuswindow address:{window_id} ; "
+                    "keyword cursor:no_warps 0",
+                )
+                return result is not None and result.returncode == 0
         result = self._run("dispatch", "focuswindow", f"address:{window_id}")
         return result is not None and result.returncode == 0
 

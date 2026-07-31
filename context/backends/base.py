@@ -109,8 +109,12 @@ class Backend(Protocol):
         the backend can see.
         """
 
-    def focus_window(self, window_id: str) -> bool:
-        """Focus one window by its backend-specific id."""
+    def focus_window(self, window_id: str, warp: bool = True) -> bool:
+        """Focus one window by its backend-specific id.
+
+        `warp=False` asks for focus without the cursor following it, for the
+        hand-backs that run while the pointer is mid-gesture somewhere else.
+        """
 
     def monitors(self) -> list["MonitorInfo"]:
         """Every connected output. Empty when the backend cannot say."""
@@ -174,7 +178,7 @@ class NullBackend:
     def windows(self, handle: str | None = None) -> list[WindowInfo]:
         return []
 
-    def focus_window(self, window_id: str) -> bool:
+    def focus_window(self, window_id: str, warp: bool = True) -> bool:
         return False
 
     def monitors(self) -> list[MonitorInfo]:

@@ -133,7 +133,10 @@ def hand_keyboard_back(backend: Backend | None = None) -> None:
     wm: Backend = backend or backends.detect()
     found = wm.windows(wm.current_handle())
     if found:
-        wm.focus_window(found[0].id)
+        # Without the warp: this runs as the pointer leaves the sidebar, and
+        # a cursor snapped into the window mid-gesture is worse than the dead
+        # keyboard it fixes.
+        wm.focus_window(found[0].id, warp=False)
 
 
 @traced(log)
