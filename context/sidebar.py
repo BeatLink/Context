@@ -138,10 +138,20 @@ HIDDEN_WIDTH = 2
 # the compositor's gaps so Context reads as a window among windows.
 GAP = 8
 
+OPPOSITE = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
 
-def _set_margins(window, gap: int) -> None:
-    for attr in EDGES.values():
-        LayerShell.set_margin(window, getattr(LayerShell.Edge, attr), gap)
+
+def _set_margins(window, gap: int, edge: str | None = None) -> None:
+    """Float the surface, except on the side the windows adjoin.
+
+    Tiled windows bring their own gap to the boundary of the reserved space,
+    so a margin there doubled it: 16px between sidebar and windows against
+    8px everywhere else.
+    """
+    open_side = OPPOSITE.get(edge) if edge else None
+    for name, attr in EDGES.items():
+        amount = 0 if name == open_side else gap
+        LayerShell.set_margin(window, getattr(LayerShell.Edge, attr), amount)
 
 
 def rail_width() -> int:
@@ -171,7 +181,9 @@ def resize(window, width: int, edge: str | None = None) -> None:
         window.set_default_size(-1, width)
     # The hidden sliver hugs the edge with no gap: a 2px hover target floated
     # 8px into the screen cannot be found by sliding the pointer to the edge.
-    _set_margins(window, 0 if width == HIDDEN_WIDTH else GAP)
+    _set_margins(
+        window, 0 if width == HIDDEN_WIDTH else GAP, edge or configured_edge()
+    )
 
 
 def gdk_monitor(name: str | None):
@@ -250,7 +262,7 @@ def apply(
 
     # Reserve the space so tiled windows do not sit underneath. The margins
     # are inside the reservation — auto exclusive zones account for them.
-    _set_margins(window, GAP)
+    _set_margins(window, GAP, edge)
     LayerShell.auto_exclusive_zone_enable(window)
     # ON_DEMAND: the compositor focuses and unfocuses this the way it does an
     # ordinary window — clicking in gives it the keyboard, clicking away takes

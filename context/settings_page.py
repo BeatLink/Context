@@ -121,6 +121,11 @@ class SettingsPage(widgets.NavigationPage):
         # header in Context suppresses them for the same reason.
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
+        self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
+        self.back_button.add_css_class("flat")
+        self.back_button.set_tooltip_text("Back")
+        self.back_button.connect("clicked", lambda _b: self.window.nav.pop())
+        header.pack_start(self.back_button)
         toolbar.add_top_bar(header)
 
         page = widgets.Page()
