@@ -15,6 +15,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gtk
 
+from . import sidebar
 from .editor import EditorPage
 from .store import Context
 
@@ -32,10 +33,13 @@ class EditorWindow(Adw.Window):
 
         self.set_default_size(1280, 860)
         self.set_modal(False)
-        # Genuinely fullscreen rather than maximised: under a tiling compositor a
-        # maximised window still shares the workspace and sits inside the bars,
-        # which leaves the layout preview competing with whatever else is open.
-        self.fullscreen()
+
+        # An overlay rather than a window, the way rofi behaves: a layer-shell
+        # surface on the overlay layer covers the whole output, sits above the
+        # bars, and is never tiled into the workspace. Falls back to a fullscreen
+        # window where layer-shell is unavailable.
+        if not sidebar.apply_overlay(self):
+            self.fullscreen()
 
         self.nav = Adw.NavigationView()
         self.page = EditorPage(

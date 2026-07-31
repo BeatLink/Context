@@ -118,16 +118,45 @@ Do this together with placement: same IPC, same blocker, same session needed.
 Then: layout within a context (the "VS Code docked left, docs right" case), which
 needs Hyprland IPC and is a reason to treat Hyprland as the real target.
 
+### 4. Separate open contexts from saved ones — *next*
+
+The list mixes two different things: contexts that are running right now, and
+definitions sitting on disk. They want different actions.
+
+- **Open contexts** — shown as a distinct group, with a close button. Closing is
+  the common action; it is not something you do to a definition.
+- **Saved contexts** — no destructive action in the list. Deleting moves into the
+  editor, so forgetting a context is a deliberate act on its settings page rather
+  than a stray click next to launch.
+
+The state is already known: `context_is_open()` answers it per context, and the
+row already renders an `open` marker. What is missing is the grouping and moving
+delete out of the row.
+
+### 5. Collapse the sidebar to a rail
+
+The sidebar reserves 380px permanently, which is a lot to give up for something
+mostly idle. A toggle should shrink it to taskbar width — an icon per context,
+no titles or search — and expand it back.
+
+Collapsed it works like the bar's window list: one icon per context, open ones
+marked, click to switch. Expanded it is the current launcher.
+
+The width is already configurable (`CONTEXT_SIDEBAR_WIDTH`) and the exclusive zone
+follows the window size, so the compositor side needs no new work: the toggle
+changes the size request and swaps the content. Worth persisting the state so it
+survives a restart.
+
 ## Next
 
-### 4. Ephemeral teardown
+### 6. Ephemeral teardown
 
 `ephemeral` is stored and editable but nothing acts on it. Closing an ephemeral
 context should remove its workspace, delete its browser profile, and drop it from
 the list — carefully, since "throw this away" must never eat real work. Needs a
 confirmation path and a definition of what counts as unsaved.
 
-### 5. Session restore
+### 7. Session restore
 
 `xdg-session-management-v1` was merged 2026-03-23 after six years, and KWin has a
 draft implementation. This is the protocol that finally makes window position and
@@ -135,7 +164,7 @@ state restoration possible on Wayland. Once Hyprland supports it, a context can
 restore its actual layout rather than re-deriving it from a recipe. Worth tracking;
 not actionable yet.
 
-### 6. Login flow
+### 8. Login flow
 
 Show the launcher at login: previous contexts, or a new-context page.
 
@@ -145,7 +174,7 @@ thing," and forcing a decision there is exactly the friction that made Activitie
 feel heavy. Needs a zero-friction default path — resume last context, or a plain
 desktop — before this becomes the login entrypoint.
 
-### 7. Hyprland as the primary target
+### 9. Hyprland as the primary target
 
 Once resources and placement land, Hyprland becomes the real target and Cinnamon
 stays only as a testing fallback. Requires a dev session on a spare VT or VM, since
@@ -153,6 +182,10 @@ nesting is impossible (see README).
 
 ## Later
 
+- **Structured logging beyond the basics.** `logging_setup` gives levelled logging
+  to `$XDG_STATE_HOME/context/context.log`, controlled by `CONTEXT_LOG_LEVEL`, with
+  rotation. Still worth adding: a `--log-level` flag, and coverage of the launcher
+  and adapters, which currently log only through the app.
 - **Capture current state into a context** — "save what I have open." Needs live
   tab/window enumeration, so this is where a Firefox extension earns its cost.
 - **Per-context identity** — different logins per context, mostly free from the

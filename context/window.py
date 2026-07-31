@@ -178,6 +178,13 @@ class LauncherWindow(Adw.ApplicationWindow):
         key.connect("key-pressed", self._on_key_pressed)
         self.entry.add_controller(key)
 
+        # Only hold keyboard focus while the launcher is actually being typed in,
+        # so opening a context leaves the new window focused rather than the bar.
+        focus = Gtk.EventControllerFocus()
+        focus.connect("enter", lambda *_a: sidebar.grab_keyboard(self, True))
+        focus.connect("leave", lambda *_a: sidebar.grab_keyboard(self, False))
+        self.entry.add_controller(focus)
+
         self.refresh()
 
     def _visible_rows(self) -> list[ContextRow]:
@@ -309,6 +316,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.store.touch(ctx)
         self.entry.set_text("")
         self.refresh()
+        # Hand focus to the context being opened rather than keeping it here.
+        if self.is_sidebar:
+            sidebar.grab_keyboard(self, False)
         self.on_open(ctx)
 
     def report_launch(self, ctx: Context, result) -> None:

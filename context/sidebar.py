@@ -135,8 +135,10 @@ def apply(window, edge: str | None = None, width: int | None = None) -> bool:
 
     # Reserve the space so tiled windows do not sit underneath.
     LayerShell.auto_exclusive_zone_enable(window)
-    # Let the entry take input without stealing focus from everything else.
-    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
+    # NONE, not ON_DEMAND: a docked panel that takes keyboard focus pulls it away
+    # from the windows a context just opened. Focus is requested only while the
+    # user is actually typing in the launcher, via `grab_keyboard`.
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.NONE)
 
     if vertical:
         window.set_default_size(width, -1)
@@ -146,3 +148,37 @@ def apply(window, edge: str | None = None, width: int | None = None) -> bool:
         window.set_size_request(-1, width)
 
     return True
+
+
+def apply_overlay(window) -> bool:
+    """Turn `window` into a fullscreen overlay, the way rofi appears.
+
+    Anchored to all four edges on the overlay layer, so it covers the output
+    including the bars, and takes keyboard focus for as long as it is up. Unlike a
+    fullscreen window it is never tiled into the workspace or placed by a layout.
+    """
+    if not available():
+        return False
+
+    LayerShell.init_for_window(window)
+    LayerShell.set_namespace(window, "context-editor")
+    LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
+    for attr in EDGES.values():
+        LayerShell.set_anchor(window, getattr(LayerShell.Edge, attr), True)
+    # No exclusive zone: an overlay covers the bars rather than reserving space.
+    LayerShell.set_exclusive_zone(window, -1)
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.EXCLUSIVE)
+    return True
+
+
+def grab_keyboard(window, wanted: bool) -> None:
+    """Take or release keyboard focus for a docked window.
+
+    With KeyboardMode.NONE the panel never steals focus, which is what makes
+    launching a context leave the new window focused. Typing in the launcher does
+    need keys though, so the mode is raised for as long as that lasts.
+    """
+    if LayerShell is None or not available():
+        return
+    mode = LayerShell.KeyboardMode.ON_DEMAND if wanted else LayerShell.KeyboardMode.NONE
+    LayerShell.set_keyboard_mode(window, mode)
