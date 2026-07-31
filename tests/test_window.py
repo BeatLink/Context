@@ -1368,6 +1368,242 @@ def test_hovering_no_longer_touches_the_keyboard(gtk_app, isolated_store, monkey
     assert seen["released"] == []
 
 
+# -- handing the keyboard back -----------------------------------------------
+#
+# Hyprland hands an on-demand layer the keyboard when it is clicked, but keeps
+# counting the window underneath as the focused window — so clicking back into
+# that same window never triggers a refocus, and typing lands in the sidebar
+# until some *other* window is focused first. Every way of leaving the sidebar
+# has to hand the keyboard back deliberately.
+
+
+def test_the_compositor_sees_the_release(gtk_app, isolated_store, monkeypatch):
+    """The NONE has to be committed before ON_DEMAND is restored.
+
+    Keyboard interactivity is double-buffered: setting NONE and ON_DEMAND
+    inside one commit collapses to no change at all, and the release never
+    happened as far as the compositor is concerned.
+    """
+    from context import sidebar
+
+    modes = []
+
+    class FakeLayerShell:
+        class KeyboardMode:
+            NONE = 0
+            ON_DEMAND = 1
+
+        @staticmethod
+        def set_keyboard_mode(_w, mode):
+            modes.append(mode)
+
+    class FakeClock:
+        def __init__(self):
+            self.callbacks = {}
+            self.serial = 1
+
+        def connect(self, _signal, callback):
+            handler, self.serial = self.serial, self.serial + 1
+            self.callbacks[handler] = callback
+            return handler
+
+        def disconnect(self, handler):
+            self.callbacks.pop(handler, None)
+
+        def paint(self):
+            for callback in list(self.callbacks.values()):
+                callback(self)
+
+    monkeypatch.setattr(sidebar, "LayerShell", FakeLayerShell)
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    seen = {}
+
+    def body(app):
+        window = Gtk.ApplicationWindow(application=app)
+        clock = FakeClock()
+        window.get_frame_clock = lambda: clock
+        window.get_mapped = lambda: True
+        window.queue_draw = lambda: None
+        sidebar.release_focus(window)
+        seen["at_release"] = list(modes)
+        clock.paint()
+        seen["after_commit"] = list(modes)
+        # A second paint must not restore twice.
+        clock.paint()
+        seen["later"] = list(modes)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["at_release"] == [FakeLayerShell.KeyboardMode.NONE]
+    assert seen["after_commit"] == [
+        FakeLayerShell.KeyboardMode.NONE,
+        FakeLayerShell.KeyboardMode.ON_DEMAND,
+    ]
+    assert seen["later"] == seen["after_commit"]
+
+
+def test_releasing_hands_the_keyboard_to_the_last_window(
+    gtk_app, isolated_store, monkeypatch, backend
+):
+    """Dropping the layer's keyboard mode alone is not enough.
+
+    Hyprland reports the window active again without re-sending the keyboard
+    enter, so the window is focused explicitly — the recovery that clicking
+    another window and coming back performs, done automatically.
+    """
+    from context import sidebar
+    from context.backends.base import WindowInfo
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
+    backend.open_windows = [
+        WindowInfo(id="0xrecent", title="editor", app_id="editor"),
+        WindowInfo(id="0xolder", title="terminal", app_id="terminal"),
+    ]
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._release_keyboard()
+        seen["focused"] = [c for c in backend.calls if c[0] == "focus"]
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["focused"] == [("focus", "0xrecent")]
+
+
+def test_leaving_with_the_keyboard_hands_it_back(
+    gtk_app, isolated_store, monkeypatch, backend
+):
+    """Clicking the sidebar then clicking back into the window is the report
+    this exists to fix: the keyboard stayed here and typing went nowhere."""
+    from context import sidebar
+    from context.backends.base import WindowInfo
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    released = []
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
+    backend.open_windows = [WindowInfo(id="0xrecent", title="editor", app_id="editor")]
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._holds_keyboard = lambda: True
+        window._on_pointer_enter()
+        window._on_pointer_leave()
+        seen["released"] = list(released)
+        seen["focused"] = [c for c in backend.calls if c[0] == "focus"]
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["released"] == [True]
+    assert seen["focused"] == [("focus", "0xrecent")]
+
+
+def test_a_popover_keeps_the_keyboard_until_it_closes(
+    gtk_app, isolated_store, monkeypatch, backend
+):
+    """Opening a dropdown sends a synthetic pointer-leave; releasing on it
+    dismissed the popover a frame later. The release waits for the popover,
+    then still happens if the pointer stayed outside."""
+    from gi.repository import GLib
+
+    from context import sidebar
+    from context.backends.base import WindowInfo
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    released = []
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
+    backend.open_windows = [WindowInfo(id="0xrecent", title="editor", app_id="editor")]
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._holds_keyboard = lambda: True
+        window._popover_open = lambda: True
+        window._on_pointer_enter()
+        window._on_pointer_leave()
+        seen["while_open"] = list(released)
+        seen["watching"] = window._popover_watch is not None
+        window._popover_open = lambda: False
+        seen["outcome"] = window._release_after_popover()
+        seen["after_close"] = list(released)
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["while_open"] == []
+    assert seen["watching"] is True
+    assert seen["outcome"] == GLib.SOURCE_REMOVE
+    assert seen["after_close"] == [True]
+
+
+def test_leaving_without_the_keyboard_releases_nothing(
+    gtk_app, isolated_store, monkeypatch, backend
+):
+    """Passing the pointer through the sidebar must not touch focus."""
+    from context import sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    released = []
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._on_pointer_enter()
+        window._on_pointer_leave()
+        seen["released"] = list(released)
+        seen["focused"] = [c for c in backend.calls if c[0] == "focus"]
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["released"] == []
+    assert seen["focused"] == []
+
+
+def test_opening_a_context_hands_the_keyboard_over(
+    gtk_app, isolated_store, monkeypatch, backend
+):
+    """The windows being opened should get the keyboard, not the launcher."""
+    from context import sidebar
+    from context.backends.base import WindowInfo
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
+    backend.open_windows = [WindowInfo(id="0xrecent", title="editor", app_id="editor")]
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._open(ctx)
+        seen["focused"] = [c for c in backend.calls if c[0] == "focus"]
+        app.quit()
+
+    store = ContextStore()
+    ctx = store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["focused"] == [("focus", "0xrecent")]
+
+
 # -- more than one launcher --------------------------------------------------
 #
 # Every test above builds a single LauncherWindow directly. That is why two

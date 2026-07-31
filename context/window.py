@@ -12,7 +12,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from . import settings, sidebar, theme, uistate, widgets
 from .editor_window import EditorWindow
-from .launcher import open_state
+from .launcher import hand_keyboard_back, open_state
 from .layout import Layout
 from .logging_setup import get_logger
 from .resources import Resource
@@ -117,6 +117,9 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self._auto_expand_source: int | None = None
         # Set when collapsing deliberately, cleared when the pointer leaves.
         self._suppress_hover = False
+        self._pointer_inside = False
+        # A pending "release once the popover closes" check.
+        self._popover_watch: int | None = None
 
         self.set_default_size(560, 620)
         # Context paints its own surface rather than inheriting whatever theme
@@ -412,6 +415,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         )
 
     def _on_pointer_enter(self) -> None:
+        self._pointer_inside = True
         if self._suppress_hover or not (self.collapsed and self.collapses):
             return
         # Hiding always reveals on hover, whatever the setting says: with
@@ -435,8 +439,10 @@ class LauncherWindow(Gtk.ApplicationWindow):
         return False
 
     def _on_pointer_leave(self) -> None:
+        self._pointer_inside = False
         # Leaving is what makes a later hover meaningful again.
         self._suppress_hover = False
+        self._maybe_release_keyboard()
         if self._auto_expand_source is not None:
             GLib.source_remove(self._auto_expand_source)
             self._auto_expand_source = None
@@ -766,18 +772,74 @@ class LauncherWindow(Gtk.ApplicationWindow):
         return False
 
     def _release_keyboard(self) -> None:
-        """Give the keyboard back, for the two cases that mean "done here".
+        """Give the keyboard back when leaving: Escape, opening a context, or
+        the pointer moving away with the keyboard still here.
 
-        The compositor handles focus the rest of the time — the layer is
-        ON_DEMAND, so a click elsewhere takes the keyboard away by itself.
-        This is only for leaving deliberately: Escape, and opening a context,
-        where the windows being opened should get the keyboard rather than the
-        launcher keeping it.
+        Dropping the layer's keyboard mode is not enough on its own: Hyprland
+        reports the window active again without re-sending the keyboard enter,
+        so the most recent window is also focused explicitly — the recovery
+        that clicking another window and coming back performs, automated.
         """
         if not self.is_sidebar:
             return
         self.set_focus(None)
         sidebar.release_focus(self)
+        self._hand_keyboard_back()
+
+    def _hand_keyboard_back(self) -> None:
+        backend = getattr(self.get_application(), "backend", None)
+        if backend is not None:
+            hand_keyboard_back(backend=backend)
+
+    def _holds_keyboard(self) -> bool:
+        return self.is_sidebar and bool(self.get_property("is-active"))
+
+    def _maybe_release_keyboard(self) -> None:
+        """Hand the keyboard back when the pointer leaves with it still held.
+
+        Clicking the sidebar gives it the keyboard, but clicking back into the
+        window the user came from does not take it back: Hyprland still counts
+        that window as focused, so the click never triggers a refocus and
+        typing keeps landing in the search box. Releasing when the pointer
+        leaves means the window under the next click already has the keyboard.
+        """
+        if not self._holds_keyboard():
+            return
+        if self._popover_open():
+            # This leave is the popover opening, not the user going away;
+            # releasing now would dismiss it a frame later. Wait it out, then
+            # release if the pointer really is elsewhere.
+            if self._popover_watch is None:
+                self._popover_watch = GLib.timeout_add(
+                    200, self._release_after_popover
+                )
+            return
+        self._release_keyboard()
+
+    def _release_after_popover(self) -> bool:
+        if self._pointer_inside or not self._holds_keyboard():
+            self._popover_watch = None
+            return GLib.SOURCE_REMOVE
+        if self._popover_open():
+            return GLib.SOURCE_CONTINUE
+        self._popover_watch = None
+        self._release_keyboard()
+        return GLib.SOURCE_REMOVE
+
+    def _popover_open(self, root=None) -> bool:
+        """Whether any popover in this window is showing.
+
+        Popovers are ordinary widgets in the tree, so a walk finds dropdowns,
+        context menus and the like wherever a page put them.
+        """
+        child = (root or self).get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.Popover) and child.get_mapped():
+                return True
+            if self._popover_open(child):
+                return True
+            child = child.get_next_sibling()
+        return False
 
     def _on_press_anywhere(self, gesture, _n_press, x: float, y: float) -> None:
         """Note whether the press landed on a control or on bare sidebar."""
@@ -858,6 +920,9 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # so backing out has to remove it again rather than leave an empty one.
         self.store.delete(ctx)
         self.refresh()
+        # The editor overlay held the keyboard exclusively; its unmap does not
+        # reliably return it either.
+        self._hand_keyboard_back()
 
     def _edit(self, ctx: Context) -> None:
         log.debug("editing context %s", ctx.title)
@@ -865,6 +930,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def _cancel_edit(self) -> None:
         self.refresh()
+        self._hand_keyboard_back()
 
     def _on_editor_done(
         self,
@@ -885,6 +951,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.refresh()
         if was_new:
             self._open(ctx)
+        else:
+            self._hand_keyboard_back()
 
     def _open(self, ctx: Context) -> None:
         log.info("opening context %s", ctx.title)

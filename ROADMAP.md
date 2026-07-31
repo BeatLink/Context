@@ -412,6 +412,18 @@ than time the window was open.
 Optional later: a target per context with a notification when it is reached, and
 an idle threshold so time does not accrue while the machine is untouched.
 
+### 15. Handing the keyboard back — *done*
+
+Clicking the sidebar then clicking back into the same window left typing dead:
+Hyprland only refocuses on a click when the window changes, and a layer holding
+the keyboard does not count as a change. Fixed by releasing the keyboard when
+the pointer leaves the sidebar (postponed while a popover is up), and by
+focusing the most recent window explicitly on every release — Hyprland reports
+the window active again without re-sending the keyboard enter, so dropping the
+layer's keyboard mode alone revives nothing. The same explicit hand-back runs
+when the switcher, pickers or the editor overlay close. Constraints recorded in
+CLAUDE.md under "Keyboard focus in the sidebar".
+
 ## Next
 
 ### 11. Ephemeral teardown

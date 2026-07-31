@@ -150,18 +150,39 @@ both the stylesheet and the drawing code get it from the same place.
 
 The layer is `KeyboardMode.ON_DEMAND`, which is the protocol's "let the user
 focus and unfocus this the way they would an ordinary window". Clicking in
-gives it the keyboard, clicking away takes it back, and it does not take focus
-on map — measured: starting Context leaves the focused window focused.
+gives it the keyboard, and it does not take focus on map — measured: starting
+Context leaves the focused window focused.
 
-**Do not drive focus from the pointer.** It was `NONE` with the keyboard raised
-while the pointer was inside, which made every popover unusable: opening a
-dropdown sends the parent a pointer-leave, the keyboard was dropped, and the
-popover dismissed itself a frame later. Anything with a menu, a combo or a
-colour picker was unclickable.
+**Clicking away does *not* give the keyboard back on Hyprland.** Its click
+path only refocuses when the window under the click *changes*, and a layer
+holding the keyboard does not count — the old window is still recorded as
+focused, so clicking back into it does nothing and typing stays in the
+sidebar until some other window is focused first (read from the 0.56 source:
+`processMouseDownNormal` skips `refocus()` when `focusState()->window() == w`).
+The sidebar therefore releases the keyboard itself when the pointer leaves
+while it still holds it, guarded so an open popover postpones the release —
+see the next paragraph for why that guard exists.
 
-There is no "unfocus me" request — the mode *is* the request — so
-`release_focus` drops to NONE and straight back to ON_DEMAND. Staying on NONE
-leaves the sidebar unclickable for the rest of the session.
+**Never drop the keyboard while a popover is up.** An earlier design released
+on every pointer-leave: opening a dropdown sends the parent a synthetic
+pointer-leave, the keyboard was dropped, and the popover dismissed itself a
+frame later. `_maybe_release_keyboard` waits for the popover to close and only
+then releases, if the pointer is still outside.
+
+**Releasing the layer's keyboard mode alone does not revive typing.** Two
+separate traps, both measured in the wild (see DankMaterialShell#2561 for the
+same bug in another shell):
+
+- Keyboard interactivity is double-buffered protocol state. Setting NONE and
+  ON_DEMAND back-to-back lands in one commit and collapses to no change; the
+  compositor never sees a release. `release_focus` commits the NONE first and
+  restores ON_DEMAND on the frame after.
+- Even a committed release is answered by Hyprland re-reporting the window as
+  active *without re-sending `wl_keyboard.enter`* — the seat routes typing
+  nowhere. `hand_keyboard_back` focuses the most recent window explicitly,
+  which is the recovery clicking another window performs. Every path that
+  gives the keyboard up ends with it: Escape, opening a context, the pointer
+  leaving, an editor or picker overlay closing.
 
 ## More than one launcher
 

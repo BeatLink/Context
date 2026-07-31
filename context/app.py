@@ -18,6 +18,7 @@ from .launcher import active_context, capture_arrangement, has_drifted
 from .launcher import move_window_to_context, move_window_to_screen
 from .launcher import unmanaged_windows
 from .launcher import close_context as close_ctx
+from .launcher import hand_keyboard_back
 from .launcher import launch_context as launch_ctx
 from .launcher import reconnect
 from .store import Context, ContextStore
@@ -158,6 +159,11 @@ class ContextApplication(Gtk.Application):
 
     def _on_switcher_closed(self, _window) -> bool:
         self.switcher = None
+        # The overlay held the keyboard exclusively, and Hyprland reports the
+        # window active again on unmap without re-sending the keyboard enter.
+        # Handing it back explicitly is what actually revives typing. A picker
+        # that goes on to focus or launch something overrides this immediately.
+        hand_keyboard_back(backend=self.backend)
         return False
 
     def restart(self) -> None:

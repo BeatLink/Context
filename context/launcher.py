@@ -121,6 +121,22 @@ def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str 
 
 
 @traced(log)
+def hand_keyboard_back(backend: Backend | None = None) -> None:
+    """Focus the window the compositor still counts as focused.
+
+    When a layer surface lets the keyboard go, Hyprland reports the window
+    underneath as active again without re-sending the keyboard enter, so the
+    seat routes typing nowhere until some *other* window is focused and the
+    original clicked back into. Focusing the most recent window explicitly is
+    that recovery, performed deliberately instead of by the user.
+    """
+    wm: Backend = backend or backends.detect()
+    found = wm.windows(wm.current_handle())
+    if found:
+        wm.focus_window(found[0].id)
+
+
+@traced(log)
 def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     wm: Backend = backend or backends.detect()
     return any(

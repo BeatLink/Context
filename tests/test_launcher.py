@@ -416,3 +416,42 @@ def test_the_launch_ends_on_the_primary_screen(ctx, backend, stub_adapters):
     launch_context(ctx, backend=backend)
 
     assert backend.current == "ctx-work"
+
+
+# -- handing the keyboard back ------------------------------------------------
+
+
+def test_hand_keyboard_back_focuses_the_most_recent_window(backend):
+    """Hyprland does not re-send the keyboard enter when a layer lets go, so
+    the window it still counts as focused is focused again explicitly."""
+    from context.backends.base import WindowInfo
+
+    backend.open_windows = [
+        WindowInfo(id="0xrecent", title="editor", app_id="editor"),
+        WindowInfo(id="0xolder", title="terminal", app_id="terminal"),
+    ]
+
+    launcher.hand_keyboard_back(backend=backend)
+
+    assert backend.focused == "0xrecent"
+
+
+def test_hand_keyboard_back_with_nothing_open_does_nothing(backend):
+    launcher.hand_keyboard_back(backend=backend)
+
+    assert backend.focused is None
+
+
+def test_closing_a_picker_hands_the_keyboard_back(backend):
+    """Dismissing the switcher without choosing anything left typing dead:
+    the overlay's unmap reported the window active without the keyboard."""
+    from context.app import ContextApplication
+    from context.backends.base import WindowInfo
+
+    app = ContextApplication()
+    app.backend = backend
+    backend.open_windows = [WindowInfo(id="0xrecent", title="editor", app_id="editor")]
+
+    app._on_switcher_closed(None)
+
+    assert backend.focused == "0xrecent"

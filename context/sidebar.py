@@ -311,13 +311,37 @@ def resume_overlay(window) -> bool:
 def release_focus(window) -> None:
     """Give the keyboard back to whatever the user turns to next.
 
-    Dropping to NONE and straight back to ON_DEMAND, because there is no
-    "unfocus me" request in the protocol: the mode *is* the request, so the
-    only way to say "not now" is to stop being focusable for an instant.
-    ON_DEMAND is restored immediately, or the sidebar would stop accepting
-    clicks for the rest of the session.
+    Dropping to NONE and back to ON_DEMAND, because there is no "unfocus me"
+    request in the protocol: the mode *is* the request, so the only way to say
+    "not now" is to stop being focusable for a moment. Staying on NONE would
+    leave the sidebar unclickable for the rest of the session.
+
+    Keyboard interactivity is double-buffered, so the restore has to wait for
+    the NONE to be committed: both modes set inside one commit collapse to no
+    change at all, and the compositor never sees a release. The restore rides
+    the frame that carries the NONE out; a window with no frames coming gets
+    it back immediately, which for an unmapped surface changes nothing.
     """
     if LayerShell is None or not available():
         return
     LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.NONE)
-    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
+    clock = window.get_frame_clock()
+    if clock is None or not window.get_mapped():
+        LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
+        return
+    if getattr(window, "_keyboard_restore", None) is not None:
+        window.queue_draw()
+        return
+
+    def restore(painted) -> None:
+        handler = getattr(window, "_keyboard_restore", None)
+        if handler is None:
+            return
+        window._keyboard_restore = None
+        painted.disconnect(handler)
+        LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
+        # The mode change needs a commit of its own to take effect.
+        window.queue_draw()
+
+    window._keyboard_restore = clock.connect("after-paint", restore)
+    window.queue_draw()
