@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from gi.repository import GLib
@@ -9,6 +10,9 @@ from gi.repository import GLib
 from . import adapters, backends
 from .backends import Backend, Workspace
 from .store import Context
+
+# How long to wait for launched windows to map before placing them.
+LAYOUT_TIMEOUT = 8.0
 
 
 @dataclass
@@ -18,6 +22,7 @@ class LaunchResult:
     backend: str = "none"
     workspace: str | None = None
     reused_workspace: bool = False
+    placed: int = 0
 
     @property
     def ok(self) -> bool:
@@ -107,4 +112,25 @@ def launch_context(
             return result
 
     result.launched, result.failed = _launch_resources(ctx)
+
+    if workspace is not None and ctx.layout.slots:
+        # Windows map asynchronously, so give them a moment to appear before
+        # placing them. Anything still missing keeps the layout's default.
+        result.placed = _apply_layout(wm, workspace.handle, ctx)
+
     return result
+
+
+def _apply_layout(wm: Backend, handle: str, ctx: Context) -> int:
+    apply = getattr(wm, "apply_layout", None)
+    if apply is None:
+        return 0
+
+    expected = len(ctx.resources)
+    deadline = time.monotonic() + LAYOUT_TIMEOUT
+    while time.monotonic() < deadline:
+        if wm.window_count(handle) >= expected:
+            break
+        time.sleep(0.25)
+
+    return apply(handle, ctx.layout.slots)

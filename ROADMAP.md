@@ -95,6 +95,11 @@ spawned it, which dissolves several problems at once:
 - no profile lock contention, so no waiting for a closing instance to let go
 - no duplicated profile storage per context
 - windows a context didn't spawn can be adopted into it
+- **single-instance apps stop silently failing.** Confirmed on a real Hyprland
+  session: launching "Listen to Music" reported success and opened nothing, because
+  Quod Libet was already running elsewhere and its desktop entry just focused the
+  existing window. Launching by desktop entry cannot fix this — the context has to
+  find the window and move it.
 
 Hyprland has the pieces: `hyprctl clients -j` reports every window's address, pid,
 class and workspace, and `dispatch movetoworkspacesilent address:0x…` moves a

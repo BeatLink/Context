@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+from .layout import Layout
 from .resources import Resource, parse_resources
 
 
@@ -26,6 +27,7 @@ class Context:
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
     workspaces: dict[str, str] = field(default_factory=dict)
+    layout: Layout = field(default_factory=Layout)
 
     @property
     def apps(self) -> list[str]:
@@ -49,11 +51,13 @@ class Context:
         data = {k: v for k, v in raw.items() if k in known}
         # `apps` is the pre-resource form: a plain list of desktop-entry ids.
         data["resources"] = parse_resources(raw.get("resources") or raw.get("apps"))
+        data["layout"] = Layout.from_list(raw.get("layout"))
         return cls(**data)
 
     def to_dict(self) -> dict:
         data = asdict(self)
         data["resources"] = [r.to_dict() for r in self.resources]
+        data["layout"] = self.layout.to_list()
         return data
 
 

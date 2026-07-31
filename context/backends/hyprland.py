@@ -113,6 +113,50 @@ class HyprlandBackend:
                 closed += 1
         return closed
 
+    def apply_layout(self, handle: str, slots) -> int:
+        """Place the workspace's windows into `slots`, in the order they appear.
+
+        Windows are floated and positioned explicitly rather than tiled: the
+        layout describes exact rectangles, which the dwindle layout cannot honour.
+        Returns how many windows were placed.
+        """
+        if not slots:
+            return 0
+
+        monitor = self._focused_monitor()
+        if monitor is None:
+            return 0
+        mon_w, mon_h = monitor
+
+        placed = 0
+        for address, slot in zip(self._windows_on(handle), slots):
+            target = f"address:{address}"
+            x = int(round(slot.x * mon_w))
+            y = int(round(slot.y * mon_h))
+            w = max(80, int(round(slot.width * mon_w)))
+            h = max(60, int(round(slot.height * mon_h)))
+            result = self._run(
+                "--batch",
+                f"dispatch setfloating {target} ; "
+                f"dispatch resizewindowpixel exact {w} {h},{target} ; "
+                f"dispatch movewindowpixel exact {x} {y},{target}",
+            )
+            if result is not None and result.returncode == 0:
+                placed += 1
+        return placed
+
+    def _focused_monitor(self) -> tuple[int, int] | None:
+        data = self._query("monitors")
+        if not isinstance(data, list):
+            return None
+        for monitor in data:
+            if isinstance(monitor, dict) and monitor.get("focused"):
+                try:
+                    return int(monitor["width"]), int(monitor["height"])
+                except (KeyError, TypeError, ValueError):
+                    return None
+        return None
+
     def remove_workspace(self, handle: str) -> bool:
         # Named workspaces disappear on their own once the last window closes,
         # and the handle stays valid because it is a name, not a position.

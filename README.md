@@ -56,13 +56,21 @@ The entrypoint you see when you log in.
 - <kbd>Down</kbd> moves from the bar into the list. <kbd>Esc</kbd> goes back a page,
   or closes the launcher from the top level.
 
-Creating a context opens the **app selector**: a searchable list of installed
-applications from their desktop entries, with icons and checkboxes. The **edit
-page** is the same selector plus the context's title and an ephemeral toggle.
+### The editor
 
-Apps that can open *at* something show a pencil button once selected, leading to a
-page where you say what. For Firefox that's a list of URLs, one per line; the row
-subtitle then summarises them (`reddit.com +2 more`).
+Creating or editing a context opens a full-screen editor, laid out like PowerToys
+Workspaces: the window arrangement on top, the app catalogue below.
+
+- **Layout preview** — a scale model of the monitor with one rectangle per window.
+  Drag a window to move it, its bottom-right corner to resize, or the × to remove
+  it. Everything snaps to a 5% grid. A dropdown offers starting arrangements:
+  maximised, side by side, top and bottom, main and side, three columns, main and
+  stack, grid.
+- **App grid** — every installed application, searchable. `+` adds a window to the
+  layout; adding an app twice gives it two windows. The pencil sets what it opens.
+
+Layouts are stored as fractions of the monitor rather than pixels, so they carry
+between displays. On launch the windows are floated and placed into their slots.
 
 ### As a sidebar
 
@@ -192,7 +200,8 @@ backend exists so everything else stays developable meanwhile.
 | --- | --- |
 | `context/app.py` | `Adw.Application` subclass and `main()` |
 | `context/window.py` | Launcher window, entry bar, context rows, navigation |
-| `context/app_picker.py` | App selector, and the edit page |
+| `context/editor.py` | Full-screen editor: layout preview and app grid |
+| `context/layout.py` | `Slot`, `Layout`, and the preset arrangements |
 | `context/apps.py` | Installed-app discovery via `Gio.AppInfo` |
 | `context/sidebar.py` | Layer-shell docking and the LD_PRELOAD re-exec |
 | `context/resources.py` | `Resource`, URL parsing, legacy `apps` migration |

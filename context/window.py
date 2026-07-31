@@ -12,8 +12,9 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk
 
 from . import sidebar
-from .app_picker import AppPickerPage
+from .editor import EditorPage
 from .launcher import context_is_open
+from .layout import Layout
 from .resources import Resource
 from .store import Context, ContextStore
 
@@ -260,31 +261,50 @@ class LauncherWindow(Adw.ApplicationWindow):
         return True
 
     def _pick_apps(self, ctx: Context) -> None:
+        """Editor for a context that was just created; committing launches it."""
         self.entry.set_text("")
         self.refresh()
-        self.picker = AppPickerPage(ctx, self._on_apps_chosen)
-        self.nav.push(self.picker)
-
-    def _on_apps_chosen(self, ctx: Context, resources: list[Resource]) -> None:
-        ctx.resources = resources
-        self.store.save()
-        self.nav.pop()
-        self.refresh()
-        self._open(ctx)
-
-    def _edit(self, ctx: Context) -> None:
-        self.editor = AppPickerPage(ctx, self._on_edit_saved, edit_mode=True)
+        self.editor = EditorPage(
+            ctx,
+            self._on_editor_done,
+            lambda: self._cancel_new(ctx),
+            is_new=True,
+        )
         self.nav.push(self.editor)
 
-    def _on_edit_saved(
-        self, ctx: Context, resources: list[Resource], title: str, ephemeral: bool
+    def _cancel_new(self, ctx: Context) -> None:
+        # The context was created up front to give the editor something to edit,
+        # so backing out has to remove it again rather than leave an empty one.
+        self.store.delete(ctx)
+        self.nav.pop()
+        self.refresh()
+
+    def _edit(self, ctx: Context) -> None:
+        self.editor = EditorPage(ctx, self._on_editor_done, self._cancel_edit)
+        self.nav.push(self.editor)
+
+    def _cancel_edit(self) -> None:
+        self.nav.pop()
+        self.refresh()
+
+    def _on_editor_done(
+        self,
+        ctx: Context,
+        resources: list[Resource],
+        title: str,
+        ephemeral: bool,
+        layout: Layout,
     ) -> None:
+        was_new = getattr(self.editor, "is_new", False)
         ctx.resources = resources
         ctx.title = title
         ctx.ephemeral = ephemeral
+        ctx.layout = layout
         self.store.save()
         self.nav.pop()
         self.refresh()
+        if was_new:
+            self._open(ctx)
 
     def _open(self, ctx: Context) -> None:
         self.store.touch(ctx)
