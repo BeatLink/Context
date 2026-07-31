@@ -24,7 +24,6 @@ ENV_PATH = "CONTEXT_SETTINGS"
 EDGES = ("left", "right", "top", "bottom")
 LOG_LEVELS = ("debug", "info", "warning", "error", "critical")
 BACKENDS = ("auto", "hyprland", "none")
-COLOR_SCHEMES = ("system", "light", "dark")
 # What the collapse button does.
 #
 # "rail" and "none" both stay pinned to the edge: they always reserve space and
@@ -56,8 +55,6 @@ class Settings:
     sidebar_edge: str = "left"
     sidebar_width: int = 380
     rail_width: int = 56
-    # "system" follows the desktop's own light/dark preference.
-    color_scheme: str = "system"
     collapse_mode: str = "rail"
     # Expand on hover and collapse again on leave, without changing the saved
     # collapsed state — the rail stays the resting shape.
@@ -118,11 +115,6 @@ class Settings:
                 self.sidebar_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, 380
             ),
             rail_width=_clamp(self.rail_width, MIN_RAIL_WIDTH, MAX_RAIL_WIDTH, 56),
-            color_scheme=(
-                self.color_scheme.strip().lower()
-                if self.color_scheme.strip().lower() in COLOR_SCHEMES
-                else "system"
-            ),
             collapse_mode=(
                 self.collapse_mode.strip().lower()
                 if self.collapse_mode.strip().lower() in COLLAPSE_MODES

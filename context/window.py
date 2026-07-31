@@ -104,7 +104,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         # The rail's buttons are styled by the theme, so the stylesheet has to
         # be on the display before one is built.
         theme.install()
-        theme.apply_color_scheme()
         # Docks the window to a screen edge where the compositor supports it.
         self.is_sidebar = sidebar.apply(self)
 

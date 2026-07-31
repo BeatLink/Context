@@ -7,7 +7,6 @@ interface has to survive a file containing nonsense.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -103,67 +102,6 @@ def test_the_environment_still_wins(isolated_settings, monkeypatch):
     assert sidebar.rail_width() == 40
 
 
-def test_the_colour_scheme_defaults_to_the_desktop():
-    assert Settings().color_scheme == "system"
-
-
-def test_an_unknown_colour_scheme_falls_back():
-    assert Settings(color_scheme="sepia").validated().color_scheme == "system"
-
-
-def test_light_mode_recolours_what_depends_on_the_background(isolated_settings):
-    """Two ways a dark palette disappears on a light one, both fixed here.
-
-    The neutrals are translucent white, which does nothing over white. The
-    accent-derived fills are a pale aqua at low alpha, which washes out — so
-    the accent is deepened for light mode rather than kept.
-    """
-    from context import theme
-
-    base = theme.Theme()
-    light = theme.for_scheme(base, dark=False)
-    assert light.rail_background != base.rail_background
-    assert light.tile_background != base.tile_background
-    assert light.accent != base.accent
-    assert light.slot_fill != base.slot_fill
-
-
-def test_the_drawn_parts_follow_the_scheme(isolated_settings, monkeypatch):
-    """The stylesheet followed the scheme; the layout preview did not.
-
-    Anything painting with Cairo has to ask for the adjusted palette, or it
-    draws dark colours onto a light interface.
-    """
-    from context import settings, theme
-
-    settings.update(color_scheme="light")
-    assert theme.active().accent == theme.LIGHT_OVERRIDES["accent"]
-
-    settings.update(color_scheme="dark")
-    assert theme.active().accent == theme.Theme().accent
-
-
-def test_dark_mode_leaves_the_theme_alone(isolated_settings):
-    from context import theme
-
-    base = theme.Theme()
-    assert theme.for_scheme(base, dark=True) is base
-
-
-def test_a_hand_written_colour_is_not_recoloured(isolated_settings, monkeypatch):
-    """An explicit theme.json is a deliberate choice, in either scheme."""
-    from context import theme
-
-    path = theme.theme_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"rail_background": "#ff00ff"}))
-
-    light = theme.for_scheme(theme.Theme.load(), dark=False)
-    assert light.rail_background == "#ff00ff"
-    # Untouched keys still get the light treatment.
-    assert light.tile_background == theme.LIGHT_OVERRIDES["tile_background"]
-
-
 def test_the_collapse_mode_defaults_to_a_rail():
     assert Settings().collapse_mode == "rail"
 
@@ -189,44 +127,3 @@ def test_the_spin_control_is_left_to_the_theme(isolated_settings):
     css = theme.Theme().css().decode()
     block = css[css.index(".ctx-spin"):]
     assert "min-height" not in block.split("}")[0]
-
-
-def test_a_desktop_theme_is_kept_out_of_context(monkeypatch, isolated_settings):
-    """A themed desktop otherwise dictates the colours, whatever the scheme.
-
-    home-manager's `gtk.theme` writes ~/.config/gtk-4.0/gtk.css importing a
-    theme, which loads at USER priority — above libadwaita's stylesheet and
-    above anything an application installs. Sass-built themes inline their
-    colours as literals too, so redefining named colours does not reach them
-    either. GTK_THEME skips theme loading for this process, which does.
-    """
-    from context import settings, theme
-
-    monkeypatch.delenv("GTK_THEME", raising=False)
-    settings.update(color_scheme="light")
-    assert theme.pin_gtk_theme() == "Adwaita:light"
-    assert os.environ["GTK_THEME"] == "Adwaita:light"
-
-    monkeypatch.delenv("GTK_THEME", raising=False)
-    settings.update(color_scheme="dark")
-    assert theme.pin_gtk_theme() == "Adwaita:dark"
-
-
-def test_matching_the_desktop_leaves_its_theme_in_place(monkeypatch, isolated_settings):
-    """"System" means the desktop decides, theme included."""
-    from context import settings, theme
-
-    monkeypatch.delenv("GTK_THEME", raising=False)
-    settings.update(color_scheme="system")
-    assert theme.pin_gtk_theme() is None
-    assert "GTK_THEME" not in os.environ
-
-
-def test_an_explicit_gtk_theme_is_not_overridden(monkeypatch, isolated_settings):
-    """Someone setting it by hand is choosing deliberately."""
-    from context import settings, theme
-
-    monkeypatch.setenv("GTK_THEME", "Yaru:dark")
-    settings.update(color_scheme="light")
-    assert theme.pin_gtk_theme() is None
-    assert os.environ["GTK_THEME"] == "Yaru:dark"

@@ -218,7 +218,7 @@ class LayoutPreview(Gtk.DrawingArea):
     def _draw(self, _area, cr, _w, _h) -> None:
         ox, oy, sw, sh = self._screen()
 
-        palette = theme.active()
+        palette = theme.current()
 
         # Monitor backdrop
         cr.set_source_rgba(*palette.rgba("preview_background"))

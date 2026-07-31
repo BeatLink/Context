@@ -22,7 +22,6 @@ log = get_logger("settings_page")
 EDGE_LABELS = ("Left", "Right", "Top", "Bottom")
 LEVEL_LABELS = ("Debug", "Info", "Warning", "Error", "Critical")
 BACKEND_LABELS = ("Detect automatically", "Hyprland", "None")
-SCHEME_LABELS = ("Match the desktop", "Light", "Dark")
 COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely", "Never collapse")
 
 
@@ -120,17 +119,6 @@ class SettingsPage(Adw.NavigationPage):
         group = Adw.PreferencesGroup(
             title="Appearance",
             description="How the launcher looks and where it sits.",
-        )
-        group.add(
-            _row_combo(
-                "Colour scheme",
-                "Light, dark, or whatever the desktop is set to. Applies on "
-                "restart, since the desktop's own theme is chosen at startup.",
-                SCHEME_LABELS,
-                settings.COLOR_SCHEMES,
-                live.color_scheme,
-                lambda v: self._apply(color_scheme=v, restyle=True, restart=True),
-            )
         )
         group.add(
             _row_combo(
@@ -321,13 +309,10 @@ class SettingsPage(Adw.NavigationPage):
     def _apply(
         self,
         restart: bool = False,
-        restyle: bool = False,
         resync: bool = False,
         **changes,
     ) -> None:
         settings.update(**changes)
-        if restyle:
-            theme.apply_color_scheme()
         if resync:
             self._sync_rows()
         self.window.settings_changed(needs_restart=restart, changed=changes)

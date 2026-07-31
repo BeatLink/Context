@@ -151,7 +151,6 @@ need a restart say so.
 
 | Setting | Meaning |
 | --- | --- |
-| Colour scheme | Light, dark, or whatever the desktop is set to |
 | Edge | Which side the launcher docks to |
 | Width | Pixels the launcher reserves |
 | Collapse mode | A rail of icons, hidden entirely, or never |
@@ -193,11 +192,7 @@ set keeps the default:
 
 Light and dark have separate palettes, so a colour that works on one does not
 disappear on the other — light mode uses a deeper accent, since a pale one
-washes out on a light background.
-
-Choosing light or dark also stops your desktop's GTK theme applying to Context,
-since a themed desktop would otherwise decide the colours itself. **Match the
-desktop** leaves it in place. Changing this takes a restart. Anything you set explicitly is used in both. **Write the
+washes out on a light background. Anything you set explicitly is used in both. **Write the
 default theme** in settings creates the file for you. Set `CONTEXT_THEME` to
 load one from elsewhere.
 

@@ -97,36 +97,26 @@ changed and what forced it.
 
 ## Theming
 
+**Context does not have a light mode, and adding one is harder than it looks.**
+Three attempts failed. A desktop GTK4 theme arrives as user CSS —
+home-manager's `gtk.theme` writes `~/.config/gtk-4.0/gtk.css` importing one —
+at `STYLE_PROVIDER_PRIORITY_USER` (800), above libadwaita's stylesheet and
+above anything an application installs. Redefining named colours does not reach
+a Sass-built theme, which inlines literals (Mint-Y-Dark-Aqua has 126 hard-coded
+`background-color` rules). Outranking the provider does not either, since there
+is no competing rule for the theme's own selectors. `GTK_THEME` skips theme
+loading and measured light in a screenshot, and still did not look right in
+use.
+
+If this is revisited: verify by sampling pixels from a screenshot, never by
+looking up a colour. A colour can resolve correctly and be painted over, which
+is what made the first two attempts look like they had worked.
+
 Context draws its own app tiles and layout preview, so libadwaita has no styling
 for them. Colours live in `context/theme.py` and are read from
 `$XDG_CONFIG_HOME/context/theme.json`, falling back to the defaults. Never
 hard-code a colour in a widget or a Cairo call — add it to `Theme` instead, so
 both the stylesheet and the drawing code get it from the same place.
-
-### A desktop GTK theme beats anything the application can do
-
-`~/.config/gtk-4.0/gtk.css` loads at `STYLE_PROVIDER_PRIORITY_USER` (800),
-above `APPLICATION` (600) *and* above libadwaita's own. home-manager's
-`gtk.theme` writes that file importing a theme, so on this system
-Mint-Y-Dark-Aqua was dictating every colour and light mode had no visible
-effect however correctly it was computed.
-
-Two fixes that look right and are not, both measured before landing the third:
-
-1. **Redefining the named colours** (`window_bg_color` and friends) at a
-   higher priority. Sass-built themes inline their colours as literals —
-   Mint has 126 hard-coded `background-color` rules — so the names are never
-   consulted.
-2. **Outranking the provider.** Works for colour *definitions*, but there is
-   no competing rule for the theme's own widget selectors, so they still win.
-
-What works is `GTK_THEME`, which skips theme loading for the process entirely.
-`theme.pin_gtk_theme()` sets it from the colour scheme and must run before GTK
-loads, so it lives at the top of `__main__.py` beside the layer-shell re-exec.
-Measured: the sidebar goes from rgb(51,51,57) to 94% light pixels.
-
-Consequence: the colour scheme now needs a restart, because `GTK_THEME` is only
-read at display open. The settings row says so and the toast offers one.
 
 ## Testing
 
