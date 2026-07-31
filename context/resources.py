@@ -14,11 +14,15 @@ PROFILE_DEDICATED = "dedicated"
 PROFILE_MAIN = "main"
 PROFILE_MODES = (PROFILE_DEDICATED, PROFILE_MAIN)
 
-# Browsers open in the profile the user already browses with. Adding Firefox to
-# a context and getting a browser with none of your addons, logins or bookmarks
-# is a surprise; keeping a context's tabs separate is a deliberate choice, so it
-# is the one that has to be asked for.
-PROFILE_DEFAULT = PROFILE_MAIN
+# Browsers open in a profile of the context's own. The main profile cannot
+# guarantee a window: `--new-tab` lands in whatever window was last focused,
+# so a context's URLs interleave into windows belonging to other work — and a
+# context that does not own its window is not much of a context. A dedicated
+# profile is a separate instance, so the window, session restore, and a
+# distinct pid all come with it. The cost is a browser without the main
+# profile's addons and logins, which is the per-resource switch to flip for
+# the contexts where that matters more.
+PROFILE_DEFAULT = PROFILE_DEDICATED
 
 
 @dataclass
