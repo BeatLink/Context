@@ -65,6 +65,12 @@ the saved group stays folded or unfolded as you had it.
 | `settings` | Open the settings page |
 | `toggle-rail` | Collapse or expand the sidebar |
 | `restart` | Restart Context, keeping open contexts open |
+| `move-window` | Send the focused window to another context |
+| `adopt` | Give windows that belong to no context a home |
+| `capture` | Save what the current context has become |
+| `window-left` / `window-right` | Throw the window to the context's next screen |
+| `fullscreen` `maximise` `float` `tile` `center` | Change the focused window |
+| `group` / `ungroup` | Fold the window into a tabbed group, or take it out |
 
 Run them as `python3 -m context <command>`. Context is single-instance, so each
 one is handed to the running copy rather than starting another — which makes
@@ -112,6 +118,26 @@ first. Closing shuts all of them.
 The launcher itself docks to one screen, chosen in settings. Naming a monitor
 that is not currently connected is fine — it is used when you plug it back in,
 and until then the launcher appears on whichever screen has focus.
+
+## Managing windows
+
+A window opened inside a context belongs to it. These move windows around
+without the context losing track of them.
+
+**Send a window elsewhere.** `move-window` picks a context and moves the focused
+window into it. The context has to be open — a window cannot move somewhere that
+does not exist yet.
+
+**Adopt loose windows.** `adopt` lists everything belonging to no context and
+offers each one a home, so nothing stays orphaned.
+
+**Save what a context became.** A context drifts as you use it: windows get
+moved, resized, opened and closed. `capture` reads the live positions back into
+the arrangement for however many screens you have now, so reopening rebuilds
+what you actually had. What each app opens is kept.
+
+**Throw a window between screens.** `window-left` and `window-right` move the
+focused window to the context's next screen, staying inside the context.
 
 ## What apps open
 

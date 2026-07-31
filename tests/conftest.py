@@ -21,6 +21,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from context import logging_setup, settings, theme  # noqa: E402
+from dataclasses import replace  # noqa: E402
+
 from context.backends.base import MonitorInfo, WindowInfo, Workspace  # noqa: E402
 from context.layout import Slot  # noqa: E402
 
@@ -73,6 +75,8 @@ class FakeBackend:
         ]
         # handle -> monitor it was bound to.
         self.placements: dict[str, str] = {}
+        self.states: dict[str, str] = {}
+        self.grouped: set[str] = set()
 
     # -- interface ----------------------------------------------------------
 
@@ -124,6 +128,49 @@ class FakeBackend:
     def place_workspace(self, handle: str, monitor: str) -> bool:
         self.calls.append(("place", handle, monitor))
         self.placements[handle] = monitor
+        return True
+
+    def move_window(self, window_id: str, handle: str) -> bool:
+        self.calls.append(("move_window", window_id, handle))
+        moved = []
+        for window in self.open_windows:
+            if window.id == window_id:
+                if window.handle:
+                    self.workspaces[window.handle] = max(
+                        0, self.workspaces.get(window.handle, 1) - 1
+                    )
+                self.workspaces[handle] = self.workspaces.get(handle, 0) + 1
+                moved.append(replace(window, handle=handle))
+            else:
+                moved.append(window)
+        self.open_windows = moved
+        return True
+
+    def set_window_state(self, window_id: str, state: str) -> bool:
+        if state not in (
+            "fullscreen", "maximise", "restore", "float", "tile", "pin", "center"
+        ):
+            return False
+        self.calls.append(("state", window_id, state))
+        self.states[window_id] = state
+        return True
+
+    def swap_windows(self, window_id: str, direction: str) -> bool:
+        if direction not in ("l", "r", "u", "d"):
+            return False
+        self.calls.append(("swap", window_id, direction))
+        return True
+
+    def group_windows(self, window_id: str, direction: str = "r") -> bool:
+        if direction not in ("l", "r", "u", "d"):
+            return False
+        self.calls.append(("group", window_id, direction))
+        self.grouped.add(window_id)
+        return True
+
+    def ungroup_window(self, window_id: str) -> bool:
+        self.calls.append(("ungroup", window_id))
+        self.grouped.discard(window_id)
         return True
 
     def close_workspace(self, handle: str) -> int:

@@ -40,6 +40,9 @@ class MonitorInfo:
     y: int = 0
     scale: float = 1.0
     focused: bool = False
+    # The compositor's own id. Windows report which monitor they are on by id
+    # rather than by name, so matching one to the other needs this.
+    id: int = -1
 
     @property
     def aspect(self) -> float:
@@ -115,6 +118,21 @@ class Backend(Protocol):
     def place_workspace(self, handle: str, monitor: str) -> bool:
         """Bind a workspace to an output, for contexts that span screens."""
 
+    def move_window(self, window_id: str, handle: str) -> bool:
+        """Send one window to another container, without following it."""
+
+    def set_window_state(self, window_id: str, state: str) -> bool:
+        """Fullscreen, maximise, restore, float, tile, pin or centre a window."""
+
+    def swap_windows(self, window_id: str, direction: str) -> bool:
+        """Swap a tiled window with its neighbour."""
+
+    def group_windows(self, window_id: str, direction: str = "r") -> bool:
+        """Fold a window into a tabbed group with its neighbour."""
+
+    def ungroup_window(self, window_id: str) -> bool:
+        """Take a window back out of its group."""
+
     def close_workspace(self, handle: str) -> int:
         """Ask every window on the workspace to close. Returns how many were
         asked. Must never touch windows outside this workspace."""
@@ -163,6 +181,21 @@ class NullBackend:
         return []
 
     def place_workspace(self, handle: str, monitor: str) -> bool:
+        return False
+
+    def move_window(self, window_id: str, handle: str) -> bool:
+        return False
+
+    def set_window_state(self, window_id: str, state: str) -> bool:
+        return False
+
+    def swap_windows(self, window_id: str, direction: str) -> bool:
+        return False
+
+    def group_windows(self, window_id: str, direction: str = "r") -> bool:
+        return False
+
+    def ungroup_window(self, window_id: str) -> bool:
         return False
 
     def close_workspace(self, handle: str) -> int:

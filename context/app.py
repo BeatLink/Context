@@ -15,7 +15,9 @@ from gi.repository import Adw, Gio, GLib
 
 from . import backends, switcher, uistate
 from .backends import Workspace
-from .launcher import active_context
+from .launcher import active_context, capture_arrangement
+from .launcher import move_window_to_context, move_window_to_screen
+from .launcher import unmanaged_windows
 from .launcher import close_context as close_ctx
 from .launcher import launch_context as launch_ctx
 from .launcher import reconnect
@@ -35,6 +37,20 @@ COMMANDS = {
     "settings": lambda app: app.ensure_window().open_settings(),
     "toggle-rail": lambda app: app.ensure_window().toggle_collapsed(),
     "restart": lambda app: app.restart(),
+    # Window management. These act on the focused window, so they are bound to
+    # keys rather than driven from the launcher.
+    "move-window": lambda app: app.move_window_to_context(),
+    "adopt": lambda app: app.adopt_windows(),
+    "capture": lambda app: app.capture_context(),
+    "window-left": lambda app: app.throw_window(-1),
+    "window-right": lambda app: app.throw_window(1),
+    "fullscreen": lambda app: app.window_state("fullscreen"),
+    "maximise": lambda app: app.window_state("maximise"),
+    "float": lambda app: app.window_state("float"),
+    "tile": lambda app: app.window_state("tile"),
+    "center": lambda app: app.window_state("center"),
+    "group": lambda app: app.group_window(),
+    "ungroup": lambda app: app.ungroup_window(),
 }
 
 
@@ -158,6 +174,104 @@ class ContextApplication(Adw.Application):
 
         # After the current dispatch, so the windows are actually gone first.
         GLib.idle_add(replace)
+
+    # -- window management ---------------------------------------------------
+
+    def focused_window(self):
+        """The window a keybind should act on."""
+        found = self.backend.windows()
+        return found[0] if found else None
+
+    def window_state(self, state: str) -> None:
+        window = self.focused_window()
+        if window is None:
+            return
+        if not self.backend.set_window_state(window.id, state):
+            self.log.info("could not %s %s", state, window.title or window.app_id)
+
+    def group_window(self) -> None:
+        window = self.focused_window()
+        if window is not None:
+            self.backend.group_windows(window.id)
+
+    def ungroup_window(self) -> None:
+        window = self.focused_window()
+        if window is not None:
+            self.backend.ungroup_window(window.id)
+
+    def throw_window(self, direction: int) -> None:
+        """Move the focused window to the context's next or previous screen."""
+        window = self.focused_window()
+        current = active_context(self.store.contexts, backend=self.backend)
+        if window is None or current is None:
+            return
+        if not move_window_to_screen(
+            window.id, current, direction, backend=self.backend
+        ):
+            self.log.info("%s has no other screen to move to", current.title)
+
+    def move_window_to_context(self) -> None:
+        """Pick a context and send the focused window into it."""
+        window = self.focused_window()
+        if window is None:
+            return
+        picker = switcher.SwitcherWindow(self, self.store, switcher.CONTEXTS)
+        picker.set_title(f"Move “{window.title or window.app_id}” to")
+        picker.on_context = lambda ctx: self._finish_move(window, ctx)
+        self._show_picker(picker)
+
+    def _finish_move(self, window, ctx: Context) -> None:
+        if move_window_to_context(window.id, ctx, backend=self.backend):
+            self.log.info("moved %s to %s", window.app_id, ctx.title)
+        elif self.window is not None:
+            self.window.toasts.add_toast(
+                Adw.Toast(title=f"Open “{ctx.title}” first", timeout=4)
+            )
+
+    def adopt_windows(self) -> None:
+        """Offer every window that belongs to no context a home."""
+        loose = unmanaged_windows(self.store.contexts, backend=self.backend)
+        if not loose:
+            self.log.info("every window already belongs to a context")
+            if self.window is not None:
+                self.window.toasts.add_toast(
+                    Adw.Toast(title="Every window is in a context", timeout=3)
+                )
+            return
+        from .adopt import AdoptWindow
+
+        picker = AdoptWindow(self, self.store, loose, self.backend)
+        self._show_picker(picker)
+
+    def capture_context(self) -> None:
+        """Save what the current context has become."""
+        current = active_context(self.store.contexts, backend=self.backend)
+        if current is None:
+            self.log.info("not in a context")
+            return
+        windows, screens = capture_arrangement(current, backend=self.backend)
+        self.store.save()
+        self.log.info(
+            "captured %s: %d window(s) across %d screen(s)",
+            current.title, windows, screens,
+        )
+        if self.window is not None:
+            message = (
+                f"Saved {windows} window{'s' if windows != 1 else ''} for "
+                f"“{current.title}”"
+                if windows
+                else f"Nothing open to save for “{current.title}”"
+            )
+            self.window.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+            self.window.refresh()
+
+    def _show_picker(self, picker) -> None:
+        existing = self.switcher
+        if existing is not None:
+            existing.close()
+        picker.connect("close-request", self._on_switcher_closed)
+        self.switcher = picker
+        picker.present()
 
     def previous_context(self) -> None:
         """Alt-tab between the last two contexts."""

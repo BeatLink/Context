@@ -309,83 +309,43 @@ faster to read for windows with distinct titles and costs nothing to render:
 Do it after window identity (item 3), which needs the same protocol-level work
 and matters more.
 
-### 8. Move windows between contexts
+### 8. Window management — *done*
 
-A window opened in the wrong place should be movable rather than closed and
-relaunched. `hyprctl dispatch movetoworkspacesilent <ws>,address:0x…` does the
-work; what is missing is the UI — a menu on the window, or dragging its tile
-between contexts in the sidebar.
+Four things a context could not do, all of which needed the compositor rather
+than the launcher:
 
-This also covers adopting a window that Context never launched, which is the
-other half of tracking windows rather than profiles (item 3).
+**Move a window into another context.** `Super+Shift+M` picks a context and
+sends the focused window there. `movetoworkspacesilent`, so moving a window out
+of what you are working in does not drag you out with it. A context has to be
+open to receive one — a named workspace does not exist until something is on it.
 
-### 8b. Adopt every window into a context — *reconnect done*
+**Throw a window between a context's screens.** `Super+Ctrl+Left/Right`, staying
+inside the context.
 
-The goal is that no window is homeless: everything on screen belongs to some
-context, so there is never a pile of windows the shell knows nothing about.
+**Adopt loose windows.** `Super+Shift+O` lists every window belonging to no
+context and offers each one a home.
 
-**Reconnecting is done.** Context can be restarted — a crash, an update, a
-manual relaunch — while the windows it opened carry on. On startup it re-adopts
-contexts whose workspaces still hold windows, and drops handles for those that
-do not, so a restart neither offers to relaunch what is running nor reuses an
-empty workspace.
+**Capture what a context became.** `Super+Shift+C` reads the live window
+positions back into the arrangement for the current screen count, so a context
+tracks reality rather than staying a snapshot of the day it was written.
+Resources are matched to existing ones by app id, so capturing does not throw
+away the URLs or paths a window was opened with.
 
-Still to do:
+Plus fullscreen, maximise, float, tile, centre, group and ungroup, which are
+Hyprland dispatchers routed through Context so its idea of what a context owns
+stays in step.
 
-- **Adopt unmanaged windows.** Windows on a workspace no context owns —
-  everything opened before Context started, or launched from a keybind — should
-  be offerable to a context, either an existing one or a new one made from them.
-- **Adopt a whole workspace.** "Turn what is on this workspace into a context",
-  which is how an existing session becomes a saved context without recreating it
-  by hand. This is also the natural way to bootstrap: the first context is
-  usually one you are already sitting in.
-- **A home for the rest.** Whatever is not adopted needs somewhere to be, even if
-  that is a plain "Unsorted" context, so the invariant actually holds.
+Two things measured rather than assumed. `moveintogroup` only joins a neighbour
+that is *already* a group and reports success when there is nothing to join, so
+two ordinary windows never grouped — `moveintoorcreategroup` is the one that
+works. And a window reports the monitor it is on by *id*, not name; taking the
+monitor from the screen index instead put every captured slot at x=1.0 whenever
+a context's screen 0 was not monitor 0.
 
-### 8c. Save what a context becomes
-
-A context is a recipe that is instantiated and then diverges: windows get
-resized, a tab is opened, an app is added. None of that is written back, so
-reopening rebuilds the original recipe and the arrangement settled into is lost.
-
-What is worth capturing, roughly in order of value:
-
-- **Layout.** Window sizes are already readable from `hyprctl clients`, and the
-  reverse of `apply_ratios` is measuring the same spans. Dragging a divider
-  should update the context's slots.
-- **Membership.** An app launched into a context by hand should be offerable as
-  part of it, which is the same mechanism as adopting unmanaged windows (8b).
-- **Resources.** Firefox already restores its own tabs from its profile, so
-  nothing is needed there; a VS Code path that the user changed is worth writing
-  back.
-
-Open question: **when**. Saving continuously makes a context drift into whatever
-it was last left as, which is not always wanted — sometimes the recipe is the
-point and today's mess is not. The likely answer is explicit ("Save arrangement")
-with an opt-in per context, rather than always-on, but this needs using before
-deciding.
-
-## Phasing out what Context replaces
-
-The Hyprland config mirrors Cinnamon feature by feature. As Context takes over a
-job, the config-level version should go rather than compete with it — two things
-managing windows is how the minimise black hole happened, where a special
-workspace silently swallowed every newly launched window.
-
-| Hyprland feature | Replaced by | Status |
-| --- | --- | --- |
-| `$mod, M` minimise to a special workspace | contexts hold windows | **removed** |
-| Workspace-wide float toggle | layouts place windows | **removed** |
-| rofi `drun` on `$mod+Space` | launching into a context (item 6) | after item 6 |
-| rofi `window` on `$mod+W` | window switcher (item 7) | after item 7 |
-| `wlr/taskbar` in the bar | context and window switching (item 7) | after item 7 |
-| `hyprland/workspaces` in the bar | the sidebar's context list | after item 5 |
-| `$mod, 1..5` workspace binds | context switching (item 7) | keep as an escape hatch |
-| Overview | contexts are the overview | reconsider after item 7 |
-
-Numbered workspaces are worth keeping even once contexts cover the same ground:
-they are the way back to a plain desktop when Context is not running, which
-matters while it is still the thing under development.
+**Screen assignment is honoured.** Screens are ordered by position, never by
+focus. Sorting by focus meant "screen 2" was a different physical monitor
+depending on where the pointer happened to be, so an app the user pinned to
+their right-hand display opened on the left whenever they launched from there.
 
 ### 9. Settings — *page done, per-context visibility planned*
 

@@ -11,6 +11,7 @@ from . import adapters, backends, isolation
 from .backends import Backend, Workspace
 from .layout import split_directions
 from .logging_setup import get_logger, traced
+from .resources import Resource
 from .store import Context
 
 log = get_logger("launcher")
@@ -250,20 +251,22 @@ def launch_context(
 
 
 def _outputs(wm: Backend):
-    """The screens available, in the compositor's order.
+    """The screens available, in a stable left-to-right order.
 
-    Order matters and is not arbitrary: screen 0 is the context's primary, and
-    an arrangement stored for two screens has to mean the same two next time.
+    Ordered by position, never by focus. "Screen 1" has to mean the same
+    physical monitor every time or the arrangement is not honoured: an app the
+    user put on their right-hand display would open on the left whenever they
+    happened to launch from there.
+
+    Position also survives a replug, which a connector name does not — the same
+    monitor on a different port keeps its place in the row.
     """
     try:
         found = list(wm.monitors())
     except OSError as exc:
         log.warning("could not read monitors: %s", exc)
         found = []
-    if not found:
-        return []
-    # Focused first, so a context's primary screen is the one being used.
-    return sorted(found, key=lambda m: (not m.focused, m.x, m.y))
+    return sorted(found, key=lambda m: (m.x, m.y, m.name))
 
 
 def _isolation_for(ctx: Context, resource) -> str | None:
@@ -347,3 +350,150 @@ def _await_window(wm: Backend, handle: str, expected: int) -> bool:
             return True
         time.sleep(0.2)
     return False
+
+
+# -- window management -------------------------------------------------------
+
+
+@traced(log)
+def move_window_to_context(
+    window_id: str,
+    ctx: Context,
+    screen: int = 0,
+    backend: Backend | None = None,
+) -> bool:
+    """Send a window into a context, on one of its screens.
+
+    The context has to have that screen already — a window cannot be sent to a
+    workspace nothing has opened, since a named workspace does not exist until
+    something is on it. Falls back to the primary, which always exists once the
+    context has been launched.
+    """
+    wm: Backend = backend or backends.detect()
+    handle = ctx.handle_for(wm.name, screen) or ctx.handle_for(wm.name)
+    if handle is None:
+        log.info("%s has no workspace yet; open it first", ctx.title)
+        return False
+    log.info("moving %s into %s", window_id, handle)
+    return wm.move_window(window_id, handle)
+
+
+@traced(log)
+def move_window_to_screen(
+    window_id: str,
+    ctx: Context,
+    direction: int,
+    backend: Backend | None = None,
+) -> bool:
+    """Throw a window to the context's next or previous screen.
+
+    Stays inside the context: this is for rearranging what a context already
+    owns, not for moving between contexts.
+    """
+    wm: Backend = backend or backends.detect()
+    handles = ctx.handles_for(wm.name)
+    if len(handles) < 2:
+        return False
+    current = next(
+        (w.handle for w in wm.windows() if w.id == window_id), None
+    )
+    if current not in handles:
+        return False
+    target = handles.index(current) + direction
+    if not 0 <= target < len(handles):
+        return False
+    return wm.move_window(window_id, handles[target])
+
+
+@traced(log)
+def unmanaged_windows(contexts, backend: Backend | None = None) -> list:
+    """Open windows that belong to no context.
+
+    The goal state is that every window belongs to one; this is what is left
+    over. A window on a workspace no context claims is unmanaged, whoever
+    opened it.
+    """
+    wm: Backend = backend or backends.detect()
+    claimed = {h for ctx in contexts for h in ctx.handles_for(wm.name)}
+    return [w for w in wm.windows() if w.handle not in claimed]
+
+
+@traced(log)
+def capture_arrangement(
+    ctx: Context, backend: Backend | None = None
+) -> tuple[int, int]:
+    """Save what a context has become back into its arrangement.
+
+    A context drifts as it is used — windows are opened, closed and moved. This
+    reads the live positions and makes them the arrangement for the current
+    screen count, so the definition tracks reality rather than staying a
+    snapshot of the day it was written.
+
+    Returns (windows captured, screens captured).
+    """
+    from .arrangement import Arrangement
+    from .layout import Layout, Slot
+
+    wm: Backend = backend or backends.detect()
+    handles = ctx.handles_for(wm.name)
+    if not handles:
+        return 0, 0
+
+    # By id, because that is what a window reports. Taking the monitor from the
+    # screen index instead was wrong whenever a context's screen 0 was not
+    # monitor 0 — every slot came out at x=1.0, off the right-hand edge.
+    by_id = {m.id: m for m in _outputs(wm)}
+    outputs = _outputs(wm)
+    screens: list[Layout] = []
+    assignments: dict[int, int] = {}
+    resources: list = []
+
+    for screen, handle in enumerate(handles):
+        clients = _clients_on(wm, handle)
+        slots = []
+        fallback = outputs[screen] if screen < len(outputs) else None
+        for client in clients:
+            monitor = by_id.get(client.get("monitor_id"), fallback)
+            slots.append(_slot_from(client, monitor))
+            assignments[len(resources)] = screen
+            existing = ctx.resource_for(client.get("app_id", ""))
+            resources.append(
+                existing if existing is not None else Resource(app_id=client["app_id"])
+            )
+        screens.append(Layout(slots=slots))
+
+    if not resources:
+        return 0, 0
+
+    ctx.resources = resources
+    ctx.set_arrangement(
+        len(handles), Arrangement(screens=screens, assignments=assignments)
+    )
+    return len(resources), len(screens)
+
+
+def _clients_on(wm: Backend, handle: str) -> list[dict]:
+    """Live geometry per window, for whatever the backend can report."""
+    reader = getattr(wm, "client_geometry", None)
+    if reader is None:
+        return []
+    return reader(handle)
+
+
+def _slot_from(client: dict, monitor) -> "Slot":
+    """One window's position as fractions of the screen it is on."""
+    from .layout import Slot
+
+    width = getattr(monitor, "width", 0) or 1920
+    height = getattr(monitor, "height", 0) or 1080
+    origin_x = getattr(monitor, "x", 0)
+    origin_y = getattr(monitor, "y", 0)
+
+    x = (client.get("x", 0) - origin_x) / width
+    y = (client.get("y", 0) - origin_y) / height
+    return Slot(
+        x=min(1.0, max(0.0, x)),
+        y=min(1.0, max(0.0, y)),
+        width=min(1.0, max(0.05, client.get("width", width) / width)),
+        height=min(1.0, max(0.05, client.get("height", height) / height)),
+    )

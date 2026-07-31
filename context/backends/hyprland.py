@@ -209,6 +209,7 @@ class HyprlandBackend:
                         y=int(entry.get("y", 0)),
                         scale=float(entry.get("scale", 1.0) or 1.0),
                         focused=bool(entry.get("focused", False)),
+                        id=int(entry.get("id", -1)),
                     )
                 )
             except (TypeError, ValueError):
@@ -228,6 +229,126 @@ class HyprlandBackend:
             if result is not None and result.returncode == 0:
                 closed += 1
         return closed
+
+    def client_geometry(self, handle: str) -> list[dict]:
+        """Where each window on a workspace actually is, in layout order.
+
+        Sorted top-left to bottom-right rather than by focus, so capturing a
+        context twice without moving anything gives the same answer.
+        """
+        found = []
+        for client in self._clients_on(handle):
+            try:
+                x, y = int(client["at"][0]), int(client["at"][1])
+                width, height = int(client["size"][0]), int(client["size"][1])
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            found.append(
+                {
+                    "app_id": self._desktop_id(str(client.get("class") or "")),
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    # `monitor` is an id, not a name — the launcher matches it
+                    # against MonitorInfo by position instead.
+                    "monitor_id": client.get("monitor"),
+                }
+            )
+        return sorted(found, key=lambda c: (c["y"], c["x"]))
+
+    def _desktop_id(self, window_class: str) -> str:
+        """A window's class as a desktop-entry id.
+
+        The class usually *is* the basename, so this is mostly adding the
+        suffix — but the entry is looked up to avoid inventing an id for a
+        window whose class matches nothing installed.
+        """
+        if not window_class:
+            return ""
+        from gi.repository import Gio
+
+        for candidate in (f"{window_class}.desktop", f"{window_class.lower()}.desktop"):
+            try:
+                if Gio.DesktopAppInfo.new(candidate) is not None:
+                    return candidate
+            except TypeError:
+                continue
+        return f"{window_class}.desktop"
+
+    @traced(log)
+    def move_window(self, window_id: str, handle: str) -> bool:
+        """Send one window to another workspace without following it.
+
+        `movetoworkspacesilent` rather than `movetoworkspace`: moving a window
+        out of the context you are working in should not drag you out with it.
+        """
+        result = self._run(
+            "dispatch",
+            "movetoworkspacesilent",
+            f"name:{handle},address:{window_id}",
+        )
+        return result is not None and result.returncode == 0
+
+    @traced(log)
+    def set_window_state(self, window_id: str, state: str) -> bool:
+        """Fullscreen, float, tile or pin one window.
+
+        Hyprland's state dispatchers act on the *active* window, so the window
+        is focused first. That is a visible side effect, and the alternative —
+        `--` address forms — is not offered for these.
+        """
+        dispatchers = {
+            "fullscreen": ("fullscreen", "1"),
+            "maximise": ("fullscreenstate", "0 2"),
+            "restore": ("fullscreenstate", "0 0"),
+            "float": ("setfloating", ""),
+            "tile": ("settiled", ""),
+            "pin": ("pin", ""),
+            "center": ("centerwindow", ""),
+        }
+        if state not in dispatchers:
+            return False
+        if not self.focus_window(window_id):
+            return False
+        name, argument = dispatchers[state]
+        result = self._run("dispatch", name, argument) if argument else self._run(
+            "dispatch", name
+        )
+        return result is not None and result.returncode == 0
+
+    @traced(log)
+    def swap_windows(self, window_id: str, direction: str) -> bool:
+        """Swap a tiled window with its neighbour, keeping both tiled."""
+        if direction not in ("l", "r", "u", "d"):
+            return False
+        if not self.focus_window(window_id):
+            return False
+        result = self._run("dispatch", "swapwindow", direction)
+        return result is not None and result.returncode == 0
+
+    @traced(log)
+    def group_windows(self, window_id: str, direction: str = "r") -> bool:
+        """Fold a window into a tabbed group with the one beside it.
+
+        `moveintoorcreategroup`, not `moveintogroup`: the latter only joins a
+        neighbour that is *already* a group, and reports success when there is
+        nothing to join, so two ordinary windows never grouped. Confirmed in
+        the source and then measured.
+        """
+        if direction not in ("l", "r", "u", "d"):
+            return False
+        if not self.focus_window(window_id):
+            return False
+        result = self._run("dispatch", "moveintoorcreategroup", direction)
+        return result is not None and result.returncode == 0
+
+    @traced(log)
+    def ungroup_window(self, window_id: str) -> bool:
+        if not self.focus_window(window_id):
+            return False
+        result = self._run("dispatch", "moveoutofgroup")
+        return result is not None and result.returncode == 0
 
     @traced(log)
     def float_window(self, address: str) -> bool:

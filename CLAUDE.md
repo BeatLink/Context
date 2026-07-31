@@ -75,6 +75,22 @@ reason stronger than "it would also work".
 
 ## Working rules
 
+**Docs, then source, then experiment — in that order. Never assume.**
+
+1. **The documentation**, for what is meant to exist. `wiki.hypr.land` is
+   JS-rendered, so `WebFetch` returns navigation rather than content; search it
+   or read the underlying markdown instead of concluding it says nothing.
+2. **The source**, for what actually exists. `nix eval --raw nixpkgs#<pkg>.src`
+   puts it on disk. This is the definitive answer and is usually faster than
+   arguing with a wiki: `CWorkspace` holding one `PHLMONITORREF` settles
+   "can a workspace span monitors" in one grep.
+3. **A live experiment**, for what actually happens. Documented behaviour is
+   sometimes not the behaviour — a `match:workspace` window rule was accepted
+   without error and never applied.
+
+Skipping to step 3 makes a guess look like a finding. Skipping step 3 makes a
+finding look like a guess. Both have cost real time here.
+
 **Track the work in a todo list.** Requests arrive faster than they are finished
 and it is easy to lose one silently. Put every request on the list as it comes
 in, keep one item in progress, and mark items done as they land.

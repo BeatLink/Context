@@ -26,14 +26,22 @@ FALLBACK_ASPECT = 16 / 9
 
 
 def all_monitors(backend=None) -> list[MonitorInfo]:
+    """Connected outputs, left to right.
+
+    The order is the screen numbering everything else uses, so it has to be
+    stable and it has to be positional. Sorting by focus would make "screen 1"
+    mean a different monitor depending on where the pointer was, and an app the
+    user placed on their right-hand display would open on the left.
+    """
     from . import backends
 
     wm = backend or backends.detect()
     try:
-        return list(wm.monitors())
+        found = list(wm.monitors())
     except OSError as exc:
         log.warning("could not read monitors: %s", exc)
         return []
+    return sorted(found, key=lambda m: (m.x, m.y, m.name))
 
 
 def focused(backend=None) -> MonitorInfo | None:
