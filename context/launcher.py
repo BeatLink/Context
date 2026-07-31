@@ -55,6 +55,36 @@ def active_context(contexts, backend: Backend | None = None):
 
 
 @traced(log)
+def reconnect(contexts, backend: Backend | None = None) -> list:
+    """Re-adopt contexts whose workspaces are still running.
+
+    Context can be restarted — a crash, an update, a manual relaunch — while the
+    windows it opened carry on. Without this the launcher comes back believing
+    nothing is open, offers to launch contexts that are already there, and
+    duplicates them.
+
+    A context is reconnected when its stored handle still names a workspace with
+    windows in it; one whose windows have since been closed has its handle
+    dropped, so the next launch rebuilds it rather than reusing an empty
+    workspace.
+    """
+    wm: Backend = backend or backends.detect()
+    live = []
+    for ctx in contexts:
+        handle = ctx.handle_for(wm.name)
+        if handle is None:
+            continue
+        if wm.workspace_exists(handle) and wm.window_count(handle) > 0:
+            live.append(ctx)
+            log.info("reconnected to %s on %s", ctx.title, handle)
+        else:
+            # The workspace is gone or empty: the handle is stale.
+            ctx.workspaces.pop(wm.name, None)
+            log.debug("dropped stale handle for %s", ctx.title)
+    return live
+
+
+@traced(log)
 def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     wm: Backend = backend or backends.detect()
     handle = ctx.handle_for(wm.name)

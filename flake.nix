@@ -19,6 +19,7 @@
                     (python.withPackages (ps: [
                         ps.pygobject3
                         ps.pycairo
+                        ps.pytest
                     ]))
                     pkgs.gtk4
                     pkgs.libadwaita
@@ -29,6 +30,8 @@
                     # out to these, so they must be present to be detected.
                     pkgs.hyprland
                     pkgs.wmctrl
+                    # GUI tests need a display; xvfb-run supplies a headless one.
+                    pkgs.xvfb-run
                 ];
 
                 shellHook = ''

@@ -15,6 +15,7 @@ from . import backends
 from .backends import Workspace
 from .launcher import close_context as close_ctx
 from .launcher import launch_context as launch_ctx
+from .launcher import reconnect
 from .store import Context, ContextStore
 from .logging_setup import configure, get_logger
 from .window import LauncherWindow
@@ -62,6 +63,13 @@ class ContextApplication(Adw.Application):
 
     def do_activate(self) -> None:
         if self.window is None:
+            # Adopt anything still running from a previous run before the list
+            # is built, so a restart does not offer to relaunch what is open.
+            live = reconnect(self.store.contexts, backend=self.backend)
+            if live:
+                self.log.info("reconnected to %d running context(s)", len(live))
+            self.store.save()
+
             self.window = LauncherWindow(
                 self, self.store, self.launch_context, self.close_context
             )

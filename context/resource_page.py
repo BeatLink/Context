@@ -7,9 +7,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
-from .adapters import supports_profiles
+from .adapters import supports_paths, supports_profiles
 from .apps import App
 from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, split_urls
 
@@ -53,6 +53,32 @@ class ResourcePage(Adw.NavigationPage):
         )
         hint.add_css_class("dim-label")
         content.append(hint)
+
+        # Path pickers, for apps that open a folder, file or workspace.
+        self.path_row: Adw.ActionRow | None = None
+        if supports_paths(resource):
+            hint.set_label(
+                "Open a folder, a file, or a .code-workspace. "
+                "The window opens on whatever is chosen."
+            )
+            targets = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+            targets.add_css_class("boxed-list")
+
+            self.path_row = Adw.ActionRow(title="Opens")
+            self.path_row.set_subtitle(resource.path or "nothing yet")
+            buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            for label, mode in (
+                ("Folder…", "folder"),
+                ("File…", "file"),
+                ("Workspace…", "workspace"),
+            ):
+                button = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+                button.add_css_class("flat")
+                button.connect("clicked", lambda _b, m=mode: self._choose_path(m))
+                buttons.append(button)
+            self.path_row.add_suffix(buttons)
+            targets.append(self.path_row)
+            content.append(targets)
 
         self.main_profile_switch: Gtk.Switch | None = None
         if supports_profiles(resource):
@@ -110,6 +136,39 @@ class ResourcePage(Adw.NavigationPage):
         self.count_label.set_label(
             f"{count} URL{'s' if count != 1 else ''}" if count else "No URLs yet"
         )
+
+    def _choose_path(self, mode: str) -> None:
+        """Pick a folder, a file, or a .code-workspace."""
+        dialog = Gtk.FileDialog(title=f"Choose a {mode}")
+
+        if mode == "workspace":
+            workspace_filter = Gtk.FileFilter()
+            workspace_filter.set_name("VS Code workspaces")
+            workspace_filter.add_pattern("*.code-workspace")
+            filters = Gio.ListStore.new(Gtk.FileFilter)
+            filters.append(workspace_filter)
+            dialog.set_filters(filters)
+            dialog.set_default_filter(workspace_filter)
+
+        def done(source, result):
+            try:
+                chosen = (
+                    source.select_folder_finish(result)
+                    if mode == "folder"
+                    else source.open_finish(result)
+                )
+            except GLib.Error:
+                return  # Cancelled.
+            if chosen is not None:
+                self.resource.path = chosen.get_path()
+                if self.path_row is not None:
+                    self.path_row.set_subtitle(self.resource.path or "nothing yet")
+
+        root = self.get_root()
+        if mode == "folder":
+            dialog.select_folder(root, None, done)
+        else:
+            dialog.open(root, None, done)
 
     def _commit(self) -> None:
         self.resource.urls = self.current_urls()

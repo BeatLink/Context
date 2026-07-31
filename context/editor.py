@@ -37,17 +37,6 @@ GRID_CSS = b"""
     background-color: alpha(@accent_bg_color, 0.22);
     border-color: @accent_bg_color;
 }
-.ctx-tile button {
-    min-width: 28px;
-    min-height: 28px;
-    padding: 2px;
-    background-color: alpha(currentColor, 0.14);
-    border-radius: 999px;
-}
-.ctx-tile button:hover {
-    background-color: @accent_bg_color;
-    color: @accent_fg_color;
-}
 """
 
 
@@ -348,7 +337,7 @@ class AppTile(Gtk.FlowBoxChild):
     badge shows how many copies of the app the context holds.
     """
 
-    def __init__(self, app: App, count: int, on_add, on_configure) -> None:
+    def __init__(self, app: App, count: int, on_add) -> None:
         super().__init__()
         self.app = app
 
@@ -375,22 +364,13 @@ class AppTile(Gtk.FlowBoxChild):
         name.add_css_class("caption")
         box.append(name)
 
-        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, halign=Gtk.Align.CENTER)
-        buttons.set_margin_bottom(6)
-
-        self.add_button = Gtk.Button(icon_name="list-add-symbolic")
-        self.add_button.add_css_class("flat")
-        self.add_button.set_tooltip_text(f"Add {app.name} to the layout")
-        self.add_button.connect("clicked", lambda _b: on_add(app))
-        buttons.append(self.add_button)
-
-        self.configure_button = Gtk.Button(icon_name="document-edit-symbolic")
-        self.configure_button.add_css_class("flat")
-        self.configure_button.set_tooltip_text(f"Choose what {app.name} opens")
-        self.configure_button.connect("clicked", lambda _b: on_configure(app))
-        buttons.append(self.configure_button)
-
-        box.append(buttons)
+        # No add button: the whole card is the target. Windows are configured
+        # from the layout above, where the edit control sits on the window it
+        # applies to, so the card only has one job.
+        self.set_tooltip_text(f"Add {app.name} to the layout")
+        click = Gtk.GestureClick()
+        click.connect("released", lambda *_a: on_add(app))
+        box.add_controller(click)
 
         self.badge = Gtk.Label()
         self.badge.add_css_class("caption")
@@ -402,9 +382,6 @@ class AppTile(Gtk.FlowBoxChild):
 
     def refresh(self, count: int, resource: Resource | None) -> None:
         self.badge.set_label(f"{count} in layout" if count else "")
-        self.configure_button.set_visible(
-            resource is not None and configurable(resource)
-        )
         if count:
             self.box.add_css_class("ctx-chosen")
         else:
@@ -614,7 +591,7 @@ class EditorPage(Adw.NavigationPage):
         self.flow.remove_all()
         for app in matches[:200]:
             self.flow.append(
-                AppTile(app, self._count_of(app.id), self._on_add, self._on_configure)
+                AppTile(app, self._count_of(app.id), self._on_add)
             )
 
     def _refresh_tile(self, app_id: str) -> None:

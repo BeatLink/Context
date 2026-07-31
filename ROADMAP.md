@@ -185,6 +185,52 @@ between contexts in the sidebar.
 This also covers adopting a window that Context never launched, which is the
 other half of tracking windows rather than profiles (item 3).
 
+### 8b. Adopt every window into a context — *reconnect done*
+
+The goal is that no window is homeless: everything on screen belongs to some
+context, so there is never a pile of windows the shell knows nothing about.
+
+**Reconnecting is done.** Context can be restarted — a crash, an update, a
+manual relaunch — while the windows it opened carry on. On startup it re-adopts
+contexts whose workspaces still hold windows, and drops handles for those that
+do not, so a restart neither offers to relaunch what is running nor reuses an
+empty workspace.
+
+Still to do:
+
+- **Adopt unmanaged windows.** Windows on a workspace no context owns —
+  everything opened before Context started, or launched from a keybind — should
+  be offerable to a context, either an existing one or a new one made from them.
+- **Adopt a whole workspace.** "Turn what is on this workspace into a context",
+  which is how an existing session becomes a saved context without recreating it
+  by hand. This is also the natural way to bootstrap: the first context is
+  usually one you are already sitting in.
+- **A home for the rest.** Whatever is not adopted needs somewhere to be, even if
+  that is a plain "Unsorted" context, so the invariant actually holds.
+
+### 8c. Save what a context becomes
+
+A context is a recipe that is instantiated and then diverges: windows get
+resized, a tab is opened, an app is added. None of that is written back, so
+reopening rebuilds the original recipe and the arrangement settled into is lost.
+
+What is worth capturing, roughly in order of value:
+
+- **Layout.** Window sizes are already readable from `hyprctl clients`, and the
+  reverse of `apply_ratios` is measuring the same spans. Dragging a divider
+  should update the context's slots.
+- **Membership.** An app launched into a context by hand should be offerable as
+  part of it, which is the same mechanism as adopting unmanaged windows (8b).
+- **Resources.** Firefox already restores its own tabs from its profile, so
+  nothing is needed there; a VS Code path that the user changed is worth writing
+  back.
+
+Open question: **when**. Saving continuously makes a context drift into whatever
+it was last left as, which is not always wanted — sometimes the recipe is the
+point and today's mess is not. The likely answer is explicit ("Save arrangement")
+with an opt-in per context, rather than always-on, but this needs using before
+deciding.
+
 ## Phasing out what Context replaces
 
 The Hyprland config mirrors Cinnamon feature by feature. As Context takes over a

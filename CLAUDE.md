@@ -52,17 +52,32 @@ and registration in `__init__.py`.
 - **A failing app must not break the launch.** Collect failures into
   `LaunchResult.failed` and report; never raise out of `launch_context`.
 
+## Working rules
+
+Every change should land as a complete unit:
+
+1. **Add or update tests.** A fix without a test comes back. Bugs that reached
+   the running desktop especially — several tests exist only to pin those down.
+2. **Update the roadmap.** Mark what is done, add what the change revealed.
+3. **Commit with a message that explains the why**, not just the what. The
+   interesting part is usually the constraint discovered, not the diff.
+
 ## Testing
 
-There is no test suite yet. Verification so far has been ad-hoc scripts in the
-scratchpad run against a real GTK render — worth turning into real tests.
-
-GUI code must be exercised, not just imported. Under this X11 session:
-
 ```sh
-Xvfb :99 -screen 0 1280x1024x24 &
-DISPLAY=:99 GDK_BACKEND=x11 python3 <script>
+nix develop
+python3 -m pytest tests/ -q          # logic only
+xvfb-run -a python3 -m pytest tests/ # including the GUI tests
 ```
+
+`tests/conftest.py` provides `FakeBackend`, an in-memory window manager that
+records the calls made to it — the launch tests assert on the *sequence*
+(switch, preselect, launch, preselect, launch), which is what tiling depends on.
+`isolated_store` is autouse and redirects `XDG_DATA_HOME`, so no test can touch
+real contexts.
+
+GUI tests are skipped without a display rather than failing. They must be
+exercised, not just imported.
 
 Traps found the hard way:
 
