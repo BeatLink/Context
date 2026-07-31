@@ -85,8 +85,11 @@ are all honoured for free. Floating needed each of those computed by hand, and
 needed every later window caught and floated too, since anything opening on the
 workspace would otherwise tile into a layout it was never part of.
 
-The tradeoff: a tiling layout expresses direction, not exact fractions, so a 65/35
-preset currently lands as an even split.
+`preselect` only chooses a side, so every split starts even. The proportions are
+then corrected with `resizewindowpixel`, which drives a tiled split the way
+dragging the divider does — the neighbour reflows to match, and nothing floats.
+Sizes are a fraction of the area the windows actually occupy, measured from the
+windows themselves, so gaps and reserved space are accounted for.
 
 ### As a sidebar
 

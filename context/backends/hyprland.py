@@ -131,6 +131,69 @@ class HyprlandBackend:
         result = self._run("dispatch", "layoutmsg", "preselect", direction)
         return result is not None and result.returncode == 0
 
+    def apply_ratios(self, handle: str, slots) -> int:
+        """Resize tiled windows so they match the layout's proportions.
+
+        `preselect` only decides which side a window opens on, so every split
+        starts even. `resizewindowpixel` works on tiled windows too — it drives
+        the split the way dragging the divider does, and the neighbour reflows to
+        match — so the sizes can be corrected afterwards without floating
+        anything.
+
+        Sizes are a fraction of the area the windows actually occupy, measured
+        from the windows themselves rather than the monitor, so gaps, borders and
+        the space reserved by bars are all accounted for.
+        """
+        if len(slots) < 2:
+            return 0
+
+        clients = self._clients_on(handle)
+        if len(clients) < 2:
+            return 0
+
+        area = self._tiled_area(clients)
+        if area is None:
+            return 0
+        span_x, span_y = area
+
+        resized = 0
+        # The last window is left alone: it takes whatever its neighbours leave,
+        # and resizing it would undo the split just set.
+        for client, slot in list(zip(clients, slots))[:-1]:
+            width = max(80, int(round(slot.width * span_x)))
+            height = max(60, int(round(slot.height * span_y)))
+            result = self._run(
+                "dispatch",
+                "resizewindowpixel",
+                f"exact {width} {height},address:{client['address']}",
+            )
+            if result is not None and result.returncode == 0:
+                resized += 1
+        return resized
+
+    def _clients_on(self, handle: str) -> list[dict]:
+        data = self._query("clients")
+        if not isinstance(data, list):
+            return []
+        return [
+            c
+            for c in data
+            if isinstance(c, dict)
+            and str((c.get("workspace") or {}).get("name", "")) == handle
+            and c.get("address")
+        ]
+
+    def _tiled_area(self, clients: list[dict]) -> tuple[int, int] | None:
+        """The rectangle the tiled windows span, as (width, height)."""
+        try:
+            lefts = [int(c["at"][0]) for c in clients]
+            tops = [int(c["at"][1]) for c in clients]
+            rights = [int(c["at"][0]) + int(c["size"][0]) for c in clients]
+            bottoms = [int(c["at"][1]) + int(c["size"][1]) for c in clients]
+        except (KeyError, IndexError, TypeError, ValueError):
+            return None
+        return max(rights) - min(lefts), max(bottoms) - min(tops)
+
     def remove_workspace(self, handle: str) -> bool:
         # Named workspaces disappear on their own once the last window closes,
         # and the handle stays valid because it is a name, not a position.

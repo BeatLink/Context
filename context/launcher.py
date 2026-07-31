@@ -12,8 +12,6 @@ from .backends import Backend, Workspace
 from .layout import split_directions
 from .store import Context
 
-# How long to wait for launched windows to map before placing them.
-LAYOUT_TIMEOUT = 8.0
 # How long to wait for one launched window to map before launching the next.
 WINDOW_TIMEOUT = 10.0
 
@@ -25,6 +23,7 @@ class LaunchResult:
     backend: str = "none"
     workspace: str | None = None
     reused_workspace: bool = False
+    resized: int = 0
 
     @property
     def ok(self) -> bool:
@@ -88,58 +87,14 @@ def launch_app(app_id: str) -> None:
     adapters.launch_desktop_entry(app_id)
 
 
-def _launch_resources(
-    ctx: Context, wm: Backend | None = None, handle: str | None = None
-) -> tuple[list[str], list[tuple[str, str]]]:
-    """Launch the context's apps, tiling each one as it opens.
-
-    A tiling compositor decides placement when a window maps, not afterwards, so
-    the split direction is set before each launch and the window is waited for
-    before moving on. Getting this wrong just means the compositor's default
-    placement, never a broken layout.
-    """
-    launched: list[str] = []
-    failed: list[tuple[str, str]] = []
-
-    directions = split_directions(ctx.layout.slots) if ctx.layout.slots else []
-    preselect = getattr(wm, "preselect", None) if wm is not None else None
-
-    for index, resource in enumerate(ctx.resources):
-        # The first window has nothing to split; every later one opens beside
-        # the previous, in the direction the layout implies.
-        if preselect is not None and 0 < index <= len(directions):
-            preselect(directions[index - 1])
-
-        before = wm.window_count(handle) if (wm and handle) else 0
-        try:
-            adapters.adapter_for(resource).launch(resource, ctx.id)
-            launched.append(resource.app_id)
-        except (GLib.Error, LookupError, OSError) as exc:
-            failed.append((resource.app_id, str(exc)))
-            continue
-
-        if wm is not None and handle is not None:
-            _await_window(wm, handle, before + 1)
-
-    return launched, failed
-
-
-def _await_window(wm: Backend, handle: str, expected: int) -> bool:
-    """Wait for a launched window to map, so the next preselect applies to it."""
-    deadline = time.monotonic() + WINDOW_TIMEOUT
-    while time.monotonic() < deadline:
-        if wm.window_count(handle) >= expected:
-            return True
-        time.sleep(0.2)
-    return False
-
-
 def launch_context(
     ctx: Context,
     backend: Backend | None = None,
     use_workspaces: bool = True,
 ) -> LaunchResult:
-    wm: Backend = backend or (backends.detect() if use_workspaces else backends.NullBackend())
+    wm: Backend = backend or (
+        backends.detect() if use_workspaces else backends.NullBackend()
+    )
     result = LaunchResult(backend=wm.name)
 
     workspace: Workspace | None = None
@@ -159,9 +114,15 @@ def launch_context(
             result.reused_workspace = True
             return result
 
-    result.launched, result.failed = _launch_resources(
-        ctx, wm, workspace.handle if workspace is not None else None
-    )
+    handle = workspace.handle if workspace is not None else None
+    result.launched, result.failed = _launch_resources(ctx, wm, handle)
+
+    # preselect only chooses a side, so every split starts even. Correct the
+    # proportions once all the windows are up.
+    if handle is not None and ctx.layout.slots:
+        ratios = getattr(wm, "apply_ratios", None)
+        if ratios is not None:
+            result.resized = ratios(handle, ctx.layout.slots)
 
     return result
 
@@ -210,180 +171,3 @@ def _await_window(wm: Backend, handle: str, expected: int) -> bool:
             return True
         time.sleep(0.2)
     return False
-
-
-def launch_context(
-    ctx: Context,
-    backend: Backend | None = None,
-    use_workspaces: bool = True,
-) -> LaunchResult:
-    wm: Backend = backend or (backends.detect() if use_workspaces else backends.NullBackend())
-    result = LaunchResult(backend=wm.name)
-
-    workspace: Workspace | None = None
-    if use_workspaces:
-        workspace = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
-
-    if workspace is not None:
-        ctx.set_handle(wm.name, workspace.handle)
-        result.workspace = workspace.handle
-        wm.switch_to(workspace)
-        wm.prepare_launch(workspace)
-
-        # An existing workspace may still be empty — a closed context keeps its
-        # handle, and Cinnamon workspaces outlive their windows. Only skip
-        # launching when something is actually there.
-        if not workspace.created and wm.window_count(workspace.handle) != 0:
-            result.reused_workspace = True
-            return result
-
-    result.launched, result.failed = _launch_resources(
-        ctx, wm, workspace.handle if workspace is not None else None
-    )
-
-    if workspace is not None and ctx.layout.slots:
-        # Windows map asynchronously, so give them a moment to appear before
-        # placing them. Anything still missing keeps the layout's default.
-        result.placed = _apply_layout(wm, workspace.handle, ctx)
-
-    return result
-
-
-def _await_window(wm: Backend, handle: str, expected: int) -> bool:
-    """Wait for a launched window to map, so the next preselect applies to it."""
-    deadline = time.monotonic() + WINDOW_TIMEOUT
-    while time.monotonic() < deadline:
-        if wm.window_count(handle) >= expected:
-            return True
-        time.sleep(0.2)
-    return False
-
-
-def launch_context(
-    ctx: Context,
-    backend: Backend | None = None,
-    use_workspaces: bool = True,
-) -> LaunchResult:
-    wm: Backend = backend or (backends.detect() if use_workspaces else backends.NullBackend())
-    result = LaunchResult(backend=wm.name)
-
-    workspace: Workspace | None = None
-    if use_workspaces:
-        workspace = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
-
-    if workspace is not None:
-        ctx.set_handle(wm.name, workspace.handle)
-        result.workspace = workspace.handle
-        wm.switch_to(workspace)
-        wm.prepare_launch(workspace)
-
-        # An existing workspace may still be empty — a closed context keeps its
-        # handle, and Cinnamon workspaces outlive their windows. Only skip
-        # launching when something is actually there.
-        if not workspace.created and wm.window_count(workspace.handle) != 0:
-            result.reused_workspace = True
-            return result
-
-    result.launched, result.failed = _launch_resources(
-        ctx, wm, workspace.handle if workspace is not None else None
-    )
-
-    return result
-
-
-def _launch_resources(
-    ctx: Context, wm: Backend | None = None, handle: str | None = None
-) -> tuple[list[str], list[tuple[str, str]]]:
-    """Launch the context's apps, tiling each one as it opens.
-
-    A tiling compositor decides placement when a window maps, not afterwards, so
-    the split direction is set before each launch and the window is waited for
-    before moving on. Getting this wrong just means the compositor's default
-    placement, never a broken layout.
-    """
-    launched: list[str] = []
-    failed: list[tuple[str, str]] = []
-
-    directions = split_directions(ctx.layout.slots) if ctx.layout.slots else []
-    preselect = getattr(wm, "preselect", None) if wm is not None else None
-
-    for index, resource in enumerate(ctx.resources):
-        # The first window has nothing to split; every later one opens beside
-        # the previous, in the direction the layout implies.
-        if preselect is not None and 0 < index <= len(directions):
-            preselect(directions[index - 1])
-
-        before = wm.window_count(handle) if (wm and handle) else 0
-        try:
-            adapters.adapter_for(resource).launch(resource, ctx.id)
-            launched.append(resource.app_id)
-        except (GLib.Error, LookupError, OSError) as exc:
-            failed.append((resource.app_id, str(exc)))
-            continue
-
-        if wm is not None and handle is not None:
-            _await_window(wm, handle, before + 1)
-
-    return launched, failed
-
-
-def _await_window(wm: Backend, handle: str, expected: int) -> bool:
-    """Wait for a launched window to map, so the next preselect applies to it."""
-    deadline = time.monotonic() + WINDOW_TIMEOUT
-    while time.monotonic() < deadline:
-        if wm.window_count(handle) >= expected:
-            return True
-        time.sleep(0.2)
-    return False
-
-
-def launch_context(
-    ctx: Context,
-    backend: Backend | None = None,
-    use_workspaces: bool = True,
-) -> LaunchResult:
-    wm: Backend = backend or (backends.detect() if use_workspaces else backends.NullBackend())
-    result = LaunchResult(backend=wm.name)
-
-    workspace: Workspace | None = None
-    if use_workspaces:
-        workspace = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
-
-    if workspace is not None:
-        ctx.set_handle(wm.name, workspace.handle)
-        result.workspace = workspace.handle
-        wm.switch_to(workspace)
-        wm.prepare_launch(workspace)
-
-        # An existing workspace may still be empty — a closed context keeps its
-        # handle, and Cinnamon workspaces outlive their windows. Only skip
-        # launching when something is actually there.
-        if not workspace.created and wm.window_count(workspace.handle) != 0:
-            result.reused_workspace = True
-            return result
-
-    result.launched, result.failed = _launch_resources(
-        ctx, wm, workspace.handle if workspace is not None else None
-    )
-
-    if workspace is not None and ctx.layout.slots:
-        # Windows map asynchronously, so give them a moment to appear before
-        # placing them. Anything still missing keeps the layout's default.
-        result.placed = _apply_layout(wm, workspace.handle, ctx)
-
-    return result
-
-
-def _apply_layout(wm: Backend, handle: str, ctx: Context) -> int:
-    apply = getattr(wm, "apply_layout", None)
-    if apply is None:
-        return 0
-
-    expected = len(ctx.resources)
-    deadline = time.monotonic() + LAYOUT_TIMEOUT
-    while time.monotonic() < deadline:
-        if wm.window_count(handle) >= expected:
-            break
-        time.sleep(0.25)
-
-    return apply(handle, ctx.layout.slots)
