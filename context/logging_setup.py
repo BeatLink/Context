@@ -79,6 +79,6 @@ def configure() -> logging.Logger:
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
-    """A child logger, e.g. get_logger("watcher") -> context.watcher."""
+    """A child logger, e.g. get_logger("app") -> context.app."""
     configure()
     return logging.getLogger(f"{LOGGER_NAME}.{name}" if name else LOGGER_NAME)

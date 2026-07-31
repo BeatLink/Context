@@ -73,7 +73,20 @@ below.
   layout; adding an app twice gives it two windows. The pencil sets what it opens.
 
 Layouts are stored as fractions of the monitor rather than pixels, so they carry
-between displays. On launch the windows are floated and placed into their slots.
+between displays.
+
+On launch the windows **tile**. A tiling compositor decides placement when a window
+maps rather than accepting coordinates afterwards, so the slots are read as split
+directions — further right means a vertical split, further down a horizontal one —
+and each app is launched after preselecting its direction.
+
+Tiling rather than floating means gaps, borders and the space reserved by the bars
+are all honoured for free. Floating needed each of those computed by hand, and
+needed every later window caught and floated too, since anything opening on the
+workspace would otherwise tile into a layout it was never part of.
+
+The tradeoff: a tiling layout expresses direction, not exact fractions, so a 65/35
+preset currently lands as an even split.
 
 ### As a sidebar
 

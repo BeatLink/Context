@@ -79,9 +79,9 @@ class HyprlandBackend:
         return result is not None and result.returncode == 0
 
     def prepare_launch(self, workspace: Workspace) -> None:
-        # Float whatever is already here. Windows that open later are floated by
-        # WorkspaceWatcher, since Hyprland has no per-workspace float rule.
-        self.claim_workspace(workspace.handle)
+        # Nothing to do: contexts tile, so the compositor places windows itself
+        # and each launch only needs its split direction set beforehand.
+        return None
 
     def workspace_exists(self, handle: str) -> bool:
         return handle in self.workspace_names()
@@ -118,80 +118,18 @@ class HyprlandBackend:
         result = self._run("dispatch", "setfloating", f"address:{address}")
         return result is not None and result.returncode == 0
 
-    def claim_workspace(self, handle: str) -> int:
-        """Float everything currently on a context's workspace.
+    def preselect(self, direction: str) -> bool:
+        """Open the next window to one side of the current one.
 
-        Hyprland cannot express "this workspace does not tile": workspace rules
-        have no float field, and a `match:workspace` window rule is accepted but
-        never applied. Windows opened later are handled by WorkspaceWatcher; this
-        covers the ones already there.
+        This is how a tiling compositor is told where a window goes: placement is
+        decided when the window maps, not adjusted afterwards. Tiling also means
+        gaps, borders and the space reserved by the bars are honoured for free —
+        all of which had to be computed by hand when windows were floated.
         """
-        return sum(1 for a in self._windows_on(handle) if self.float_window(a))
-
-    def apply_layout(self, handle: str, slots) -> int:
-        """Place the workspace's windows into `slots`, in the order they appear.
-
-        Windows are floated and positioned explicitly rather than tiled: the
-        layout describes exact rectangles, which the dwindle layout cannot honour.
-        Returns how many windows were placed.
-        """
-        if not slots:
-            return 0
-
-        monitor = self._focused_monitor()
-        if monitor is None:
-            return 0
-        origin_x, origin_y, mon_w, mon_h = monitor
-
-        # Re-assert ownership over anything that arrived since the launch.
-        self.claim_workspace(handle)
-
-        placed = 0
-        for address, slot in zip(self._windows_on(handle), slots):
-            target = f"address:{address}"
-            x = origin_x + int(round(slot.x * mon_w))
-            y = origin_y + int(round(slot.y * mon_h))
-            w = max(80, int(round(slot.width * mon_w)))
-            h = max(60, int(round(slot.height * mon_h)))
-            result = self._run(
-                "--batch",
-                f"dispatch setfloating {target} ; "
-                f"dispatch resizewindowpixel exact {w} {h},{target} ; "
-                f"dispatch movewindowpixel exact {x} {y},{target}",
-            )
-            if result is not None and result.returncode == 0:
-                placed += 1
-        return placed
-
-    def _focused_monitor(self) -> tuple[int, int, int, int] | None:
-        """The usable area of the focused monitor as (x, y, width, height).
-
-        `reserved` is the space claimed by layer-shell surfaces — the bars, and
-        Context's own sidebar. Laying windows out over the full monitor would put
-        them underneath those, so slots are mapped into what is left.
-        """
-        data = self._query("monitors")
-        if not isinstance(data, list):
-            return None
-        for monitor in data:
-            if not (isinstance(monitor, dict) and monitor.get("focused")):
-                continue
-            try:
-                width = int(monitor["width"])
-                height = int(monitor["height"])
-            except (KeyError, TypeError, ValueError):
-                return None
-
-            reserved = monitor.get("reserved") or [0, 0, 0, 0]
-            try:
-                left, top, right, bottom = (int(v) for v in reserved[:4])
-            except (TypeError, ValueError):
-                left = top = right = bottom = 0
-
-            usable_w = max(1, width - left - right)
-            usable_h = max(1, height - top - bottom)
-            return left, top, usable_w, usable_h
-        return None
+        if direction not in ("l", "r", "u", "d"):
+            return False
+        result = self._run("dispatch", "layoutmsg", "preselect", direction)
+        return result is not None and result.returncode == 0
 
     def remove_workspace(self, handle: str) -> bool:
         # Named workspaces disappear on their own once the last window closes,

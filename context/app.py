@@ -17,7 +17,6 @@ from .launcher import close_context as close_ctx
 from .launcher import launch_context as launch_ctx
 from .store import Context, ContextStore
 from .logging_setup import configure, get_logger
-from .watcher import WorkspaceWatcher
 from .window import LauncherWindow
 
 
@@ -31,15 +30,8 @@ class ContextApplication(Adw.Application):
         self.log = get_logger("app")
         self.store = ContextStore()
         self.backend = backends.detect()
-        # Context owns its workspaces: anything opening on one must float, since
-        # Context places windows itself rather than letting the compositor tile.
-        self.watcher = WorkspaceWatcher(self.backend)
         self.log.info("backend: %s", self.backend.name)
         self.window: LauncherWindow | None = None
-
-    def do_shutdown(self) -> None:
-        self.watcher.stop()
-        Adw.Application.do_shutdown(self)
 
     def do_command_line(self, command_line) -> int:
         """Entry point for every launch, first or subsequent.
@@ -69,12 +61,6 @@ class ContextApplication(Adw.Application):
                 return
 
     def do_activate(self) -> None:
-        # Started here rather than in do_startup: the watcher only matters once
-        # there is a session to manage, and starting it early raced the socket.
-        if not self.watcher.running and hasattr(self.backend, "float_window"):
-            if not self.watcher.start():
-                self.log.warning("watcher unavailable; windows opened later will tile")
-
         if self.window is None:
             self.window = LauncherWindow(
                 self, self.store, self.launch_context, self.close_context
@@ -86,9 +72,8 @@ class ContextApplication(Adw.Application):
         # launch_context records the workspace handle on the context.
         self.store.save()
         self.log.info(
-            "launched %s: workspace=%s launched=%d failed=%d placed=%d",
+            "launched %s: workspace=%s launched=%d failed=%d",
             ctx.title, result.workspace, len(result.launched), len(result.failed),
-            result.placed,
         )
         for app_id, error in result.failed:
             self.log.error("could not launch %s: %s", app_id, error)
