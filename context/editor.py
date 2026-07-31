@@ -44,6 +44,12 @@ class LayoutPreview(Gtk.DrawingArea):
         self._textures: dict[int, object] = {}
         self.active: int | None = None
         self._drag: tuple[str, int, float, float, Slot] | None = None
+        # Which screen this preview is, and how to hand a window to the next.
+        # Set by the editor; a lone preview has neither.
+        self.screen = 0
+        self.indices: list[int] = []
+        self.on_move_to_screen = None
+        self._last_x = 0.0
         # The shape the preview is drawn at. Read once rather than per frame,
         # since it costs a compositor query and does not change mid-edit.
         self.aspect = monitors.preview_aspect()
@@ -160,6 +166,8 @@ class LayoutPreview(Gtk.DrawingArea):
         if self._drag is None:
             return
         mode, index, _sx, _sy, start = self._drag
+        # Where the pointer is now, so `_end_drag` can tell whether it left.
+        self._last_x = _sx + dx
         _ox, _oy, sw, sh = self._screen()
         fx, fy = dx / sw, dy / sh
 
@@ -186,9 +194,24 @@ class LayoutPreview(Gtk.DrawingArea):
         self.queue_draw()
 
     def _end_drag(self) -> None:
-        if self._drag is not None:
-            self._drag = None
-            self.on_changed(self.layout)
+        if self._drag is None:
+            return
+        mode, index, start_x, _sy, _start = self._drag
+        self._drag = None
+
+        # Dragged clean off one side: hand the window to the next screen. The
+        # previews sit in monitor order, so pushing a window right is the same
+        # gesture as pushing it right across the desk.
+        if mode == "move" and self.on_move_to_screen is not None:
+            width = self.get_width()
+            if self._last_x < 0:
+                self.on_move_to_screen(self.screen, index, -1)
+                return
+            if self._last_x > width:
+                self.on_move_to_screen(self.screen, index, 1)
+                return
+
+        self.on_changed(self.layout)
 
     def _draw_icon(self, cr, index: int, x: float, y: float, w: float, h: float) -> None:
         """The app's icon, centred in its slot. Names live in the tooltip."""
@@ -494,13 +517,52 @@ class EditorPage(Adw.NavigationPage):
         hint.add_css_class("caption")
         content.append(hint)
 
-        self.preview = LayoutPreview(
-            self._on_layout_changed, self._on_remove, self._on_edit_slot
-        )
-        preview_frame = Gtk.Frame()
-        preview_frame.set_vexpand(True)
-        preview_frame.set_child(self.preview)
-        content.append(preview_frame)
+        # One preview per attached screen, side by side. A context arranges
+        # itself differently depending on how many screens there are, and this
+        # edits the arrangement for the current count — the others are kept.
+        self.screen_count = max(1, len(monitors.all_monitors()))
+        self.arrangement = ctx.arrangement_for(self.screen_count)
+        self.previews: list[LayoutPreview] = []
+
+        screens_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        screens_box.set_vexpand(True)
+        shapes = [m.aspect for m in monitors.all_monitors()]
+        for screen in range(self.screen_count):
+            preview = LayoutPreview(
+                lambda layout, s=screen: self._on_layout_changed(layout, s),
+                lambda index, s=screen: self._on_remove(index, s),
+                lambda index, s=screen: self._on_edit_slot(index, s),
+            )
+            if screen < len(shapes):
+                preview.aspect = shapes[screen]
+            preview.screen = screen
+            preview.on_move_to_screen = self._move_to_screen
+            self.previews.append(preview)
+
+            frame = Gtk.Frame()
+            frame.set_vexpand(True)
+            frame.set_hexpand(True)
+            frame.set_child(preview)
+
+            column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            if self.screen_count > 1:
+                label = Gtk.Label(
+                    label=(
+                        monitors.all_monitors()[screen].name
+                        if screen < len(shapes)
+                        else f"Screen {screen + 1}"
+                    ),
+                    xalign=0.0,
+                )
+                label.add_css_class("dim-label")
+                label.add_css_class("caption")
+                column.append(label)
+            column.append(frame)
+            screens_box.append(column)
+
+        content.append(screens_box)
+        # Kept for the code that still speaks in one layout; screen 0's.
+        self.preview = self.previews[0]
 
         # --- app grid, bottom half --------------------------------------------
         apps_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -562,19 +624,61 @@ class EditorPage(Adw.NavigationPage):
             f"Apps · {count} selected" if count else "Apps · none selected yet"
         )
         self.done_button.set_sensitive(bool(self.current_title()))
-        self.preview.set_layout(self.layout, self._preview_entries())
+        self._sync_previews()
 
-    def _on_layout_changed(self, layout: Layout) -> None:
-        self.layout = layout
+    def _sync_previews(self) -> None:
+        """Give each screen its own slots and the windows assigned to it."""
+        entries = self._preview_entries()
+        healed, _ = self.arrangement.healed(len(self.entries))
+        self.arrangement = healed
+        for screen, preview in enumerate(self.previews):
+            indices = healed.indices_on(screen)
+            preview.indices = indices
+            preview.set_layout(
+                healed.layout_for(screen), [entries[i] for i in indices]
+            )
+        # Screen 0 stays the single-screen layout, so a context edited while
+        # docked still opens sensibly undocked.
+        self.layout = healed.layout_for(0)
+
+    def _on_layout_changed(self, layout: Layout, screen: int = 0) -> None:
+        screens = list(self.arrangement.screens)
+        while len(screens) <= screen:
+            screens.append(Layout())
+        screens[screen] = layout
+        self.arrangement.screens = screens
+        if screen == 0:
+            self.layout = layout
+
+    def _move_to_screen(self, screen: int, local_index: int, direction: int) -> None:
+        """Send a window to the neighbouring screen.
+
+        Dragged past the edge of its preview rather than picked from a menu:
+        the previews sit side by side in the same order as the monitors, so
+        pushing a window right is the same gesture as pushing it right on the
+        desk.
+        """
+        target = screen + direction
+        if not 0 <= target < self.screen_count:
+            return
+        indices = self.arrangement.indices_on(screen)
+        if not 0 <= local_index < len(indices):
+            return
+        resource_index = indices[local_index]
+        self.arrangement.assign(resource_index, target)
+        log.debug("moved window %d to screen %d", resource_index, target)
+        self._update_state()
 
     def _on_preset_selected(self, dropdown, _param) -> None:
         name = list(PRESETS)[dropdown.get_selected()]
         slots = list(PRESETS[name])
         # Keep one slot per selected app, padding or trimming the preset.
-        count = max(1, len(self.entries))
+        # The preset applies to the screen it was chosen for, which is the
+        # first one — the others keep whatever they were given.
+        count = max(1, len(self.arrangement.indices_on(0)))
         while len(slots) < count:
             slots.append(Slot())
-        self.layout = Layout(slots=slots[:count])
+        self._on_layout_changed(Layout(slots=slots[:count]), 0)
         self._update_state()
 
     # -- apps ----------------------------------------------------------------
@@ -605,18 +709,30 @@ class EditorPage(Adw.NavigationPage):
     def _on_add(self, app: App) -> None:
         log.debug("adding %s to the layout", app.id)
         self.entries.append(Resource(app_id=app.id))
-        # Keep exactly one slot per window in the layout.
-        self.layout = self.layout.resized(len(self.entries))
+        # New windows land on the screen with the fewest, so adding to a
+        # two-screen context fills both rather than piling onto the first.
+        counts = [
+            len(self.arrangement.indices_on(s)) for s in range(self.screen_count)
+        ]
+        self.arrangement.assign(len(self.entries) - 1, counts.index(min(counts)))
         self._refresh_tile(app.id)
         self._update_state()
 
-    def _on_remove(self, index: int) -> None:
-        log.debug("removing window %d from the layout", index)
-        if not (0 <= index < len(self.entries)):
+    def _on_remove(self, index: int, screen: int = 0) -> None:
+        """Remove a window. `index` is its position on `screen`, not overall."""
+        indices = self.arrangement.indices_on(screen)
+        if not 0 <= index < len(indices):
             return
-        app_id = self.entries[index].app_id
-        del self.entries[index]
-        self.layout = self.layout.resized(len(self.entries))
+        resource_index = indices[index]
+        log.debug("removing window %d from screen %d", resource_index, screen)
+        app_id = self.entries[resource_index].app_id
+        del self.entries[resource_index]
+        # Assignments are by position, so everything after the hole shifts up.
+        self.arrangement.assignments = {
+            (i if i < resource_index else i - 1): s
+            for i, s in self.arrangement.assignments.items()
+            if i != resource_index
+        }
         self._refresh_tile(app_id)
         self._update_state()
 

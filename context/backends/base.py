@@ -112,6 +112,9 @@ class Backend(Protocol):
     def monitors(self) -> list["MonitorInfo"]:
         """Every connected output. Empty when the backend cannot say."""
 
+    def place_workspace(self, handle: str, monitor: str) -> bool:
+        """Bind a workspace to an output, for contexts that span screens."""
+
     def close_workspace(self, handle: str) -> int:
         """Ask every window on the workspace to close. Returns how many were
         asked. Must never touch windows outside this workspace."""
@@ -158,6 +161,9 @@ class NullBackend:
 
     def monitors(self) -> list[MonitorInfo]:
         return []
+
+    def place_workspace(self, handle: str, monitor: str) -> bool:
+        return False
 
     def close_workspace(self, handle: str) -> int:
         return 0

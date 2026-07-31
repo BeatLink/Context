@@ -26,6 +26,8 @@ class LaunchResult:
     backend: str = "none"
     workspace: str | None = None
     reused_workspace: bool = False
+    # One handle per screen the context spans, primary first.
+    screens: list[str] = field(default_factory=list)
     resized: int = 0
     layout_repaired: bool = False
 
@@ -50,7 +52,7 @@ def active_context(contexts, backend: Backend | None = None):
     if handle is None:
         return None
     for ctx in contexts:
-        if ctx.handle_for(wm.name) == handle:
+        if handle in ctx.handles_for(wm.name):
             return ctx
     return None
 
@@ -72,16 +74,21 @@ def reconnect(contexts, backend: Backend | None = None) -> list:
     wm: Backend = backend or backends.detect()
     live = []
     for ctx in contexts:
-        handle = ctx.handle_for(wm.name)
-        if handle is None:
+        handles = ctx.handles_for(wm.name)
+        if not handles:
             continue
-        if wm.workspace_exists(handle) and wm.window_count(handle) > 0:
+        # A context spanning screens is still running when any one of its
+        # workspaces has windows — closing one screen does not close it.
+        running = [
+            h for h in handles if wm.workspace_exists(h) and wm.window_count(h) > 0
+        ]
+        if running:
             live.append(ctx)
-            log.info("reconnected to %s on %s", ctx.title, handle)
+            log.info("reconnected to %s on %s", ctx.title, ", ".join(running))
         else:
-            # The workspace is gone or empty: the handle is stale.
-            ctx.workspaces.pop(wm.name, None)
-            log.debug("dropped stale handle for %s", ctx.title)
+            # Every workspace is gone or empty: the handles are all stale.
+            ctx.drop_handles(wm.name)
+            log.debug("dropped stale handles for %s", ctx.title)
     return live
 
 
@@ -100,12 +107,14 @@ def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str 
     open_ids = set()
     active_id = None
     for ctx in contexts:
-        handle = ctx.handle_for(wm.name)
-        if handle is None:
+        handles = ctx.handles_for(wm.name)
+        if not handles:
             continue
-        if handle in live:
+        # Open when any screen has windows; active when you are looking at any
+        # of them, since a context spanning two screens is one place.
+        if any(h in live for h in handles):
             open_ids.add(ctx.id)
-        if current is not None and handle == current:
+        if current is not None and current in handles:
             active_id = ctx.id
     return open_ids, active_id
 
@@ -113,10 +122,10 @@ def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str 
 @traced(log)
 def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     wm: Backend = backend or backends.detect()
-    handle = ctx.handle_for(wm.name)
-    if handle is None:
-        return False
-    return wm.workspace_exists(handle) and wm.window_count(handle) != 0
+    return any(
+        wm.workspace_exists(h) and wm.window_count(h) != 0
+        for h in ctx.handles_for(wm.name)
+    )
 
 
 @traced(log)
@@ -129,18 +138,21 @@ def close_context(ctx: Context, backend: Backend | None = None) -> CloseResult:
     wm: Backend = backend or backends.detect()
     result = CloseResult(backend=wm.name)
 
-    handle = ctx.handle_for(wm.name)
-    if handle is None or not wm.workspace_exists(handle):
+    handles = [h for h in ctx.handles_for(wm.name) if wm.workspace_exists(h)]
+    if not handles:
         return result
 
     result.was_open = True
-    result.closed = wm.close_workspace(handle)
+    # Every screen: closing one and leaving the other running would be a
+    # context half-open, which is not a state the launcher can show.
+    for handle in handles:
+        result.closed += wm.close_workspace(handle)
 
     # Windows close asynchronously, so this only succeeds once they are gone —
     # otherwise the workspace is left in place and reclaimed on the next close.
-    if wm.remove_workspace(handle):
+    if all(wm.remove_workspace(h) for h in handles):
         result.workspace_removed = True
-        ctx.workspaces.pop(wm.name, None)
+        ctx.drop_handles(wm.name)
 
     return result
 
@@ -149,58 +161,109 @@ def launch_app(app_id: str) -> None:
     adapters.launch_desktop_entry(app_id)
 
 
+def screen_handle(primary: str, screen: int) -> str:
+    """The handle for one of a context's screens.
+
+    Derived from the primary handle rather than the title, so renaming a
+    context still cannot orphan a workspace — the invariant that matters here.
+    """
+    return primary if screen == 0 else f"{primary}-s{screen + 1}"
+
+
 @traced(log)
 def launch_context(
     ctx: Context,
     backend: Backend | None = None,
     use_workspaces: bool = True,
 ) -> LaunchResult:
+    """Open a context across every screen it arranges itself for.
+
+    One workspace per screen, each with its own slots. The arrangement is
+    chosen by how many screens are attached now, so a context laid out for two
+    monitors opens as a single-screen context when undocked without losing the
+    two-screen version.
+    """
     wm: Backend = backend or (
         backends.detect() if use_workspaces else backends.NullBackend()
     )
     result = LaunchResult(backend=wm.name)
 
-    workspace: Workspace | None = None
-    if use_workspaces:
-        workspace = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
+    if not use_workspaces:
+        result.launched, result.failed = _launch_resources(ctx, wm, None)
+        return result
 
-    if workspace is not None:
-        ctx.set_handle(wm.name, workspace.handle)
-        result.workspace = workspace.handle
-        wm.switch_to(workspace)
-        wm.prepare_launch(workspace)
-
-        # An existing workspace may still be empty: a closed context keeps its
-        # handle. Only skip launching when something is actually there.
-        if not workspace.created and wm.window_count(workspace.handle) != 0:
-            result.reused_workspace = True
-            return result
-
-    # Repair the layout before using it. A hand-edited contexts.json, or a
-    # context whose apps changed without its slots, would otherwise either tile
-    # into nonsense or launch nothing at all.
-    # Always take the healed layout, not only when something was wrong: a
-    # context with no layout at all gets one, so every launch lands in a known
-    # arrangement rather than wherever the compositor happens to put things.
-    healed, problems = ctx.layout.healed(len(ctx.resources))
-    ctx.layout = healed
+    outputs = _outputs(wm)
+    arrangement, problems = ctx.arrangement_for(len(outputs)).healed(len(ctx.resources))
+    ctx.set_arrangement(len(outputs), arrangement)
     if problems:
         for problem in problems:
             log.warning("layout for %s %s; repaired", ctx.title, problem)
         result.layout_repaired = True
 
-    handle = workspace.handle if workspace is not None else None
-    result.launched, result.failed = _launch_resources(ctx, wm, handle)
+    primary = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
+    if primary is None:
+        result.launched, result.failed = _launch_resources(ctx, wm, None)
+        return result
+    result.workspace = primary.handle
 
-    # preselect only chooses a side, so every split starts even. Correct the
-    # proportions once all the windows are up.
-    # Nothing to proportion with a single window: it fills the workspace.
-    if handle is not None and len(ctx.layout.slots) > 1:
-        ratios = getattr(wm, "apply_ratios", None)
-        if ratios is not None:
-            result.resized = ratios(handle, ctx.layout.slots)
+    # Every screen the arrangement uses, and no more than there are outputs.
+    screens = min(arrangement.screen_count, max(1, len(outputs)))
+    reused = True
+    for screen in range(screens):
+        handle = screen_handle(primary.handle, screen)
+        ctx.set_handle(wm.name, handle, screen=screen)
+        result.screens.append(handle)
 
+        workspace = wm.ensure_workspace(ctx.title, handle)
+        if workspace is None:
+            continue
+        wm.switch_to(workspace)
+        # Only after switching: a named workspace does not exist until
+        # something opens it, and binding one that does not exist fails.
+        if screen < len(outputs):
+            wm.place_workspace(handle, outputs[screen].name)
+        wm.prepare_launch(workspace)
+
+        # An existing workspace may still be empty: a closed context keeps its
+        # handle. Only skip launching when something is actually there.
+        if workspace.created or wm.window_count(handle) == 0:
+            reused = False
+            launched, failed = _launch_resources(
+                ctx, wm, handle, arrangement.indices_on(screen),
+                arrangement.layout_for(screen),
+            )
+            result.launched.extend(launched)
+            result.failed.extend(failed)
+
+            slots = arrangement.layout_for(screen).slots
+            if len(slots) > 1:
+                ratios = getattr(wm, "apply_ratios", None)
+                if ratios is not None:
+                    result.resized += ratios(handle, slots)
+
+    result.reused_workspace = reused
+    # Finish on the context's first screen rather than wherever the last one
+    # happened to be, so opening a context leaves you looking at its main work.
+    if screens > 1:
+        wm.switch_to(Workspace(handle=primary.handle, label=ctx.title))
     return result
+
+
+def _outputs(wm: Backend):
+    """The screens available, in the compositor's order.
+
+    Order matters and is not arbitrary: screen 0 is the context's primary, and
+    an arrangement stored for two screens has to mean the same two next time.
+    """
+    try:
+        found = list(wm.monitors())
+    except OSError as exc:
+        log.warning("could not read monitors: %s", exc)
+        found = []
+    if not found:
+        return []
+    # Focused first, so a context's primary screen is the one being used.
+    return sorted(found, key=lambda m: (not m.focused, m.x, m.y))
 
 
 def _isolation_for(ctx: Context, resource) -> str | None:
@@ -223,9 +286,16 @@ def _isolation_for(ctx: Context, resource) -> str | None:
 
 @traced(log)
 def _launch_resources(
-    ctx: Context, wm: Backend | None = None, handle: str | None = None
+    ctx: Context,
+    wm: Backend | None = None,
+    handle: str | None = None,
+    indices: list[int] | None = None,
+    layout=None,
 ) -> tuple[list[str], list[tuple[str, str]]]:
-    """Launch the context's apps, tiling each one as it opens.
+    """Launch some of the context's apps, tiling each one as it opens.
+
+    `indices` is which resources belong on this screen; None means all of them,
+    which is what a context that does not span uses.
 
     A tiling compositor decides placement when a window maps, not afterwards, so
     the split direction is set before each launch and the window is waited for
@@ -235,16 +305,22 @@ def _launch_resources(
     launched: list[str] = []
     failed: list[tuple[str, str]] = []
 
-    directions = split_directions(ctx.layout.slots) if ctx.layout.slots else []
+    wanted = list(range(len(ctx.resources))) if indices is None else list(indices)
+    slots = (layout or ctx.layout).slots
+    directions = split_directions(slots) if slots else []
     preselect = getattr(wm, "preselect", None) if wm is not None else None
 
-    for index, resource in enumerate(ctx.resources):
+    for index, resource_index in enumerate(wanted):
+        if not 0 <= resource_index < len(ctx.resources):
+            continue
+        resource = ctx.resources[resource_index]
         # The first window has nothing to split; every later one opens beside
         # the previous, in the direction the layout implies.
         if preselect is not None and 0 < index <= len(directions):
             preselect(directions[index - 1])
 
         before = wm.window_count(handle) if (wm and handle) else 0
+
         try:
             with adapters.isolating(_isolation_for(ctx, resource)):
                 adapters.adapter_for(resource).launch(resource, ctx.id)

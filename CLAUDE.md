@@ -56,6 +56,13 @@ reason stronger than "it would also work".
 
 ## Invariants
 
+- **A context owns one workspace per screen, not one.** `handles_for()` is the
+  set; `handle_for(backend, screen)` is one of them. Anything asking "is it
+  open", "is it active", or closing has to work over the whole set — a context
+  spanning two screens is open when *any* of them has windows.
+- **Arrangements are keyed by screen count, not monitor name.** A layout keyed
+  by `HDMI-A-1` is worthless the day the cable moves ports. Docked and undocked
+  are separate arrangements and both survive.
 - **Workspace identity is the handle, never the title.** Contexts store
   `workspaces: {backend: handle}`. Matching by title orphans workspaces on rename —
   this was a real bug, don't reintroduce it.
@@ -136,6 +143,11 @@ GUI tests are skipped without a display rather than failing. They must be
 exercised, not just imported.
 
 Traps found the hard way:
+
+- **A stub adapter that never opens a window costs 10s per launch.** Every
+  launch waits `WINDOW_TIMEOUT` for a window that is not coming. `stub_adapters`
+  adds one to the workspace being launched into; without that the suite took
+  225 seconds instead of 14.
 
 - **`GDK_BACKEND=broadway` is unavailable** in this GTK4 build. Use Xvfb.
 - **`Adw.Application` hands off over D-Bus** to an already-running instance with the

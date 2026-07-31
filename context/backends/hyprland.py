@@ -95,6 +95,21 @@ class HyprlandBackend:
         result = self._run("dispatch", "workspace", f"name:{workspace.handle}")
         return result is not None and result.returncode == 0
 
+    @traced(log)
+    def place_workspace(self, handle: str, monitor: str) -> bool:
+        """Bind a workspace to an output.
+
+        Only works once the workspace exists — `moveworkspacetomonitor` answers
+        "Workspace not found" for a name nothing has been opened on yet, so the
+        caller has to switch to it first. Measured, not assumed.
+        """
+        if not handle or not monitor:
+            return False
+        result = self._run(
+            "dispatch", "moveworkspacetomonitor", f"name:{handle} {monitor}"
+        )
+        return result is not None and result.returncode == 0
+
     def prepare_launch(self, workspace: Workspace) -> None:
         # Nothing to do: contexts tile, so the compositor places windows itself
         # and each launch only needs its split direction set beforehand.

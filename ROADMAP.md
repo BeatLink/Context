@@ -186,34 +186,42 @@ no search bar at rail width to explain why some are missing.
 Still to do: a keybind for the toggle, and hover-to-peek so a context can be
 identified without expanding.
 
-### 5b. Multiple monitors — *partly done*
+### 5b. Multiple monitors — *done*
 
-**Done.** Backends report their outputs, so the two places that were guessing
-no longer do. The layout preview draws at the real monitor's aspect rather than
-a hard-coded 16:9 — which was wrong on any 16:10 panel and absurd on an
-ultrawide or a rotated one. The launcher can be pinned to a named output rather
-than appearing wherever focus happened to be, and falls back to the focused
-monitor when that output is not connected, so a laptop configured for its dock
-still has a launcher away from the dock.
+A context owns one workspace per screen rather than one overall, and stores an
+arrangement per screen *count*. Docked and undocked are different placements,
+both remembered: laying a context out across two monitors does not destroy the
+laptop-only version, and plugging the monitor back in restores it.
 
-The setting names a monitor rather than picking from a list of what is attached:
-a monitor unplugged today is still the right choice for tomorrow.
+Screens are numbered rather than named. A layout keyed by `HDMI-A-1` would be
+worthless the day the cable moved to another port, and the same two-screen
+arrangement should apply at the desk and in the office. Screen 0 is the focused
+one; the rest follow the compositor's left-to-right order.
 
-**Still to do — per-context placement.** A context has no say in which output
-it opens on; Hyprland binds the workspace to whichever monitor was focused when
-it was first created, and that is where it returns. "Work" should be able to say
-it belongs on the external display.
+Everything that was written against a single handle now works over the set:
+a context is open when *any* of its screens has windows, active when you are
+looking at any of them, and closing shuts all of them. Handles derive from the
+primary (`ctx-work`, `ctx-work-s2`), so renaming a context still cannot orphan
+a workspace.
 
-The backend pieces exist — `hyprctl dispatch moveworkspacetomonitor` — so this
-is mostly a matter of storing the choice beside the workspace handle, applying
-it on launch, and deciding what happens when the named output is absent
-(open on the focused one, presumably, without forgetting the preference).
+Verified on a live two-monitor session: two workspaces created, bound to eDP-1
+and HDMI-A-1, one window each, and closing shut both.
 
-**Still to do — layouts that span outputs.** A layout is fractions of one
-screen, and a workspace lives on one monitor, so "editor on the laptop, docs on
-the external" cannot be expressed at all. That is a bigger change than
-placement: it makes a context own several containers rather than one, which
-touches the handle model, reconnect and closing.
+The editor shows one preview per attached screen, each at that monitor's own
+aspect. Dragging a window off the side of one preview hands it to the next,
+which is the same gesture as pushing it across the desk.
+
+Known wrinkle, inherited rather than introduced: an empty named workspace
+survives while it is a monitor's *active* workspace, so closing a spanning
+context often leaves its handles in place until you look elsewhere. Harmless —
+the handles are stable names, reopening reuses them, and `reconnect` drops them
+on restart — but it means `workspace_removed` is usually False for a context
+that spans.
+
+**Still to do — pinning a context to particular monitors.** Screen 0 is
+wherever the focus is, so the same context can open with its screens the other
+way round depending on where you started. Naming the outputs per context would
+fix that, at the cost of the portability that numbering buys.
 
 ### 6. Launch apps into the current context
 

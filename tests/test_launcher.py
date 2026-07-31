@@ -28,13 +28,21 @@ def ctx():
 
 
 @pytest.fixture(autouse=True)
-def stub_adapters(monkeypatch):
-    """Record launches instead of starting real applications."""
+def stub_adapters(monkeypatch, backend):
+    """Record launches instead of starting real applications.
+
+    The stub also puts a window on the workspace being launched into, the way
+    a real application eventually would. Without that every launch waits out
+    `WINDOW_TIMEOUT` for a window that is never coming, and the file takes
+    minutes instead of milliseconds.
+    """
     launched: list[str] = []
 
     class StubAdapter:
         def launch(self, resource, context_id):
             launched.append(resource.app_id)
+            if backend.current:
+                backend.add_window(backend.current)
 
     monkeypatch.setattr(launcher.adapters, "adapter_for", lambda r: StubAdapter())
     return launched
@@ -137,11 +145,11 @@ def test_a_broken_layout_is_repaired_on_launch(backend, stub_adapters):
 
 def test_close_keeps_the_definition(ctx, backend, stub_adapters):
     launch_context(ctx, backend=backend)
-    backend.add_window("ctx-work", 2)
 
     result = close_context(ctx, backend=backend)
     assert result.was_open
-    assert result.closed == 2
+    # One window per app, which is what launching the context produced.
+    assert result.closed == len(ctx.resources)
     # The context itself survives; only its windows are gone.
     assert ctx.title == "work"
     assert ctx.resources
@@ -248,3 +256,142 @@ def test_open_state_reports_an_empty_workspace_as_closed(backend):
     open_ids, _ = launcher.open_state([ctx], backend=backend)
 
     assert open_ids == set()
+
+
+# -- spanning screens --------------------------------------------------------
+
+
+def _two_screens(backend):
+    from context.backends.base import MonitorInfo
+
+    backend.outputs = [
+        MonitorInfo(name="eDP-1", width=1920, height=1080, focused=True),
+        MonitorInfo(name="HDMI-A-1", width=1920, height=1080, x=1920),
+    ]
+    return backend
+
+
+def test_a_context_gets_a_workspace_per_screen(ctx, backend, stub_adapters):
+    from context.arrangement import Arrangement
+
+    _two_screens(backend)
+    ctx.set_arrangement(2, Arrangement.spread(2, 2))
+
+    result = launch_context(ctx, backend=backend)
+
+    assert result.screens == ["ctx-work", "ctx-work-s2"]
+    assert ctx.handles_for("fake") == ["ctx-work", "ctx-work-s2"]
+
+
+def test_each_screen_gets_its_own_workspace_on_its_own_monitor(
+    ctx, backend, stub_adapters
+):
+    from context.arrangement import Arrangement
+
+    _two_screens(backend)
+    ctx.set_arrangement(2, Arrangement.spread(2, 2))
+    launch_context(ctx, backend=backend)
+
+    assert backend.placements == {
+        "ctx-work": "eDP-1",
+        "ctx-work-s2": "HDMI-A-1",
+    }
+
+
+def test_windows_launch_onto_the_screen_they_are_assigned(
+    ctx, backend, stub_adapters
+):
+    from context.arrangement import Arrangement
+
+    _two_screens(backend)
+    ctx.set_arrangement(2, Arrangement.spread(2, 2))
+    launch_context(ctx, backend=backend)
+
+    # One app per screen, and both launched.
+    assert sorted(stub_adapters) == ["a.desktop", "b.desktop"]
+
+
+def test_one_screen_still_uses_one_workspace(ctx, backend, stub_adapters):
+    """Nothing changes for a context that does not span."""
+    result = launch_context(ctx, backend=backend)
+    assert result.screens == ["ctx-work"]
+    assert ctx.handles_for("fake") == ["ctx-work"]
+
+
+def test_undocking_falls_back_to_the_single_screen_arrangement(
+    ctx, backend, stub_adapters
+):
+    """A context laid out for two monitors still opens on one."""
+    from context.arrangement import Arrangement
+
+    ctx.set_arrangement(2, Arrangement.spread(2, 2))
+    # Only one output attached now.
+    result = launch_context(ctx, backend=backend)
+
+    assert result.screens == ["ctx-work"]
+    # Both windows land, rather than one being stranded on a screen that is gone.
+    assert sorted(stub_adapters) == ["a.desktop", "b.desktop"]
+
+
+def test_closing_shuts_every_screen(ctx, backend, stub_adapters):
+    from context.arrangement import Arrangement
+
+    _two_screens(backend)
+    ctx.set_arrangement(2, Arrangement.spread(2, 2))
+    launch_context(ctx, backend=backend)
+    backend.add_window("ctx-work")
+    backend.add_window("ctx-work-s2")
+
+    result = close_context(ctx, backend=backend)
+
+    assert result.was_open
+    closed = [c[1] for c in backend.calls if c[0] == "close"]
+    assert closed == ["ctx-work", "ctx-work-s2"]
+
+
+def test_a_context_is_open_when_any_screen_has_windows(ctx, backend):
+    ctx.set_handle("fake", "ctx-work")
+    ctx.set_handle("fake", "ctx-work-s2", screen=1)
+    backend.workspaces = {"ctx-work": 0, "ctx-work-s2": 2}
+
+    assert context_is_open(ctx, backend=backend)
+
+
+def test_a_context_is_active_from_any_of_its_screens(ctx, backend):
+    ctx.set_handle("fake", "ctx-work")
+    ctx.set_handle("fake", "ctx-work-s2", screen=1)
+    backend.workspaces = {"ctx-work": 1, "ctx-work-s2": 1}
+    backend.current = "ctx-work-s2"
+
+    open_ids, active_id = launcher.open_state([ctx], backend=backend)
+    assert open_ids == {ctx.id}
+    assert active_id == ctx.id
+
+
+def test_reconnect_keeps_a_context_whose_second_screen_is_live(ctx, backend):
+    ctx.set_handle("fake", "ctx-work")
+    ctx.set_handle("fake", "ctx-work-s2", screen=1)
+    backend.workspaces = {"ctx-work": 0, "ctx-work-s2": 1}
+
+    assert launcher.reconnect([ctx], backend=backend) == [ctx]
+    assert ctx.handles_for("fake") == ["ctx-work", "ctx-work-s2"]
+
+
+def test_reconnect_drops_every_handle_when_nothing_is_live(ctx, backend):
+    ctx.set_handle("fake", "ctx-work")
+    ctx.set_handle("fake", "ctx-work-s2", screen=1)
+    backend.workspaces = {}
+
+    assert launcher.reconnect([ctx], backend=backend) == []
+    assert ctx.handles_for("fake") == []
+
+
+def test_the_launch_ends_on_the_primary_screen(ctx, backend, stub_adapters):
+    """Opening a context should leave you looking at its main work."""
+    from context.arrangement import Arrangement
+
+    _two_screens(backend)
+    ctx.set_arrangement(2, Arrangement.spread(2, 2))
+    launch_context(ctx, backend=backend)
+
+    assert backend.current == "ctx-work"

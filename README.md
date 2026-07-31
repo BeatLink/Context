@@ -97,12 +97,21 @@ The preview is drawn at the shape of the screen the launcher is on.
 
 ## Multiple monitors
 
-The launcher docks to one screen, chosen in settings. Naming a monitor that is
-not currently connected is fine — it is used when you plug it back in, and until
-then the launcher appears on whichever screen has focus.
+A context spreads across every screen you have. It keeps a separate arrangement
+for each number of attached screens, so working undocked and working at a desk
+with two monitors are different layouts and both are remembered — plug a
+monitor in and the two-screen arrangement comes back, unplug it and the
+one-screen version does.
 
-Contexts themselves open on whichever screen the compositor puts them, which is
-where they were first created.
+The editor shows one preview per screen, side by side in the same order as your
+monitors. Drag a window off the edge of one preview to move it to the next.
+
+Opening a context brings up all of its screens at once and leaves you on the
+first. Closing shuts all of them.
+
+The launcher itself docks to one screen, chosen in settings. Naming a monitor
+that is not currently connected is fine — it is used when you plug it back in,
+and until then the launcher appears on whichever screen has focus.
 
 ## What apps open
 
@@ -265,6 +274,7 @@ do to work well inside a context.
 | `context/logging_setup.py` | Logging |
 | `context/sidebar.py` | Docking the launcher to a screen edge |
 | `context/monitors.py` | Which output things happen on |
+| `context/arrangement.py` | How a context spreads across screens |
 | `context/switcher.py` | Context and window pickers |
 | `context/settings.py` | User settings |
 | `context/settings_page.py` | The settings page |

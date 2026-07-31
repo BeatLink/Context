@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from context import logging_setup  # noqa: E402
+from context import logging_setup, settings, theme  # noqa: E402
 from context.backends.base import MonitorInfo, WindowInfo, Workspace  # noqa: E402
 from context.layout import Slot  # noqa: E402
 
@@ -34,6 +34,11 @@ def isolated_store(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # Config too, or a test reads whatever settings the user happens to have —
+    # and `settings` caches, so one test's change leaks into every later one.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    monkeypatch.setattr(theme, "_current", None)
     # Modules bind their logger at import, which happens during collection —
     # before this fixture runs. Re-configuring moves the file handler onto the
     # temporary path; without it the suite writes its fixture names into the
@@ -66,6 +71,8 @@ class FakeBackend:
         self.outputs: list[MonitorInfo] = [
             MonitorInfo(name="FAKE-1", width=1920, height=1080, focused=True)
         ]
+        # handle -> monitor it was bound to.
+        self.placements: dict[str, str] = {}
 
     # -- interface ----------------------------------------------------------
 
@@ -113,6 +120,11 @@ class FakeBackend:
     def monitors(self) -> list[MonitorInfo]:
         self.calls.append(("monitors",))
         return list(self.outputs)
+
+    def place_workspace(self, handle: str, monitor: str) -> bool:
+        self.calls.append(("place", handle, monitor))
+        self.placements[handle] = monitor
+        return True
 
     def close_workspace(self, handle: str) -> int:
         count = self.workspaces.get(handle, 0)
