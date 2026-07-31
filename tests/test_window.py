@@ -572,6 +572,7 @@ def test_hover_expansion_does_not_change_the_saved_state(
         # Peeking must not rewrite what was stored.
         seen["saved_state"] = uistate.get("collapsed")
         window._on_pointer_leave()
+        window._collapse_after_leave()  # the grace period, elapsed
         seen["collapsed_again"] = window.collapsed
         app.quit()
 
@@ -1912,3 +1913,44 @@ def test_the_new_context_button_opens_the_overview(gtk_app, isolated_store):
     run_app(gtk_app, body)
     assert seen["overview"] == 1
     assert store.contexts == []
+
+
+def test_a_grazed_edge_does_not_snap_the_sidebar_shut(gtk_app, isolated_store, monkeypatch):
+    """Auto-collapse waits out a grace period, so the leave/enter pair the
+    expand's own resize produces — or a pointer grazing the floating gap —
+    does not close the sidebar under the pointer."""
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = True
+        window._apply_collapsed()
+        window._auto_expand()  # hover already fired; sidebar is open
+
+        window._on_pointer_leave()
+        seen["still_open_during_grace"] = not window.collapsed
+        window._on_pointer_enter()  # pointer came straight back
+        seen["timer_cancelled"] = window._collapse_source is None
+
+        window._on_pointer_leave()
+        window._pointer_inside = False
+        seen["collapses_when_gone"] = window._collapse_after_leave() in (
+            False,
+            0,
+        ) and window.collapsed
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["still_open_during_grace"] is True
+    assert seen["timer_cancelled"] is True
+    assert seen["collapses_when_gone"] is True

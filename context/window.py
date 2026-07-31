@@ -115,6 +115,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self._open_signature: tuple | None = None
         self._auto_expanded = False
         self._auto_expand_source: int | None = None
+        # A pending collapse, waiting out the grace period after a leave.
+        self._collapse_source: int | None = None
         # Set when collapsing deliberately, cleared when the pointer leaves.
         self._suppress_hover = False
         self._pointer_inside = False
@@ -433,6 +435,9 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def _on_pointer_enter(self) -> None:
         self._pointer_inside = True
+        if self._collapse_source is not None:
+            GLib.source_remove(self._collapse_source)
+            self._collapse_source = None
         if self._suppress_hover or not (self.collapsed and self.collapses):
             return
         # Hiding always reveals on hover, whatever the setting says: with
@@ -465,10 +470,23 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self._auto_expand_source = None
         if not self._auto_expanded:
             return
+        # A grace period rather than collapsing on the spot. The surface
+        # floats off the screen edges now, so grazing the gap sends a leave —
+        # and the expand's own resize can send a spurious leave/enter pair —
+        # either of which snapped a freshly opened sidebar shut under the
+        # pointer. Collapse only if the pointer stays gone.
+        if self._collapse_source is None:
+            self._collapse_source = GLib.timeout_add(300, self._collapse_after_leave)
+
+    def _collapse_after_leave(self) -> bool:
+        self._collapse_source = None
+        if self._pointer_inside or not self._auto_expanded:
+            return GLib.SOURCE_REMOVE
         self._auto_expanded = False
         self.collapsed = True
         self._apply_collapsed()
         self.refresh()
+        return GLib.SOURCE_REMOVE
 
     def toggle_collapsed(self) -> None:
         if not self.collapses:
@@ -493,6 +511,9 @@ class LauncherWindow(Gtk.ApplicationWindow):
         if self._auto_expand_source is not None:
             GLib.source_remove(self._auto_expand_source)
             self._auto_expand_source = None
+        if self._collapse_source is not None:
+            GLib.source_remove(self._collapse_source)
+            self._collapse_source = None
         # Collapsing happens with the pointer on the button, which is inside
         # the sidebar — so hover would expand it again a moment later and the
         # button would appear to do nothing. Hovering is suppressed until the
