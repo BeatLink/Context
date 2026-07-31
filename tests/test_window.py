@@ -1247,6 +1247,10 @@ def test_the_sidebar_is_focusable_on_demand(gtk_app, isolated_store, monkeypatch
         def set_keyboard_mode(_w, mode):
             modes.append(mode)
 
+        @staticmethod
+        def set_margin(_w, _e, _px):
+            return None
+
     monkeypatch.setattr(sidebar, "LayerShell", FakeLayerShell)
     monkeypatch.setattr(sidebar, "available", lambda: True)
     monkeypatch.setattr(sidebar, "place", lambda *a_, **k_: None)

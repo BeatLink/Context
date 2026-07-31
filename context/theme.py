@@ -291,8 +291,21 @@ window.ctx-window .accent label {
    the system preference before an application gets a say, so a stylesheet like
    this one was always painting over widgets that had already chosen. */
 window.ctx-window {
-    background-color: @ctx_surface;
+    background-color: transparent;
     color: @ctx_on_surface;
+}
+
+/* Every Context surface is dressed as a window: the compositor draws windows
+   with rounded corners and gaps, and a square launcher flush against the edge
+   read as a foreign object next to them. The window itself is transparent and
+   this card, floated off the edges by layer-shell margins, is what shows. The
+   radius is the compositor's rounding plus its border width. */
+.ctx-surface {
+    background-color: @ctx_surface;
+    /* An inset ring rather than a border: a border is layout and would raise
+       the rail's minimum width by its two edges; a shadow only draws. */
+    box-shadow: inset 0 0 0 2px @ctx_border;
+    border-radius: 10px;
 }
 
 /* Text colour has to reach every descendant, not just direct children.

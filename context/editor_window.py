@@ -43,6 +43,8 @@ class EditorWindow(Gtk.Window):
             self.fullscreen()
 
         self.nav = widgets.NavigationView()
+        self.nav.add_css_class("ctx-surface")
+        self.nav.set_overflow(Gtk.Overflow.HIDDEN)
         self.page = EditorPage(
             ctx,
             lambda *args: self._finish(on_done, *args),

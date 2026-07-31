@@ -134,6 +134,10 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.is_sidebar = sidebar.apply(self, monitor=self.monitor)
 
         self.nav = widgets.NavigationView()
+        # The rounded, bordered card every Context surface wears; clipped so
+        # square children cannot poke out of the corners.
+        self.nav.add_css_class("ctx-surface")
+        self.nav.set_overflow(Gtk.Overflow.HIDDEN)
 
         self.toolbar = widgets.ToolbarView()
         self.header = widgets.HeaderBar(title="Context")

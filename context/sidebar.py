@@ -134,6 +134,15 @@ def configured_width() -> int:
 # would be a keybind — a one-way door for anyone who collapses it by accident.
 HIDDEN_WIDTH = 2
 
+# How far a docked or overlaid surface floats from the screen edges, matching
+# the compositor's gaps so Context reads as a window among windows.
+GAP = 8
+
+
+def _set_margins(window, gap: int) -> None:
+    for attr in EDGES.values():
+        LayerShell.set_margin(window, getattr(LayerShell.Edge, attr), gap)
+
 
 def rail_width() -> int:
     raw = os.environ.get(ENV_RAIL_WIDTH)
@@ -160,6 +169,9 @@ def resize(window, width: int, edge: str | None = None) -> None:
     else:
         window.set_size_request(-1, width)
         window.set_default_size(-1, width)
+    # The hidden sliver hugs the edge with no gap: a 2px hover target floated
+    # 8px into the screen cannot be found by sliding the pointer to the edge.
+    _set_margins(window, 0 if width == HIDDEN_WIDTH else GAP)
 
 
 def gdk_monitor(name: str | None):
@@ -236,7 +248,9 @@ def apply(
         )
         LayerShell.set_anchor(window, getattr(LayerShell.Edge, attr), anchored)
 
-    # Reserve the space so tiled windows do not sit underneath.
+    # Reserve the space so tiled windows do not sit underneath. The margins
+    # are inside the reservation — auto exclusive zones account for them.
+    _set_margins(window, GAP)
     LayerShell.auto_exclusive_zone_enable(window)
     # ON_DEMAND: the compositor focuses and unfocuses this the way it does an
     # ordinary window — clicking in gives it the keyboard, clicking away takes
@@ -276,6 +290,7 @@ def apply_overlay(window) -> bool:
     LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
     for attr in EDGES.values():
         LayerShell.set_anchor(window, getattr(LayerShell.Edge, attr), True)
+    _set_margins(window, GAP)
     # No exclusive zone: an overlay covers the bars rather than reserving space.
     LayerShell.set_exclusive_zone(window, -1)
     LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.EXCLUSIVE)

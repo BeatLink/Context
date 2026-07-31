@@ -43,6 +43,8 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self.fullscreen()
 
         toolbar = widgets.ToolbarView()
+        toolbar.add_css_class("ctx-surface")
+        toolbar.set_overflow(Gtk.Overflow.HIDDEN)
         header = widgets.HeaderBar(title="Overview")
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
