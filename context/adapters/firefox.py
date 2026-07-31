@@ -21,7 +21,7 @@ import time
 from ..resources import Resource
 from ..store import data_dir
 from ..logging_setup import get_logger, traced
-from .base import child_env
+from .base import child_command, child_env
 
 log = get_logger("adapter.firefox")
 
@@ -108,7 +108,7 @@ class FirefoxAdapter:
         """
         try:
             process = subprocess.Popen(
-                [binary, *args],
+                child_command([binary, *args]),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -171,7 +171,7 @@ class FirefoxAdapter:
 
         try:
             process = subprocess.Popen(
-                command,
+                child_command(command),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

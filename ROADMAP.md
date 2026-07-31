@@ -199,49 +199,48 @@ way apps are launched:
 
 This is what makes Context replace rofi rather than sit next to it.
 
-### 3b. Isolated contexts
+### 3b. Isolated contexts — *done*
 
-An application that cannot see a running copy of itself cannot hand off to it.
-No hand-off means the process Context spawns is the process that owns the
-window, which makes pid matching work, `--new-window` unnecessary, and the
-single-instance switch redundant. It would dissolve most of item 3.
+A context can be marked isolated: its applications launch under a private D-Bus
+session, so they cannot see a running copy of themselves and cannot hand off to
+it. Measured A/B on a live session, two terminals in one context:
 
-The mechanism is a private IPC namespace, not a container. Applications find
-each other over three channels, and all three are addressed by directory:
+| Context | Windows | Distinct pids |
+| --- | --- | --- |
+| Shared bus | 2 | **1** — one process owns both, unattributable |
+| Isolated | 2 | **2** — each window is its own process |
 
-| Channel | Isolated by |
-| --- | --- |
-| D-Bus session bus | a private bus, `DBUS_SESSION_BUS_ADDRESS` |
-| Abstract/unix sockets | a private `XDG_RUNTIME_DIR` |
-| Lock files in the profile | a per-context data directory |
+That is the identity problem dissolving for the applications it covers: the
+process Context spawns is the process that owns the window, so pid matching
+works and `--new-window` is unnecessary.
 
-The Wayland socket has to be shared, or there is no window. That is fine:
-Wayland gives a client no way to enumerate other clients, so sharing it leaks
-nothing an application could use to find its twin.
+**Only the bus is isolated.** Redirecting `XDG_RUNTIME_DIR` looks equally
+correct — it is where unix sockets live — and is wrong: the Wayland socket lives
+there too, so an application given a private one has no display and dies with
+"cannot open display". Measured, after implementing it that way first. The bus
+is the channel that actually carries hand-off.
 
-**The real constraint is not isolation, it is the data store.** Two copies of a
-notes application writing the same database without knowing about each other
-corrupt it. So isolation cannot be a global default — it is only safe for an
-application whose state is either read-only, per-context, or already
-concurrency-safe. That makes it a per-context choice:
+Sharing the Wayland socket leaks nothing, because Wayland gives a client no way
+to enumerate other clients.
 
-- **Isolated** — a private bus and runtime directory. Applications launch fresh
-  and never hand off. Anything that keeps a shared database must also be given a
-  per-context data directory, or left out of the context.
-- **Shared** (default) — as now.
+It is off by default and off is the right default: two copies of an application
+writing one database without knowing about each other is how data is lost, and
+not knowing is exactly what isolation produces. Both the context and the
+application have to agree — the per-resource `isolate` switch opts an
+application out, since the application is what knows about its own store.
 
-A per-application override matters as much as the per-context one: a context may
-legitimately want an isolated browser beside a shared editor.
+Still to do:
 
-Sequencing: the isolation is cheap to build and hard to make safe. The safety is
-the work — knowing which applications tolerate a second instance is the same
-per-application knowledge the compatibility switches already encode, so this
-should extend that rather than become a separate system. Do it after window
-identity so there is a way to verify it actually helped.
-
-Note also that `bwrap`, `firejail` and `flatpak` are all absent from the target
-system; `unshare` and `systemd-run` are present. A private bus needs
-`dbus-daemon`, not a container runtime, so nothing new has to be packaged.
+- **Per-context data directories**, so an application that keeps a shared
+  database can be isolated safely rather than merely excluded. `HOME` cannot be
+  moved wholesale without losing configuration, so this is per-adapter: Firefox
+  already has `--profile`, Electron has `--user-data-dir`, most applications
+  have nothing and would need `XDG_DATA_HOME` and `XDG_CONFIG_HOME` redirected
+  with the consequences that brings.
+- **Verify it against the remaining channels.** The bus covers GApplication and
+  D-Bus activation. Applications that use an abstract socket or a lock file
+  under their own data directory are untouched by this and still need the
+  compatibility switches.
 
 ### 7b. A thumbnail switcher
 

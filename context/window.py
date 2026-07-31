@@ -741,12 +741,14 @@ class LauncherWindow(Adw.ApplicationWindow):
         title: str,
         ephemeral: bool,
         layout: Layout,
+        isolated: bool = False,
     ) -> None:
         was_new = getattr(self.editor, "is_new", False)
         ctx.resources = resources
         ctx.title = title
         ctx.ephemeral = ephemeral
         ctx.layout = layout
+        ctx.isolated = isolated
         self.store.save()
         self.refresh()
         if was_new:

@@ -9,12 +9,16 @@ app with no special integration, so adding an adapter is always additive.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
-
+import contextlib
+import contextvars
 import os
+import shlex
+import subprocess
+from typing import Protocol, runtime_checkable
 
 from gi.repository import Gio
 
+from .. import isolation
 from ..resources import Resource
 
 
@@ -31,6 +35,32 @@ STRIPPED_VARS = (
     "ELECTRON_NO_ATTACH_CONSOLE",
     "CONTEXT_LAYER_SHELL_PRELOADED",
 )
+
+
+# Whether the launch in progress is isolated, and which context it belongs to.
+#
+# A context variable rather than an argument: every adapter would otherwise need
+# the flag threaded through `launch()` and on to `child_env()`, and adapters are
+# the extension point most likely to be written by someone who does not know
+# isolation exists. A plain module global would be wrong — launches run on
+# worker threads, so two contexts can be starting at once.
+_isolated_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "context_isolated", default=None
+)
+
+
+@contextlib.contextmanager
+def isolating(context_id: str | None):
+    """Mark everything launched inside this block as isolated."""
+    token = _isolated_context.set(context_id)
+    try:
+        yield
+    finally:
+        _isolated_context.reset(token)
+
+
+def isolated_context() -> str | None:
+    return _isolated_context.get()
 
 
 def child_env() -> dict[str, str]:
@@ -50,7 +80,30 @@ def child_env() -> dict[str, str]:
             env.pop("LD_PRELOAD", None)
     for name in STRIPPED_VARS:
         env.pop(name, None)
+
+    context_id = isolated_context()
+    if context_id:
+        env = isolation.isolate_env(env, context_id)
     return env
+
+
+def child_command(command: list[str]) -> list[str]:
+    """`command`, wrapped in a private session bus when the launch is isolated."""
+    return isolation.wrap(command) if isolated_context() else command
+
+
+FIELD_CODES = ("%f", "%F", "%u", "%U", "%i", "%c", "%k", "%d", "%D", "%n", "%N", "%v", "%m")
+
+
+def desktop_command(info, uris: list[str] | None = None) -> list[str]:
+    """A desktop entry's Exec line as an argument list.
+
+    Field codes are dropped and the URIs appended, which is what they expand to
+    for the only two cases Context produces: no arguments, or a list of them.
+    """
+    raw = info.get_commandline() or ""
+    parts = [p for p in shlex.split(raw) if p not in FIELD_CODES]
+    return [*parts, *(uris or [])]
 
 
 def launch_desktop_entry(app_id: str, uris: list[str] | None = None) -> None:
@@ -60,6 +113,25 @@ def launch_desktop_entry(app_id: str, uris: list[str] | None = None) -> None:
         raise LookupError(f"no desktop entry for {app_id}") from exc
     if info is None:
         raise LookupError(f"no desktop entry for {app_id}")
+
+    if isolated_context():
+        # Gio launches the entry itself, so there is nowhere to put the private
+        # bus: `dbus-run-session` has to be the parent of the process. Spawning
+        # the Exec line directly is the only way to wrap it.
+        command = desktop_command(info, uris)
+        if not command:
+            raise LookupError(f"{app_id} has no command to run")
+        try:
+            subprocess.Popen(
+                child_command(command),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=child_env(),
+            )
+        except OSError as exc:
+            raise LookupError(f"could not start {app_id}: {exc}") from exc
+        return
 
     context = Gio.AppLaunchContext()
     # Gio copies the launcher's own environment rather than taking a dict, so

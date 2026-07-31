@@ -24,6 +24,12 @@ class Context:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     resources: list[Resource] = field(default_factory=list)
     ephemeral: bool = False
+    # Launch this context's apps under a private session bus, so they cannot
+    # find a running copy of themselves and hand off to it. Off by default: two
+    # copies of an application writing one database without knowing about each
+    # other is how data gets lost, and not knowing is exactly what isolation
+    # causes. Per-resource `isolate` opts an application out again.
+    isolated: bool = False
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
     workspaces: dict[str, str] = field(default_factory=dict)

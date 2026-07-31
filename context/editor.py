@@ -12,6 +12,7 @@ from gi.repository import Adw, Gdk, Gtk
 from .adapters import configurable, describe
 from .apps import App, installed_apps, search_apps
 from . import theme
+from . import isolation
 from .logging_setup import get_logger
 from .layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
 from .resource_page import ResourcePage
@@ -431,6 +432,23 @@ class EditorPage(Adw.NavigationPage):
         ephemeral_row.set_activatable_widget(self.ephemeral_switch)
         details.append(ephemeral_row)
 
+        isolated_row = Adw.ActionRow(
+            title="Isolated",
+            subtitle=(
+                "Apps here cannot see copies of themselves running elsewhere, so "
+                "they open their own window instead of reusing one. Turn off for "
+                "any app that shares a database with another context."
+            ),
+        )
+        self.isolated_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.isolated_switch.set_active(ctx.isolated)
+        self.isolated_switch.set_sensitive(isolation.available())
+        if not isolation.available():
+            isolated_row.set_subtitle("Needs dbus-run-session, which is not installed")
+        isolated_row.add_suffix(self.isolated_switch)
+        isolated_row.set_activatable_widget(self.isolated_switch)
+        details.append(isolated_row)
+
         # Forgetting a context lives here rather than beside its launch button,
         # so it takes opening the editor and a confirmation to lose one.
         if on_delete is not None and not is_new:
@@ -670,4 +688,5 @@ class EditorPage(Adw.NavigationPage):
             title,
             self.ephemeral_switch.get_active(),
             self.layout,
+            self.isolated_switch.get_active(),
         )

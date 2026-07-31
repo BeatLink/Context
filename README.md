@@ -81,7 +81,8 @@ stack, grid.
 **Apps.** Every installed application, searchable. Click a card to add it to the
 layout; add one twice to give it two windows.
 
-**Details.** The context's name, an ephemeral toggle, and a Forget button.
+**Details.** The context's name, an ephemeral toggle, an isolated toggle, and a
+Forget button.
 
 Layouts are stored as fractions of the monitor, so they carry between displays.
 
@@ -101,10 +102,28 @@ logins and history are there. Turning on **Give this context its own profile**
 keeps its tabs, cookies and history separate instead, and restores them when
 you come back — at the cost of not carrying your addons and logins over.
 
-**Compatibility.** Two switches per app, for when it does not behave:
+**Compatibility.** Three switches per app, for when it does not behave:
 
 - **Open a new window** — turn off if the app should reuse a window it has.
 - **Single instance only** — for apps that refuse to run twice.
+- **Isolate in this context** — turn off for an app that shares a database with
+  another context. Only applies to isolated contexts.
+
+## Isolated contexts
+
+A context can be marked **isolated** in its editor. Its apps then launch without
+being able to see copies of themselves running elsewhere, so an app that would
+normally raise its existing window opens a new one here instead.
+
+Turn it on for a context whose apps you want to run twice — two terminals, two
+editors, the same app in two contexts at once.
+
+Leave it off, or turn off **Isolate in this context** for the app in question,
+when an app keeps a database shared with another context. Two copies writing at
+once can lose data, and isolation is what stops them noticing each other.
+
+Isolation is about visibility between copies of an app, not security. An
+isolated app has the same access to your files and network as any other.
 
 ## Opening and closing
 

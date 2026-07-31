@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..logging_setup import get_logger, traced
 from ..resources import Resource
-from .base import child_env
+from .base import child_command, child_env
 
 log = get_logger("adapter.terminal")
 
@@ -84,7 +84,7 @@ class TerminalAdapter:
 
         try:
             subprocess.Popen(
-                command,
+                child_command(command),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

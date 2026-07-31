@@ -38,6 +38,12 @@ Two extension points, both the same shape — a Protocol plus a registry with
 - **`adapters/`** — how an app opens to a resource. Firefox, VS Code and
   terminals are adapted; everything else uses `GenericAdapter`.
 
+Isolation cuts across adapters rather than being one: `adapters.isolating()` is
+a context manager the launcher wraps each launch in, and `child_env()` /
+`child_command()` consult it. It is a `ContextVar` rather than an argument so a
+new adapter gets isolation without knowing it exists — and not a module global,
+because launches run on worker threads and two contexts can start at once.
+
 When adding either, follow `backends/base.py`: a Protocol, a null/generic fallback,
 and registration in `__init__.py`.
 
@@ -155,6 +161,10 @@ launching real applications, and point `XDG_DATA_DIRS` at it.
   the exception, via `MOZ_APP_REMOTINGNAME` — measured working.
 - **`Gio.DesktopAppInfo.new` raises `TypeError`** on a missing entry rather than
   returning `None`. Catch both; a stale app ID otherwise crashes the launcher.
+- **`XDG_RUNTIME_DIR` cannot be isolated.** The Wayland socket lives in it, so
+  an app given a private one dies with "cannot open display". Isolation is the
+  private D-Bus session and nothing else — that is the channel hand-off
+  actually travels over. Measured after building it the other way first.
 - **Scrub the launcher's own environment before launching anything.**
   `child_env()` exists for this and its list only grows. `ELECTRON_RUN_AS_NODE`
   is the one that cost real time: editors set it for their integrated

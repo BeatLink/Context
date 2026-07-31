@@ -7,7 +7,7 @@ the generic desktop-entry launcher.
 from __future__ import annotations
 
 from ..resources import Resource
-from .base import Adapter, GenericAdapter, launch_desktop_entry
+from .base import Adapter, GenericAdapter, isolating, launch_desktop_entry
 from .firefox import FirefoxAdapter
 from .terminal import TerminalAdapter
 from .vscode import VSCodeAdapter
@@ -48,6 +48,7 @@ def supports_profiles(resource: Resource) -> bool:
 
 
 __all__ = [
+    "isolating",
     "Adapter",
     "FirefoxAdapter",
     "TerminalAdapter",

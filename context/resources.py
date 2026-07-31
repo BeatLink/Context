@@ -34,6 +34,11 @@ class Resource:
     # infer, so each is exposed rather than guessed.
     force_new_window: bool = True
     single_instance: bool = False
+    # Whether this app follows the context's isolation setting. Off for anything
+    # that keeps a shared database: a second copy writing it without knowing
+    # about the first is how data gets corrupted, and isolation is precisely
+    # what stops them knowing.
+    isolate: bool = True
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Resource":
@@ -47,7 +52,7 @@ class Resource:
         # own choice and only a legacy or hand-edited one falls back here.
         if data.get("profile_mode") not in PROFILE_MODES:
             data["profile_mode"] = PROFILE_DEFAULT
-        for flag in ("force_new_window", "single_instance"):
+        for flag in ("force_new_window", "single_instance", "isolate"):
             if flag in data:
                 data[flag] = bool(data[flag])
         return cls(**data)
@@ -68,7 +73,7 @@ class Resource:
 
     # Booleans are written even when False: dropping falsy values would lose a
     # deliberately disabled switch, which would then come back on next load.
-    ALWAYS_WRITE = ("force_new_window", "single_instance")
+    ALWAYS_WRITE = ("force_new_window", "single_instance", "isolate")
 
     def to_dict(self) -> dict:
         return {

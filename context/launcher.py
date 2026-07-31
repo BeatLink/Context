@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from gi.repository import GLib
 
-from . import adapters, backends
+from . import adapters, backends, isolation
 from .backends import Backend, Workspace
 from .layout import split_directions
 from .logging_setup import get_logger, traced
@@ -203,6 +203,24 @@ def launch_context(
     return result
 
 
+def _isolation_for(ctx: Context, resource) -> str | None:
+    """The context id to isolate this resource under, or None for a normal launch.
+
+    Both have to agree. The context opts in, and an application can opt out of
+    it — one that keeps a shared database must not be started twice without the
+    copies knowing about each other, and not knowing is exactly what isolation
+    produces.
+    """
+    if not (ctx.isolated and resource.isolate):
+        return None
+    if not isolation.available():
+        log.warning(
+            "%s asks for isolation but dbus-run-session is missing", ctx.title
+        )
+        return None
+    return ctx.id
+
+
 @traced(log)
 def _launch_resources(
     ctx: Context, wm: Backend | None = None, handle: str | None = None
@@ -228,7 +246,8 @@ def _launch_resources(
 
         before = wm.window_count(handle) if (wm and handle) else 0
         try:
-            adapters.adapter_for(resource).launch(resource, ctx.id)
+            with adapters.isolating(_isolation_for(ctx, resource)):
+                adapters.adapter_for(resource).launch(resource, ctx.id)
             launched.append(resource.app_id)
         except (GLib.Error, LookupError, OSError) as exc:
             failed.append((resource.app_id, str(exc)))

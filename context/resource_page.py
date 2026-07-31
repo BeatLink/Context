@@ -148,6 +148,20 @@ class ResourcePage(Adw.NavigationPage):
         single_row.add_suffix(self.single_instance_switch)
         single_row.set_activatable_widget(self.single_instance_switch)
         compat.append(single_row)
+
+        isolate_row = Adw.ActionRow(
+            title="Isolate in this context",
+            subtitle=(
+                "Only applies to isolated contexts. Off for an app that shares "
+                "a database with another context, which two copies must not "
+                "write at once"
+            ),
+        )
+        self.isolate_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.isolate_switch.set_active(resource.isolate)
+        isolate_row.add_suffix(self.isolate_switch)
+        isolate_row.set_activatable_widget(self.isolate_switch)
+        compat.append(isolate_row)
         content.append(compat)
 
         # URLs as a list of rows rather than a text box: each is separately
@@ -274,6 +288,7 @@ class ResourcePage(Adw.NavigationPage):
         self.resource.urls = self.current_urls()
         self.resource.force_new_window = self.new_window_switch.get_active()
         self.resource.single_instance = self.single_instance_switch.get_active()
+        self.resource.isolate = self.isolate_switch.get_active()
         if self.command_row is not None:
             self.resource.command = self.command_row.get_text().strip() or None
         if self.dedicated_profile_switch is not None:
