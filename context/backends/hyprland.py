@@ -16,7 +16,10 @@ import os
 import shutil
 import subprocess
 
+from ..logging_setup import get_logger, traced
 from .base import Workspace
+
+log = get_logger("backend.hyprland")
 
 HANDLE_PREFIX = "ctx-"
 
@@ -41,11 +44,22 @@ class HyprlandBackend:
 
     def _run(self, *args: str) -> subprocess.CompletedProcess | None:
         try:
-            return subprocess.run(
+            result = subprocess.run(
                 ["hyprctl", *args], capture_output=True, text=True, timeout=5
             )
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.error("hyprctl %s: %s", " ".join(args), exc)
             return None
+        if result.returncode != 0:
+            log.warning(
+                "hyprctl %s exited %d: %s",
+                " ".join(args), result.returncode, result.stderr.strip()[:120],
+            )
+        else:
+            # Only the fact of the call: JSON queries return whole window lists,
+            # which drown everything else in the log.
+            log.debug("hyprctl %s ok", " ".join(args))
+        return result
 
     def _query(self, *args: str):
         result = self._run("-j", *args)
@@ -62,6 +76,7 @@ class HyprlandBackend:
             return []
         return [str(w.get("name", "")) for w in data if isinstance(w, dict)]
 
+    @traced(log)
     def current_handle(self) -> str | None:
         data = self._query("activeworkspace")
         if not isinstance(data, dict):
@@ -69,11 +84,13 @@ class HyprlandBackend:
         name = data.get("name")
         return str(name) if name else None
 
+    @traced(log)
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace | None:
         name = handle or f"{HANDLE_PREFIX}{_sanitize(title)}"
         exists = name in self.workspace_names()
         return Workspace(handle=name, label=title, created=not exists)
 
+    @traced(log)
     def switch_to(self, workspace: Workspace) -> bool:
         result = self._run("dispatch", "workspace", f"name:{workspace.handle}")
         return result is not None and result.returncode == 0
@@ -105,6 +122,7 @@ class HyprlandBackend:
     def window_count(self, handle: str) -> int:
         return len(self._windows_on(handle))
 
+    @traced(log)
     def close_workspace(self, handle: str) -> int:
         closed = 0
         for address in self._windows_on(handle):
@@ -113,11 +131,13 @@ class HyprlandBackend:
                 closed += 1
         return closed
 
+    @traced(log)
     def float_window(self, address: str) -> bool:
         """Float one window, by address."""
         result = self._run("dispatch", "setfloating", f"address:{address}")
         return result is not None and result.returncode == 0
 
+    @traced(log)
     def preselect(self, direction: str) -> bool:
         """Open the next window to one side of the current one.
 
@@ -131,6 +151,7 @@ class HyprlandBackend:
         result = self._run("dispatch", "layoutmsg", "preselect", direction)
         return result is not None and result.returncode == 0
 
+    @traced(log)
     def apply_ratios(self, handle: str, slots) -> int:
         """Resize tiled windows so they match the layout's proportions.
 
@@ -194,6 +215,7 @@ class HyprlandBackend:
             return None
         return max(rights) - min(lefts), max(bottoms) - min(tops)
 
+    @traced(log)
     def remove_workspace(self, handle: str) -> bool:
         # Named workspaces disappear on their own once the last window closes,
         # and the handle stays valid because it is a name, not a position.

@@ -12,6 +12,7 @@ rotated so it cannot grow without bound.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -82,3 +83,54 @@ def get_logger(name: str | None = None) -> logging.Logger:
     """A child logger, e.g. get_logger("app") -> context.app."""
     configure()
     return logging.getLogger(f"{LOGGER_NAME}.{name}" if name else LOGGER_NAME)
+
+
+def traced(logger: logging.Logger, level: int = logging.DEBUG):
+    """Log a function's arguments, result, and any exception.
+
+    Most of what is worth logging is "this was called with X and returned Y",
+    which is noise at info level but exactly what is needed when something
+    misbehaves. Rather than writing that by hand in every method, decorate:
+
+        @traced(log)
+        def preselect(self, direction): ...
+
+    Exceptions are logged at error level and re-raised, so tracing never
+    changes behaviour.
+    """
+
+    def decorate(func):
+        name = func.__name__
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if logger.isEnabledFor(level):
+                # Drop `self` so the line is about the call, not the instance.
+                shown = args[1:] if args and hasattr(args[0], func.__name__) else args
+                logger.log(level, "%s(%s)", name, _describe(shown, kwargs))
+            try:
+                result = func(*args, **kwargs)
+            except Exception as exc:
+                logger.error("%s failed: %s", name, exc)
+                raise
+            if logger.isEnabledFor(level):
+                logger.log(level, "%s -> %s", name, _short(result))
+            return result
+
+        return wrapper
+
+    return decorate
+
+
+def _describe(args, kwargs) -> str:
+    parts = [_short(a) for a in args]
+    parts += [f"{k}={_short(v)}" for k, v in kwargs.items()]
+    return ", ".join(parts)
+
+
+def _short(value, limit: int = 80) -> str:
+    """A compact repr, so a long list never floods the log."""
+    if isinstance(value, (list, tuple, set, dict)) and len(value) > 4:
+        return f"{type(value).__name__}[{len(value)}]"
+    text = repr(value)
+    return text if len(text) <= limit else text[: limit - 1] + "…"

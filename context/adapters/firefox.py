@@ -20,7 +20,10 @@ import time
 
 from ..resources import Resource
 from ..store import data_dir
+from ..logging_setup import get_logger, traced
 from .base import child_env
+
+log = get_logger("adapter.firefox")
 
 APP_IDS = {"firefox.desktop", "firefox-esr.desktop", "org.mozilla.firefox.desktop"}
 
@@ -121,6 +124,7 @@ class FirefoxAdapter:
                 env=child_env(),
             )
 
+    @traced(log)
     def launch(self, resource: Resource, context_id: str) -> None:
         binary = self.executable()
         if binary is None:
@@ -181,6 +185,7 @@ class FirefoxAdapter:
             summary += " · main profile"
         return summary
 
+    @traced(log)
     def teardown(self, resource: Resource, context_id: str) -> None:
         if resource.uses_main_profile:
             # Never touch the user's own profile.

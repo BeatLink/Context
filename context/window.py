@@ -15,8 +15,11 @@ from . import sidebar
 from .editor_window import EditorWindow
 from .launcher import active_context, context_is_open
 from .layout import Layout
+from .logging_setup import get_logger
 from .resources import Resource
 from .store import Context, ContextStore
+
+log = get_logger("window")
 
 
 def display_name() -> str:
@@ -251,6 +254,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         signature = (frozenset(state), active_id)
         if signature != getattr(self, "_open_signature", None):
             self._open_signature = signature
+            log.debug("open contexts changed: %d open", len(state))
             self.refresh()
         return True
 
@@ -413,6 +417,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.refresh()
 
     def _edit(self, ctx: Context) -> None:
+        log.debug("editing context %s", ctx.title)
         self._open_editor(ctx, self._cancel_edit)
 
     def _cancel_edit(self) -> None:
@@ -437,6 +442,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             self._open(ctx)
 
     def _open(self, ctx: Context) -> None:
+        log.info("opening context %s", ctx.title)
         self.store.touch(ctx)
         self.entry.set_text("")
         self.refresh()
@@ -494,5 +500,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.refresh()
 
     def _delete(self, ctx: Context) -> None:
+        log.info("forgetting context %s", ctx.title)
         self.store.delete(ctx)
         self.refresh()

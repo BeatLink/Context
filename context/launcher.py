@@ -10,7 +10,10 @@ from gi.repository import GLib
 from . import adapters, backends
 from .backends import Backend, Workspace
 from .layout import split_directions
+from .logging_setup import get_logger, traced
 from .store import Context
+
+log = get_logger("launcher")
 
 # How long to wait for one launched window to map before launching the next.
 WINDOW_TIMEOUT = 10.0
@@ -38,6 +41,7 @@ class CloseResult:
     workspace_removed: bool = False
 
 
+@traced(log)
 def active_context(contexts, backend: Backend | None = None):
     """The context whose workspace is focused right now, if any."""
     wm: Backend = backend or backends.detect()
@@ -50,6 +54,7 @@ def active_context(contexts, backend: Backend | None = None):
     return None
 
 
+@traced(log)
 def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     wm: Backend = backend or backends.detect()
     handle = ctx.handle_for(wm.name)
@@ -58,6 +63,7 @@ def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     return wm.workspace_exists(handle) and wm.window_count(handle) != 0
 
 
+@traced(log)
 def close_context(ctx: Context, backend: Backend | None = None) -> CloseResult:
     """Shut a context down without forgetting it.
 
@@ -87,6 +93,7 @@ def launch_app(app_id: str) -> None:
     adapters.launch_desktop_entry(app_id)
 
 
+@traced(log)
 def launch_context(
     ctx: Context,
     backend: Backend | None = None,
@@ -127,6 +134,7 @@ def launch_context(
     return result
 
 
+@traced(log)
 def _launch_resources(
     ctx: Context, wm: Backend | None = None, handle: str | None = None
 ) -> tuple[list[str], list[tuple[str, str]]]:
@@ -158,7 +166,11 @@ def _launch_resources(
             continue
 
         if wm is not None and handle is not None:
-            _await_window(wm, handle, before + 1)
+            if not _await_window(wm, handle, before + 1):
+                log.warning(
+                    "%s did not map within %.0fs; later windows may tile oddly",
+                    resource.app_id, WINDOW_TIMEOUT,
+                )
 
     return launched, failed
 

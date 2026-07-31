@@ -14,6 +14,8 @@ import os
 
 import gi
 
+from .logging_setup import get_logger
+
 gi.require_version("Gtk", "4.0")
 
 try:
@@ -31,6 +33,8 @@ EDGES = {
 
 ENV_LIB = "CONTEXT_LAYER_SHELL_LIB"
 _REEXEC_FLAG = "CONTEXT_LAYER_SHELL_PRELOADED"
+
+log = get_logger("sidebar")
 
 
 def ensure_preloaded() -> None:
@@ -67,12 +71,20 @@ def ensure_preloaded() -> None:
     package = getattr(main, "__package__", None)
     if package:
         argv = [sys.executable, "-m", package, *sys.argv[1:]]
-    else:
+    elif sys.argv and sys.argv[0] not in ("-c", "-"):
         argv = [sys.executable, *sys.argv]
+    else:
+        # Imported from `python -c` or a REPL: there is nothing to re-exec, and
+        # trying would restart python with no program.
+        log.debug("no re-executable entry point; skipping the preload")
+        return
 
     try:
         os.execve(sys.executable, argv, env)
-    except OSError:
+    except OSError as exc:
+        # Without the preload the sidebar silently becomes an ordinary window,
+        # which looks like the layer-shell support having vanished.
+        log.error("could not re-exec with the layer-shell preload: %s", exc)
         return
 
 DEFAULT_WIDTH = 380

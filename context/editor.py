@@ -11,10 +11,13 @@ from gi.repository import Adw, Gdk, Gtk
 
 from .adapters import configurable, describe
 from .apps import App, installed_apps, search_apps
+from .logging_setup import get_logger
 from .layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
 from .resource_page import ResourcePage
 from .resources import Resource
 from .store import Context
+
+log = get_logger("editor")
 
 HANDLE = 14  # px hit area for the resize grips
 
@@ -621,6 +624,7 @@ class EditorPage(Adw.NavigationPage):
                 tile.refresh(self._count_of(app_id), latest)
 
     def _on_add(self, app: App) -> None:
+        log.debug("adding %s to the layout", app.id)
         self.entries.append(Resource(app_id=app.id))
         # Keep exactly one slot per window in the layout.
         self.layout = self.layout.resized(len(self.entries))
@@ -628,6 +632,7 @@ class EditorPage(Adw.NavigationPage):
         self._update_state()
 
     def _on_remove(self, index: int) -> None:
+        log.debug("removing window %d from the layout", index)
         if not (0 <= index < len(self.entries)):
             return
         app_id = self.entries[index].app_id
@@ -696,6 +701,10 @@ class EditorPage(Adw.NavigationPage):
         title = self.current_title()
         if not title:
             return
+        log.info(
+            "saving context %s: %d windows, %d slots",
+            title, len(self.entries), len(self.layout.slots),
+        )
         self.on_done(
             self.ctx,
             self._ordered_resources(),
