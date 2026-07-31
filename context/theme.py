@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from .logging_setup import get_logger
@@ -22,6 +22,54 @@ from .logging_setup import get_logger
 log = get_logger("theme")
 
 ENV_THEME = "CONTEXT_THEME"
+
+# Colour schemes. `SYSTEM` follows the desktop's own preference; the other two
+# are the point of this module — an application choosing for itself, which is
+# what libadwaita would not permit.
+LIGHT = "light"
+DARK = "dark"
+SYSTEM = "system"
+SCHEMES = (SYSTEM, LIGHT, DARK)
+
+
+def system_prefers_light() -> bool:
+    """Whether the desktop asks for a light theme.
+
+    The cross-desktop answer is the XDG settings portal's `color-scheme`: 1 is
+    "prefer dark", 2 is "prefer light", 0 is no preference. Read over D-Bus
+    rather than through a toolkit, so it does not depend on which one is drawing.
+    """
+    try:
+        from gi.repository import Gio
+
+        proxy = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SESSION,
+            Gio.DBusProxyFlags.NONE,
+            None,
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+            None,
+        )
+        value = proxy.call_sync(
+            "ReadOne",
+            _portal_key("org.freedesktop.appearance", "color-scheme"),
+            Gio.DBusCallFlags.NONE,
+            1000,
+            None,
+        )
+        return value.unpack()[0] == 2
+    except Exception as exc:
+        # No portal, no session bus, or a desktop that does not answer. Dark is
+        # what Context has always drawn, so it is the safer default.
+        log.debug("no system colour scheme (%s); assuming dark", exc)
+        return False
+
+
+def _portal_key(namespace: str, key: str):
+    from gi.repository import GLib
+
+    return GLib.Variant("(ss)", (namespace, key))
 
 
 def config_dir() -> Path:
@@ -60,6 +108,13 @@ class Theme:
     surface: str = "#1e1e1e"
     on_surface: str = "#ffffff"
 
+    # Drawn under the surface: the card a group of settings sits on, the line
+    # between rows, and the shade a control uses to lift off the background.
+    card: str = "#ffffff0d"
+    border: str = "#ffffff1a"
+    control: str = "#ffffff14"
+    control_hover: str = "#ffffff26"
+
     # Layout preview
     preview_background: str = "#00000047"
     slot_fill: str = "#5ac0c052"
@@ -84,27 +139,91 @@ class Theme:
     rail_divider: str = "#ffffff26"
 
     @classmethod
-    def load(cls) -> "Theme":
+    def light(cls) -> "Theme":
+        """The same theme, drawn on a light surface.
+
+        Not a filter over the dark one: the overlays that build the dark theme
+        are white at low alpha, and inverting them to black at the same alpha
+        gives washed-out greys with the wrong contrast. Each is chosen instead.
+
+        This is what libadwaita would not allow. It follows the system
+        preference and offers no way for an application to differ, which is
+        reasonable for a GNOME application and wrong for a shell the user
+        themes themselves — and it is why the light theme could not be made to
+        work while Adw widgets were drawing the surfaces.
+        """
+        return cls(
+            accent="#2a8f8f",
+            surface="#f6f5f4",
+            on_surface="#1b1b1b",
+            card="#ffffff",
+            border="#0000001f",
+            control="#00000010",
+            control_hover="#0000001c",
+            preview_background="#00000012",
+            slot_fill="#2a8f8f30",
+            slot_fill_active="#2a8f8f5c",
+            slot_border="#2a8f8fcc",
+            tile_background="#00000010",
+            tile_hover="#0000001c",
+            tile_selected="#2a8f8f30",
+            drop_target="#2a8f8f1f",
+            leaving_border="#2a8f8f",
+            rail_background="#0000000a",
+            rail_hover="#00000018",
+            rail_open="#2a8f8f2e",
+            rail_active="#2a8f8f4d",
+            rail_divider="#00000021",
+        )
+
+    @classmethod
+    def for_scheme(cls, scheme: str) -> "Theme":
+        """The built-in theme for `light`, `dark`, or whatever the system says.
+
+        A theme.json on disk still wins: `load` layers it over whichever of
+        these is the starting point, so someone who has set two colours by hand
+        keeps them and gets the rest from the scheme they picked.
+        """
+        if scheme == LIGHT:
+            return cls.light()
+        if scheme == DARK:
+            return cls()
+        return cls.light() if system_prefers_light() else cls()
+
+    @classmethod
+    def load(cls, scheme: str | None = None) -> "Theme":
+        """The theme to draw with: the chosen scheme, plus any hand edits.
+
+        The scheme decides the starting palette and theme.json overrides
+        individual colours on top, so setting the accent by hand does not also
+        opt out of light mode.
+        """
+        if scheme is None:
+            from . import settings
+
+            scheme = settings.current().color_scheme
+
+        base = cls.for_scheme(scheme)
         path = theme_path()
         try:
             raw = json.loads(path.read_text())
         except FileNotFoundError:
-            return cls()
+            return base
         except (OSError, json.JSONDecodeError) as exc:
             # A broken theme must not stop the launcher starting.
             log.warning("ignoring %s: %s", path, exc)
-            return cls()
+            return base
 
         if not isinstance(raw, dict):
             log.warning("ignoring %s: expected an object", path)
-            return cls()
+            return base
 
         known = {f.name for f in fields(cls)}
         values = {k: str(v) for k, v in raw.items() if k in known and isinstance(v, str)}
         unknown = set(raw) - known
         if unknown:
             log.debug("theme keys ignored: %s", ", ".join(sorted(unknown)))
-        return cls(**values)
+        return replace(base, **values)
 
     def write_default(self) -> Path:
         """Write the current values out, as a starting point to edit."""
@@ -124,6 +243,114 @@ class Theme:
         """The stylesheet for the parts libadwaita does not cover."""
         return f"""
 @define-color ctx_accent {self.accent};
+@define-color ctx_surface {self.surface};
+@define-color ctx_on_surface {self.on_surface};
+
+/* Context draws its own surfaces rather than inheriting a desktop theme's.
+   This is the part libadwaita made impossible: it resolves light and dark from
+   the system preference before an application gets a say, so a stylesheet like
+   this one was always painting over widgets that had already chosen. */
+window.ctx-window,
+window.ctx-window > * {{
+    background-color: {self.surface};
+    color: {self.on_surface};
+}}
+
+.ctx-header {{
+    background-color: {self.card};
+    border-bottom: 1px solid {self.border};
+    padding: 6px 8px;
+    min-height: 40px;
+}}
+.ctx-header-title {{
+    font-weight: bold;
+}}
+
+.ctx-page {{
+    background-color: {self.surface};
+}}
+
+.ctx-group-title {{
+    font-weight: bold;
+    font-size: 1.05em;
+    margin-left: 4px;
+}}
+.ctx-group-description {{
+    font-size: 0.9em;
+    opacity: 0.65;
+    margin-left: 4px;
+    margin-bottom: 2px;
+}}
+
+/* One card per group, with the rows divided by a line rather than by
+   separator widgets — a hidden row then leaves no gap behind it. */
+.ctx-card {{
+    background-color: {self.card};
+    border: 1px solid {self.border};
+    border-radius: 12px;
+}}
+.ctx-card > row {{
+    border-bottom: 1px solid {self.border};
+    background: transparent;
+}}
+.ctx-card > row:last-child {{
+    border-bottom: none;
+}}
+
+/* Controls have to be styled explicitly now that no widget library is doing
+   it. Kept to one shade and one hover, so a theme stays two colours to edit. */
+/* Controls must be able to shrink with the sidebar. The default themes set a
+   min-width on entries and dropdown buttons that is wider than a collapsed
+   launcher, which pushes them off the right edge instead of narrowing them. */
+.ctx-page entry,
+.ctx-page spinbutton,
+.ctx-page spinbutton text,
+.ctx-page dropdown,
+.ctx-page dropdown > button {{
+    min-width: 0;
+}}
+.ctx-page dropdown > button > box > label {{
+    min-width: 0;
+}}
+
+.ctx-page button,
+.ctx-page entry,
+.ctx-page spinbutton,
+.ctx-page dropdown > button {{
+    background-image: none;
+    background-color: {self.control};
+    color: {self.on_surface};
+    border: 1px solid {self.border};
+    border-radius: 8px;
+}}
+.ctx-page button:hover,
+.ctx-page dropdown > button:hover {{
+    background-color: {self.control_hover};
+}}
+.ctx-page entry:focus-within,
+.ctx-page spinbutton:focus-within {{
+    border-color: {self.accent};
+}}
+.ctx-page switch:checked {{
+    background-color: {self.accent};
+}}
+
+.ctx-toast {{
+    background-color: {self.card};
+    color: {self.on_surface};
+    border: 1px solid {self.border};
+    border-radius: 12px;
+    padding: 10px 16px;
+}}
+
+.ctx-status-title {{
+    font-weight: bold;
+    font-size: 1.2em;
+}}
+.ctx-status-description,
+.ctx-status-icon {{
+    opacity: 0.6;
+}}
 
 .ctx-tile {{
     background-color: {self.tile_background};
@@ -249,7 +476,13 @@ def install() -> bool:
 
 
 def reinstall() -> bool:
-    """Reload the stylesheet in place, for when the scheme or theme changes."""
+    """Reload the stylesheet in place, for when the scheme or theme changes.
+
+    Re-reads the theme as well as re-rendering it: switching to light mode
+    changes which palette `load` starts from, and reusing the cached one would
+    redraw the old colours.
+    """
+    reload()
     if not _installed:
         return install()
     _provider.load_from_data(current().css())

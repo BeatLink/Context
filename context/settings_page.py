@@ -10,11 +10,10 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
-from . import monitors, settings, theme
+from . import monitors, settings, theme, widgets
 from .logging_setup import get_logger
 
 log = get_logger("settings_page")
@@ -31,7 +30,7 @@ SAVE_LABELS = (
 )
 
 
-def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> Adw.PreferencesRow:
+def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> widgets.Row:
     """A row with its control under the description rather than beside it.
 
     `Adw.ActionRow` and its subclasses put the control in a suffix, which is
@@ -43,7 +42,7 @@ def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> Adw.PreferencesR
     The title is set on the row as well as drawn, so it still reaches
     accessibility tooling and anything that looks rows up by name.
     """
-    row = Adw.PreferencesRow(title=title, activatable=False)
+    row = widgets.Row(title=title)
     row.add_css_class("ctx-setting")
 
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -71,7 +70,7 @@ def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> Adw.PreferencesR
     return row
 
 
-def _row_spin(title, subtitle, value, low, high, step, on_change) -> Adw.PreferencesRow:
+def _row_spin(title, subtitle, value, low, high, step, on_change) -> widgets.Row:
     spin = Gtk.SpinButton(
         adjustment=Gtk.Adjustment(
             value=value, lower=low, upper=high, step_increment=step, page_increment=step
@@ -102,21 +101,21 @@ def _monitor_description(found, name: str) -> str:
     return name
 
 
-def _row_switch(title, subtitle, active, on_change) -> Adw.PreferencesRow:
+def _row_switch(title, subtitle, active, on_change) -> widgets.Row:
     switch = Gtk.Switch(active=active, halign=Gtk.Align.START)
     switch.connect("notify::active", lambda s, _p: on_change(s.get_active()))
     return _stacked(title, subtitle, switch)
 
 
-class SettingsPage(Adw.NavigationPage):
+class SettingsPage(widgets.NavigationPage):
     """A preferences page hosted in the launcher's navigation stack."""
 
     def __init__(self, window) -> None:
         super().__init__(title="Settings", tag="settings")
         self.window = window
 
-        toolbar = Adw.ToolbarView()
-        header = Adw.HeaderBar()
+        toolbar = widgets.ToolbarView()
+        header = widgets.HeaderBar(title="Settings")
         # Nothing to minimise, maximise or close: this is a page inside the
         # docked launcher, and its own back button is the way out. Every other
         # header in Context suppresses them for the same reason.
@@ -124,7 +123,7 @@ class SettingsPage(Adw.NavigationPage):
         header.set_show_end_title_buttons(False)
         toolbar.add_top_bar(header)
 
-        page = Adw.PreferencesPage()
+        page = widgets.Page()
         page.add(self._appearance())
         page.add(self._screens())
         page.add(self._behaviour())
@@ -137,9 +136,9 @@ class SettingsPage(Adw.NavigationPage):
 
     # -- groups --------------------------------------------------------------
 
-    def _appearance(self) -> Adw.PreferencesGroup:
+    def _appearance(self) -> widgets.Group:
         live = settings.current()
-        group = Adw.PreferencesGroup(
+        group = widgets.Group(
             title="Appearance",
             description="How the launcher looks and where it sits.",
         )
@@ -155,7 +154,7 @@ class SettingsPage(Adw.NavigationPage):
                 ("Wherever the compositor puts it", "All displays", *found),
                 ("", settings.ALL_MONITORS, *found),
                 live.monitor,
-                lambda v: self._apply(monitor=v, restart=True),
+                lambda v: self._apply(monitor=v, remonitor=True),
             )
         )
         group.add(
@@ -184,7 +183,7 @@ class SettingsPage(Adw.NavigationPage):
         )
         return group
 
-    def _screens(self) -> Adw.PreferencesGroup:
+    def _screens(self) -> widgets.Group:
         """Which physical monitor is screen 1, screen 2, and so on.
 
         The whole of Context's screen identity lives here. A context only ever
@@ -192,7 +191,7 @@ class SettingsPage(Adw.NavigationPage):
         than an edit to every context that mentioned the old one.
         """
         live = settings.current()
-        group = Adw.PreferencesGroup(
+        group = widgets.Group(
             title="Screens",
             description="Which monitor a context means by screen 1, screen 2, "
             "and so on.",
@@ -265,7 +264,7 @@ class SettingsPage(Adw.NavigationPage):
             if position < len(current):
                 row.set_subtitle(_monitor_description(found, current[position]))
 
-    def _behaviour(self) -> Adw.PreferencesGroup:
+    def _behaviour(self) -> widgets.Group:
         """What the collapse button does, and what collapsing looks like.
 
         The launcher's own width is not here — it applies in every mode, so it
@@ -275,7 +274,7 @@ class SettingsPage(Adw.NavigationPage):
         settings that currently do something.
         """
         live = settings.current()
-        group = Adw.PreferencesGroup(
+        group = widgets.Group(
             title="Collapsing",
             description="What the collapse button does.",
         )
@@ -343,9 +342,9 @@ class SettingsPage(Adw.NavigationPage):
             collapses and (live.auto_expand or live.collapse_mode == "hidden")
         )
 
-    def _saving(self) -> Adw.PreferencesGroup:
+    def _saving(self) -> widgets.Group:
         live = settings.current()
-        group = Adw.PreferencesGroup(
+        group = widgets.Group(
             title="Saving",
             description="A context drifts as you use it — windows get opened, "
             "moved and closed. This is when to offer to keep the changes.",
@@ -363,9 +362,9 @@ class SettingsPage(Adw.NavigationPage):
         )
         return group
 
-    def _advanced(self) -> Adw.PreferencesGroup:
+    def _advanced(self) -> widgets.Group:
         live = settings.current()
-        group = Adw.PreferencesGroup(title="Advanced")
+        group = widgets.Group(title="Advanced")
         group.add(
             _row_combo(
                 "Window manager",
@@ -399,13 +398,13 @@ class SettingsPage(Adw.NavigationPage):
         )
         return group
 
-    def _files(self) -> Adw.PreferencesGroup:
+    def _files(self) -> widgets.Group:
         """Where things live, so the hand-editable files can be found."""
         from .store import data_dir
         from .logging_setup import log_path
         from .uistate import state_path
 
-        group = Adw.PreferencesGroup(
+        group = widgets.Group(
             title="Files",
             description="Everything here can also be edited by hand.",
         )
@@ -416,7 +415,7 @@ class SettingsPage(Adw.NavigationPage):
             ("Interface state", state_path()),
             ("Log", log_path()),
         ):
-            row = Adw.ActionRow(title=title, subtitle=str(path))
+            row = widgets.Row(title=title)
             row.add_css_class("property")
             group.add(row)
 
@@ -449,11 +448,20 @@ class SettingsPage(Adw.NavigationPage):
         self,
         restart: bool = False,
         resync: bool = False,
+        remonitor: bool = False,
         **changes,
     ) -> None:
         settings.update(**changes)
         if resync:
             self._sync_rows()
+        if remonitor:
+            # Which screens the launcher docks to changed. Same operation as a
+            # cable being plugged in, so it needs no restart.
+            app = self.window.get_application()
+            rebuild = getattr(app, "rebuild_launchers", None)
+            if rebuild is not None:
+                rebuild()
+                return
         # Every launcher, not just the one showing this page: a width or a
         # collapse mode applies to all of them.
         app = self.window.get_application()
@@ -471,4 +479,4 @@ class SettingsPage(Adw.NavigationPage):
     def _write_theme(self) -> None:
         path = theme.current().write_default()
         log.info("wrote the default theme to %s", path)
-        self.window.toasts.add_toast(Adw.Toast(title=f"Wrote {path}", timeout=4))
+        self.window.toasts.add_toast(widgets.Toast(title=f"Wrote {path}", timeout=4))

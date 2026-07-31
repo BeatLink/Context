@@ -116,6 +116,23 @@ class FakeBackend:
         self.calls.append(("windows", handle))
         return [w for w in self.open_windows if handle is None or w.handle == handle]
 
+    def place_windows(self, handle: str, *app_ids: str) -> None:
+        """Put windows on a workspace, as if apps had already been launched.
+
+        Keeps `windows()` and `window_count()` telling the same story — the
+        launcher reads both, and a fake where they disagree tests nothing.
+        """
+        for app_id in app_ids:
+            self.open_windows.append(
+                WindowInfo(
+                    id=f"0x{len(self.open_windows):x}",
+                    title=app_id,
+                    app_id=app_id,
+                    handle=handle,
+                )
+            )
+        self.workspaces[handle] = self.workspaces.get(handle, 0) + len(app_ids)
+
     def focus_window(self, window_id: str) -> bool:
         self.calls.append(("focus", window_id))
         self.focused = window_id

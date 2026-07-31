@@ -22,7 +22,7 @@ def isolated_theme(tmp_path, monkeypatch):
 
 
 def test_defaults_when_no_file_exists():
-    assert Theme.load().accent == Theme().accent
+    assert Theme.load("dark").accent == Theme().accent
 
 
 def test_a_partial_theme_keeps_the_other_defaults(isolated_theme):
@@ -30,7 +30,7 @@ def test_a_partial_theme_keeps_the_other_defaults(isolated_theme):
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"accent": "#ff0000"}))
 
-    loaded = Theme.load()
+    loaded = Theme.load("dark")
     assert loaded.accent == "#ff0000"
     assert loaded.surface == Theme().surface
 
@@ -41,7 +41,7 @@ def test_broken_json_falls_back_rather_than_crashing(isolated_theme):
     path.parent.mkdir(parents=True)
     path.write_text("{ not json")
 
-    assert Theme.load().accent == Theme().accent
+    assert Theme.load("dark").accent == Theme().accent
 
 
 def test_a_non_object_theme_is_ignored(isolated_theme):
@@ -49,7 +49,7 @@ def test_a_non_object_theme_is_ignored(isolated_theme):
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(["red", "green"]))
 
-    assert Theme.load().accent == Theme().accent
+    assert Theme.load("dark").accent == Theme().accent
 
 
 def test_unknown_keys_are_ignored(isolated_theme):
@@ -57,7 +57,7 @@ def test_unknown_keys_are_ignored(isolated_theme):
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"accent": "#123456", "nonsense": "#abcdef"}))
 
-    assert Theme.load().accent == "#123456"
+    assert Theme.load("dark").accent == "#123456"
 
 
 @pytest.mark.parametrize(
@@ -88,9 +88,11 @@ def test_css_carries_the_accent():
 
 
 def test_write_default_round_trips(isolated_theme):
+    """Every colour is written, so a file on disk pins the theme completely —
+    a written-out dark theme stays dark even when the system asks for light."""
     path = Theme().write_default()
     assert path.exists()
-    assert Theme.load() == Theme()
+    assert Theme.load("light") == Theme()
 
 
 def test_current_is_cached_until_reloaded(isolated_theme):

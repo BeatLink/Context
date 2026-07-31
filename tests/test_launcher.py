@@ -73,9 +73,30 @@ def test_preselects_between_launches(ctx, backend, stub_adapters):
 
 
 def test_reopening_a_live_context_does_not_relaunch(ctx, backend, stub_adapters):
-    backend.workspaces["ctx-work"] = 2
+    backend.place_windows("ctx-work", "a.desktop", "b.desktop")
     result = launch_context(ctx, backend=backend)
     assert result.reused_workspace
+    assert stub_adapters == []
+
+
+def test_reopening_relaunches_only_what_was_closed(ctx, backend, stub_adapters):
+    """A context with one window closed by hand gets that one window back.
+
+    Skipping any screen that held a window meant an app closed on its own never
+    returned: the workspace was not empty, so nothing relaunched.
+    """
+    backend.place_windows("ctx-work", "a.desktop")
+    result = launch_context(ctx, backend=backend)
+    assert not result.reused_workspace
+    assert stub_adapters == ["b.desktop"]
+
+
+def test_a_window_whose_class_drops_the_desktop_suffix_still_counts(
+    ctx, backend, stub_adapters
+):
+    """Window classes rarely match desktop ids: `element`, not `element.desktop`."""
+    backend.place_windows("ctx-work", "a", "b")
+    launch_context(ctx, backend=backend)
     assert stub_adapters == []
 
 

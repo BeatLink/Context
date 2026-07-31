@@ -9,11 +9,10 @@ import threading
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GLib
+from gi.repository import Gdk, Gio, GLib, Gtk
 
-from . import backends, switcher, uistate
+from . import backends, switcher, uistate, widgets
 from .backends import Workspace
 from .launcher import active_context, capture_arrangement, has_drifted
 from .launcher import move_window_to_context, move_window_to_screen
@@ -24,6 +23,12 @@ from .launcher import reconnect
 from .store import Context, ContextStore
 from .logging_setup import configure, get_logger
 from .window import LauncherWindow
+
+
+# How long to wait for monitor hot-plug to settle before rebuilding. Enabling a
+# screen emits several changes as modes are negotiated; rebuilding on each one
+# tears the launchers down mid-change.
+MONITOR_SETTLE_MS = 400
 
 
 # Commands a keybind can send to the running instance. `python3 -m context
@@ -54,7 +59,7 @@ COMMANDS = {
 }
 
 
-class ContextApplication(Adw.Application):
+class ContextApplication(Gtk.Application):
     def __init__(self) -> None:
         super().__init__(
             application_id="io.beatlink.Context",
@@ -75,6 +80,9 @@ class ContextApplication(Adw.Application):
         self.asked_about: set[str] = set()
         self.launching: set[str] = set()
         self.switcher: switcher.SwitcherWindow | None = None
+        # Held so the monitor list is not collected while it is being watched.
+        self._monitor_model = None
+        self._monitor_settle = 0
 
     def do_command_line(self, command_line) -> int:
         """Entry point for every launch, first or subsequent.
@@ -232,7 +240,7 @@ class ContextApplication(Adw.Application):
             self.log.info("moved %s to %s", window.app_id, ctx.title)
         elif self.window is not None:
             self.window.toasts.add_toast(
-                Adw.Toast(title=f"Open “{ctx.title}” first", timeout=4)
+                widgets.Toast(title=f"Open “{ctx.title}” first", timeout=4)
             )
 
     def adopt_windows(self) -> None:
@@ -242,7 +250,7 @@ class ContextApplication(Adw.Application):
             self.log.info("every window already belongs to a context")
             if self.window is not None:
                 self.window.toasts.add_toast(
-                    Adw.Toast(title="Every window is in a context", timeout=3)
+                    widgets.Toast(title="Every window is in a context", timeout=3)
                 )
             return
         from .adopt import AdoptWindow
@@ -269,7 +277,7 @@ class ContextApplication(Adw.Application):
                 if windows
                 else f"Nothing open to save for “{current.title}”"
             )
-            self.window.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+            self.window.toasts.add_toast(widgets.Toast(title=message, timeout=3))
         self.refresh_all()
 
     def _show_picker(self, picker) -> None:
@@ -329,7 +337,7 @@ class ContextApplication(Adw.Application):
         # would otherwise ask again on every switch.
         self.asked_about.add(ctx.id)
 
-        toast = Adw.Toast(title=f"“{ctx.title}” has changed", timeout=8)
+        toast = widgets.Toast(title=f"“{ctx.title}” has changed", timeout=8)
         toast.set_button_label("Save layout")
         toast.connect("button-clicked", lambda _t: self._save_drift(ctx))
         self.window.toasts.add_toast(toast)
@@ -365,8 +373,60 @@ class ContextApplication(Adw.Application):
             self.store.save()
 
             self._build_launchers()
+            self._watch_monitors()
         for launcher_window in self.launchers:
             launcher_window.present()
+
+    def _watch_monitors(self) -> None:
+        """Rebuild the launchers when a monitor is plugged in or unplugged.
+
+        `Gdk.Display.get_monitors()` is a `Gio.ListModel`, so `items-changed`
+        covers both directions. Without this the launchers were built once at
+        startup and never revisited: unplugging a screen left a launcher docked
+        to an output that no longer existed — a second bar stacked on the
+        remaining monitor — and plugging one in gave it no launcher at all.
+        """
+        display = Gdk.Display.get_default()
+        if display is None:
+            return
+        self._monitor_model = display.get_monitors()
+        self._monitor_model.connect("items-changed", self._on_monitors_changed)
+
+    def _on_monitors_changed(self, model, position, removed, added) -> None:
+        # Hot-plug arrives as a burst: a monitor being enabled can remove and
+        # re-add itself as modes settle. Rebuilding on each one would tear the
+        # launchers down mid-change, so settle first and rebuild once.
+        self.log.info("monitors changed (+%d -%d)", added, removed)
+        if self._monitor_settle:
+            GLib.source_remove(self._monitor_settle)
+        self._monitor_settle = GLib.timeout_add(MONITOR_SETTLE_MS, self._remonitor)
+
+    def _remonitor(self) -> bool:
+        self._monitor_settle = 0
+        self.rebuild_launchers()
+        return GLib.SOURCE_REMOVE
+
+    def rebuild_launchers(self) -> None:
+        """Put the launchers back on the screens they now belong on.
+
+        Also the way the monitor setting takes effect without a restart: going
+        from one screen to every screen is the same operation as a cable being
+        plugged in.
+        """
+        from . import monitors
+
+        wanted = [getattr(m, "name", None) for m in monitors.docks_on(self.backend)]
+        if wanted == [w.monitor for w in self.launchers]:
+            return
+
+        for window in self.launchers:
+            window.destroy()
+        self.window = None
+        self.extra_windows = []
+
+        self._build_launchers()
+        for window in self.launchers:
+            window.present()
 
     @property
     def launchers(self) -> list[LauncherWindow]:

@@ -225,24 +225,72 @@ def launch_context(
             wm.place_workspace(handle, outputs[screen].name)
         wm.prepare_launch(workspace)
 
-        # An existing workspace may still be empty: a closed context keeps its
-        # handle. Only skip launching when something is actually there.
-        if workspace.created or wm.window_count(handle) == 0:
-            reused = False
-            launched, failed = _launch_resources(
-                ctx, wm, handle, arrangement.indices_on(screen),
-                arrangement.layout_for(screen),
-            )
-            result.launched.extend(launched)
-            result.failed.extend(failed)
+        # What this screen is missing, rather than whether it holds anything.
+        #
+        # Skipping a screen that held *any* window meant an application closed
+        # by hand never came back: reopening a context with two of its three
+        # windows up relaunched nothing, because the workspace was not empty.
+        wanted = arrangement.indices_on(screen)
+        missing = _missing_on(ctx, wm, handle, wanted)
+        if not missing:
+            continue
 
-            slots = arrangement.layout_for(screen).slots
-            if len(slots) > 1:
-                ratios = getattr(wm, "apply_ratios", None)
-                if ratios is not None:
-                    result.resized += ratios(handle, slots)
+        reused = False
+        launched, failed = _launch_resources(
+            ctx, wm, handle, missing, arrangement.layout_for(screen)
+        )
+        result.launched.extend(launched)
+        result.failed.extend(failed)
+
+        # Only worth proportioning a screen that was built from nothing. A
+        # window added beside existing ones is placed by the compositor, and
+        # resizing everything would rearrange what the user already had.
+        slots = arrangement.layout_for(screen).slots
+        if len(missing) == len(wanted) and len(slots) > 1:
+            ratios = getattr(wm, "apply_ratios", None)
+            if ratios is not None:
+                result.resized += ratios(handle, slots)
 
     result.reused_workspace = reused
+    # Finish on the context's first screen rather than wherever the last one
+    # happened to be, so opening a context leaves you looking at its main work.
+    if screens > 1:
+        wm.switch_to(Workspace(handle=primary.handle, label=ctx.title))
+    return result
+
+
+def _missing_on(
+    ctx: Context, wm: Backend, handle: str, wanted: list[int]
+) -> list[int]:
+    """Which of `wanted` has no window on this screen yet.
+
+    Counted per application, so a context asking for two terminals still gets
+    two. There is no way to tell *which* window belongs to which resource — see
+    ROADMAP §3 — so this is the closest honest answer: how many of each
+    application should be here, minus how many are.
+    """
+    from collections import Counter
+
+    present = Counter(
+        window.app_id.strip().casefold()
+        for window in wm.windows(handle)
+        if window.app_id
+    )
+
+    missing = []
+    for index in wanted:
+        if not 0 <= index < len(ctx.resources):
+            continue
+        app = ctx.resources[index].app_id.strip().casefold()
+        # A window's class rarely matches the desktop id exactly, so both
+        # forms count: `element` for `element.desktop`.
+        for key in (app, app.removesuffix(".desktop")):
+            if present.get(key):
+                present[key] -= 1
+                break
+        else:
+            missing.append(index)
+    return missing
     # Finish on the context's first screen rather than wherever the last one
     # happened to be, so opening a context leaves you looking at its main work.
     if screens > 1:

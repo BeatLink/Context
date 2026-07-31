@@ -13,11 +13,10 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Gio, Gtk
 
-from . import backends, sidebar, theme
+from . import backends, sidebar, theme, widgets
 from .launcher import open_state
 from .logging_setup import get_logger
 
@@ -44,11 +43,12 @@ def _icon_for(app_id: str) -> Gtk.Image:
     return image
 
 
-class SwitcherWindow(Adw.ApplicationWindow):
+class SwitcherWindow(Gtk.ApplicationWindow):
     """A filterable list of contexts or windows, over the whole screen."""
 
     def __init__(self, app, store, mode: str = CONTEXTS, scope_all: bool = False) -> None:
         super().__init__(application=app, title="Switch")
+        self.add_css_class("ctx-window")
         self.store = store
         self.mode = mode
         self.scope_all = scope_all
@@ -60,8 +60,8 @@ class SwitcherWindow(Adw.ApplicationWindow):
         if not sidebar.apply_overlay(self):
             self.fullscreen()
 
-        toolbar = Adw.ToolbarView()
-        header = Adw.HeaderBar()
+        toolbar = widgets.ToolbarView()
+        header = widgets.HeaderBar()
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
 
@@ -100,7 +100,7 @@ class SwitcherWindow(Adw.ApplicationWindow):
         content.append(self.empty)
 
         toolbar.set_content(content)
-        self.set_content(toolbar)
+        self.set_child(toolbar)
 
         escape = Gtk.ShortcutController()
         escape.add_shortcut(
@@ -167,7 +167,7 @@ class SwitcherWindow(Adw.ApplicationWindow):
 
         self.listbox.remove_all()
         for title, subtitle, target in self.entries:
-            row = Adw.ActionRow()
+            row = widgets.ActionRow()
             row.set_title(title)
             row.set_subtitle(subtitle)
             row.set_activatable(True)

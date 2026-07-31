@@ -5,13 +5,12 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, Gtk
+from gi.repository import Gdk, Gtk
 
 
 from .apps import App, installed_apps, search_apps
-from . import isolation, monitors, settings, theme
+from . import isolation, monitors, settings, theme, widgets
 from .logging_setup import get_logger
 from .layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
 from .resource_page import ResourcePage
@@ -446,7 +445,7 @@ class AppTile(Gtk.FlowBoxChild):
             self.box.remove_css_class("ctx-chosen")
 
 
-class EditorPage(Adw.NavigationPage):
+class EditorPage(widgets.NavigationPage):
     """Full-screen page for creating or editing a context."""
 
     def __init__(
@@ -471,8 +470,8 @@ class EditorPage(Adw.NavigationPage):
             else preset_for(len(self.entries))
         )
 
-        toolbar = Adw.ToolbarView()
-        header = Adw.HeaderBar()
+        toolbar = widgets.ToolbarView()
+        header = widgets.HeaderBar()
         # No minimise or close: the editor is a fullscreen overlay, and Cancel
         # and Save are the only two ways out of it.
         header.set_show_start_title_buttons(False)
@@ -498,12 +497,12 @@ class EditorPage(Adw.NavigationPage):
         details = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         details.add_css_class("boxed-list")
 
-        self.title_row = Adw.EntryRow(title="What are you doing?")
+        self.title_row = widgets.EntryRow(title="What are you doing?")
         self.title_row.set_text(ctx.title)
         self.title_row.connect("changed", lambda _e: self._update_state())
         details.append(self.title_row)
 
-        ephemeral_row = Adw.ActionRow(
+        ephemeral_row = widgets.ActionRow(
             title="Ephemeral",
             subtitle="Discard this context after use",
         )
@@ -513,7 +512,7 @@ class EditorPage(Adw.NavigationPage):
         ephemeral_row.set_activatable_widget(self.ephemeral_switch)
         details.append(ephemeral_row)
 
-        isolated_row = Adw.ActionRow(
+        isolated_row = widgets.ActionRow(
             title="Isolated",
             subtitle=(
                 "Apps here cannot see copies of themselves running elsewhere, so "
@@ -533,7 +532,7 @@ class EditorPage(Adw.NavigationPage):
         # Forgetting a context lives here rather than beside its launch button,
         # so it takes opening the editor and a confirmation to lose one.
         if on_delete is not None and not is_new:
-            delete_row = Adw.ActionRow(
+            delete_row = widgets.ActionRow(
                 title="Forget this context",
                 subtitle="Removes the definition. Windows it opened are left alone.",
             )
@@ -859,7 +858,7 @@ class EditorPage(Adw.NavigationPage):
 
     def _push_resource_page(self, app: App, resource: Resource) -> None:
         nav = self.get_parent()
-        if not isinstance(nav, Adw.NavigationView):
+        if not isinstance(nav, widgets.NavigationView):
             return
         self.resource_page = ResourcePage(app, resource, self._on_resource_done)
         nav.push(self.resource_page)
@@ -874,7 +873,7 @@ class EditorPage(Adw.NavigationPage):
 
     def _on_resource_done(self, resource: Resource) -> None:
         nav = self.get_parent()
-        if isinstance(nav, Adw.NavigationView):
+        if isinstance(nav, widgets.NavigationView):
             nav.pop()
         self._refresh_tile(resource.app_id)
         self._update_state()
@@ -890,13 +889,13 @@ class EditorPage(Adw.NavigationPage):
         keyboard exclusively, so the dialog was rendered underneath it and could
         never be answered — the editor simply appeared to freeze.
         """
-        dialog = Adw.AlertDialog(
+        dialog = widgets.AlertDialog(
             heading=f"Forget “{self.ctx.title}”?",
             body="The context definition is removed. Any windows it opened stay open.",
         )
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("delete", "Forget")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_response_appearance("delete", "destructive-action")
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
         dialog.connect(

@@ -32,6 +32,9 @@ BACKENDS = ("auto", "hyprland", "none")
 #
 # "none" removes collapsing altogether — no button, and the keybind says so.
 COLLAPSE_MODES = ("rail", "hidden", "none")
+# Kept here rather than imported from `theme`, which reads settings: importing
+# the other way would be a cycle. `theme.SCHEMES` is the same tuple.
+COLOR_SCHEMES = ("system", "light", "dark")
 
 # A layer surface belongs to exactly one output — the protocol's `output` arg is
 # a single wl_output, and NULL means "you choose", not "all of them". So showing
@@ -92,6 +95,9 @@ class Settings:
     max_screens: int = 2
     # Whether, and when, to offer to save a context that has changed.
     save_prompt: str = "close"
+    # Light, dark, or whatever the desktop asks for. Context draws its own
+    # surfaces now, so this is honoured rather than merely requested.
+    color_scheme: str = "system"
     sidebar_width: int = 380
     rail_width: int = 56
     collapse_mode: str = "rail"
@@ -162,6 +168,11 @@ class Settings:
                 self.save_prompt.strip().lower()
                 if self.save_prompt.strip().lower() in SAVE_PROMPTS
                 else "close"
+            ),
+            color_scheme=(
+                self.color_scheme.strip().lower()
+                if self.color_scheme.strip().lower() in COLOR_SCHEMES
+                else "system"
             ),
             sidebar_width=_clamp(
                 self.sidebar_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, 380

@@ -10,7 +10,9 @@ import gi
 import pytest
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
+
+from context import widgets
 
 from tests.conftest import needs_display, run_app
 
@@ -597,14 +599,21 @@ def test_forgetting_uses_an_in_window_dialog(gtk_app, isolated_store):
         page = EditorPage(ctx, lambda *a: None, lambda: None,
                           on_delete=lambda c: seen.setdefault("deleted", c),
                           is_new=False)
-        window = Adw.Window(application=app)
-        window.set_content(page)
+        window = Gtk.Window(application=app)
+        # An overlay, because that is what the dialog draws itself into — the
+        # launcher's toast overlay in the running application.
+        overlay = Gtk.Overlay()
+        overlay.set_child(page)
+        window.set_child(overlay)
         page._confirm_delete()
-        # AdwDialog draws within its parent; AdwMessageDialog is a GtkWindow.
+        # A dialog that is its own toplevel renders under the layer-shell
+        # editor and can never be answered, so it must not be a window.
         seen["is_window"] = isinstance(_last_dialog(window), Gtk.Window)
+        seen["shown"] = _last_dialog(window) is not None
         app.quit()
 
     run_app(gtk_app, body)
+    assert seen["shown"], "the dialog was never drawn"
     assert seen["is_window"] is False
 
 
@@ -613,7 +622,7 @@ def _last_dialog(window):
     stack = [window.get_first_child()] if window.get_first_child() else []
     while stack:
         widget = stack.pop()
-        if isinstance(widget, Adw.Dialog):
+        if isinstance(widget, widgets.AlertDialog):
             return widget
         for nxt in (widget.get_next_sibling(), widget.get_first_child()):
             if nxt is not None:
@@ -984,7 +993,7 @@ def _row_titles(page) -> list[str]:
     while stack:
         widget = stack.pop()
         title = getattr(widget, "get_title", None)
-        if title is not None and isinstance(widget, Adw.PreferencesRow):
+        if title is not None and isinstance(widget, widgets.Row):
             titles.append(widget.get_title())
         child = widget.get_first_child()
         while child is not None:
@@ -1292,7 +1301,7 @@ def test_the_sidebar_is_focusable_on_demand(gtk_app, isolated_store, monkeypatch
     monkeypatch.setattr(sidebar, "place", lambda *a_, **k_: None)
 
     def body(app):
-        window = Adw.ApplicationWindow(application=app)
+        window = Gtk.ApplicationWindow(application=app)
         sidebar.apply(window)
         app.quit()
 
@@ -1323,7 +1332,7 @@ def test_releasing_focus_returns_to_on_demand(gtk_app, isolated_store, monkeypat
     monkeypatch.setattr(sidebar, "available", lambda: True)
 
     def body(app):
-        sidebar.release_focus(Adw.ApplicationWindow(application=app))
+        sidebar.release_focus(Gtk.ApplicationWindow(application=app))
         app.quit()
 
     run_app(gtk_app, body)

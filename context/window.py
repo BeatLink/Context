@@ -7,11 +7,10 @@ import time
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
-from . import settings, sidebar, theme, uistate
+from . import settings, sidebar, theme, uistate, widgets
 from .editor_window import EditorWindow
 from .launcher import open_state
 from .layout import Layout
@@ -42,7 +41,7 @@ def relative_time(stamp: float) -> str:
     return "just now"
 
 
-class ContextRow(Adw.ActionRow):
+class ContextRow(widgets.ActionRow):
     """A context in the list.
 
     Open contexts get a close button; saved ones do not, and neither gets a
@@ -95,10 +94,10 @@ class ContextRow(Adw.ActionRow):
         self.connect("activated", lambda _r: on_open(ctx))
 
 
-class LauncherWindow(Adw.ApplicationWindow):
+class LauncherWindow(Gtk.ApplicationWindow):
     def __init__(
         self,
-        app: Adw.Application,
+        app: Gtk.Application,
         store: ContextStore,
         on_open,
         on_close=None,
@@ -120,16 +119,21 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._suppress_hover = False
 
         self.set_default_size(560, 620)
+        # Context paints its own surface rather than inheriting whatever theme
+        # the desktop happens to have. Without this the window background comes
+        # from the system theme while the cards come from ours, and a light
+        # desktop gets light chrome around dark rows.
+        self.add_css_class("ctx-window")
         # The rail's buttons are styled by the theme, so the stylesheet has to
         # be on the display before one is built.
         theme.install()
         # Docks the window to a screen edge where the compositor supports it.
         self.is_sidebar = sidebar.apply(self, monitor=self.monitor)
 
-        self.nav = Adw.NavigationView()
+        self.nav = widgets.NavigationView()
 
-        self.toolbar = Adw.ToolbarView()
-        self.header = Adw.HeaderBar()
+        self.toolbar = widgets.ToolbarView()
+        self.header = widgets.HeaderBar(title="Context")
         self.header.add_css_class("flat")
         if self.is_sidebar:
             # Nothing to minimise or close when docked.
@@ -154,7 +158,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.header.pack_end(self.collapse_button)
         self.toolbar.add_top_bar(self.header)
 
-        self.toasts = Adw.ToastOverlay()
+        self.toasts = widgets.ToastOverlay()
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         content.set_margin_top(12)
@@ -214,7 +218,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         groups.append(self.open_listbox)
         groups.append(self.saved_expander)
 
-        self.empty_state = Adw.StatusPage(
+        self.empty_state = widgets.StatusPage(
             icon_name="view-grid-symbolic",
             title="No contexts yet",
             description="Type a name above to create your first one.",
@@ -263,10 +267,12 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.mode_stack.add_named(Gtk.Box(), "hidden")
         self.toolbar.set_content(self.mode_stack)
 
-        self.home_page = Adw.NavigationPage(child=self.toolbar, title="Context", tag="home")
+        self.home_page = widgets.NavigationPage(
+            child=self.toolbar, title="Context", tag="home"
+        )
         self.nav.add(self.home_page)
         self.toasts.set_child(self.nav)
-        self.set_content(self.toasts)
+        self.set_child(self.toasts)
 
         escape = Gtk.ShortcutController()
         escape.add_shortcut(
@@ -370,7 +376,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             # The toast carries the restart rather than only mentioning it,
             # since the setting is otherwise stuck until Context is found and
             # relaunched by hand.
-            toast = Adw.Toast(
+            toast = widgets.Toast(
                 title=f"{names} applies when Context restarts", timeout=8
             )
             toast.set_button_label("Restart")
@@ -848,7 +854,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             message = f"Opened {len(result.launched)}, {len(result.failed)} failed"
         if result.workspace is not None:
             message += f" · {result.backend} {result.workspace}"
-        self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+        self.toasts.add_toast(widgets.Toast(title=message, timeout=3))
 
     def _active_context(self):
         active_id = self._active_id
@@ -872,7 +878,7 @@ class LauncherWindow(Adw.ApplicationWindow):
                 message += " · workspace kept"
         else:
             message = f"Nothing to close in “{ctx.title}”"
-        self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+        self.toasts.add_toast(widgets.Toast(title=message, timeout=3))
         self.refresh()
 
     def _delete(self, ctx: Context) -> None:

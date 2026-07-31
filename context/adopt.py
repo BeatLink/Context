@@ -14,11 +14,10 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
-from . import sidebar, theme
+from . import sidebar, theme, widgets
 from .launcher import move_window_to_context
 from .logging_setup import get_logger
 
@@ -28,11 +27,12 @@ log = get_logger("adopt")
 LEAVE = "Leave it"
 
 
-class AdoptWindow(Adw.ApplicationWindow):
+class AdoptWindow(Gtk.ApplicationWindow):
     """A list of unmanaged windows, each with a context to send it to."""
 
     def __init__(self, app, store, windows, backend) -> None:
         super().__init__(application=app, title="Adopt windows")
+        self.add_css_class("ctx-window")
         self.store = store
         self.windows = windows
         self.backend = backend
@@ -43,8 +43,8 @@ class AdoptWindow(Adw.ApplicationWindow):
         if not sidebar.apply_overlay(self):
             self.fullscreen()
 
-        toolbar = Adw.ToolbarView()
-        header = Adw.HeaderBar()
+        toolbar = widgets.ToolbarView()
+        header = widgets.HeaderBar()
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
 
@@ -92,7 +92,7 @@ class AdoptWindow(Adw.ApplicationWindow):
         listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         listbox.add_css_class("boxed-list")
         for window in windows:
-            row = Adw.ActionRow(
+            row = widgets.ActionRow(
                 title=window.title or window.app_id,
                 subtitle=window.app_id or "unknown application",
             )
@@ -111,7 +111,7 @@ class AdoptWindow(Adw.ApplicationWindow):
         content.append(scroller)
 
         toolbar.set_content(content)
-        self.set_content(toolbar)
+        self.set_child(toolbar)
 
         escape = Gtk.ShortcutController()
         escape.add_shortcut(

@@ -11,19 +11,18 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
-from . import sidebar
+from . import sidebar, widgets
 from .editor import EditorPage
 from .store import Context
 
 
-class EditorWindow(Adw.Window):
+class EditorWindow(Gtk.Window):
     def __init__(
         self,
-        app: Adw.Application,
+        app: Gtk.Application,
         ctx: Context,
         on_done,
         on_cancel,
@@ -31,6 +30,7 @@ class EditorWindow(Adw.Window):
         is_new: bool = False,
     ) -> None:
         super().__init__(application=app, title=ctx.title or "New context")
+        self.add_css_class("ctx-window")
 
         self.set_default_size(1280, 860)
         self.set_modal(False)
@@ -42,7 +42,7 @@ class EditorWindow(Adw.Window):
         if not sidebar.apply_overlay(self):
             self.fullscreen()
 
-        self.nav = Adw.NavigationView()
+        self.nav = widgets.NavigationView()
         self.page = EditorPage(
             ctx,
             lambda *args: self._finish(on_done, *args),
@@ -51,7 +51,7 @@ class EditorWindow(Adw.Window):
             is_new=is_new,
         )
         self.nav.add(self.page)
-        self.set_content(self.nav)
+        self.set_child(self.nav)
 
         # Escape backs out of a pushed page, or closes the editor from the top.
         escape = Gtk.ShortcutController()

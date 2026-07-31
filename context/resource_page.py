@@ -5,17 +5,16 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Gio, GLib, Gtk
 
-from . import sidebar
+from . import sidebar, widgets
 from .adapters import supports_command, supports_paths, supports_profiles
 from .apps import App
 from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, normalize_url
 
 
-class ResourcePage(Adw.NavigationPage):
+class ResourcePage(widgets.NavigationPage):
     """Edit the URLs a resource opens with."""
 
     def __init__(self, app: App, resource: Resource, on_done) -> None:
@@ -24,8 +23,8 @@ class ResourcePage(Adw.NavigationPage):
         self.resource = resource
         self.on_done = on_done
 
-        toolbar = Adw.ToolbarView()
-        header = Adw.HeaderBar()
+        toolbar = widgets.ToolbarView()
+        header = widgets.HeaderBar()
 
         self.done_button = Gtk.Button(label="Done")
         self.done_button.add_css_class("suggested-action")
@@ -56,7 +55,7 @@ class ResourcePage(Adw.NavigationPage):
         content.append(hint)
 
         # Path pickers, for apps that open a folder, file or workspace.
-        self.path_row: Adw.ActionRow | None = None
+        self.path_row: widgets.ActionRow | None = None
         if supports_paths(resource):
             hint.set_label(
                 "Open a folder, a file, or a .code-workspace. "
@@ -65,7 +64,7 @@ class ResourcePage(Adw.NavigationPage):
             targets = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
             targets.add_css_class("boxed-list")
 
-            self.path_row = Adw.ActionRow(title="Opens")
+            self.path_row = widgets.ActionRow(title="Opens")
             self.path_row.set_subtitle(resource.path or "nothing chosen")
             self.path_row.set_subtitle_lines(2)
 
@@ -94,11 +93,11 @@ class ResourcePage(Adw.NavigationPage):
             section.append(buttons)
             content.append(section)
 
-        self.command_row: Adw.EntryRow | None = None
+        self.command_row: widgets.EntryRow | None = None
         if supports_command(resource):
             command_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
             command_list.add_css_class("boxed-list")
-            self.command_row = Adw.EntryRow(title="Run a command")
+            self.command_row = widgets.EntryRow(title="Run a command")
             self.command_row.set_text(resource.command or "")
             command_list.append(self.command_row)
             content.append(command_list)
@@ -110,7 +109,7 @@ class ResourcePage(Adw.NavigationPage):
             options = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
             options.add_css_class("boxed-list")
 
-            row = Adw.ActionRow(
+            row = widgets.ActionRow(
                 title="Give this context its own profile",
                 subtitle=(
                     "Keeps its tabs, cookies and history separate and restores "
@@ -129,7 +128,7 @@ class ResourcePage(Adw.NavigationPage):
         compat = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         compat.add_css_class("boxed-list")
 
-        new_window_row = Adw.ActionRow(
+        new_window_row = widgets.ActionRow(
             title="Open a new window",
             subtitle="Off if the app should reuse a window it already has",
         )
@@ -139,7 +138,7 @@ class ResourcePage(Adw.NavigationPage):
         new_window_row.set_activatable_widget(self.new_window_switch)
         compat.append(new_window_row)
 
-        single_row = Adw.ActionRow(
+        single_row = widgets.ActionRow(
             title="Single instance only",
             subtitle="The app refuses to run twice, so its existing window is used",
         )
@@ -149,7 +148,7 @@ class ResourcePage(Adw.NavigationPage):
         single_row.set_activatable_widget(self.single_instance_switch)
         compat.append(single_row)
 
-        isolate_row = Adw.ActionRow(
+        isolate_row = widgets.ActionRow(
             title="Isolate in this context",
             subtitle=(
                 "Only applies to isolated contexts. Off for an app that shares "
@@ -216,9 +215,8 @@ class ResourcePage(Adw.NavigationPage):
         ]
 
     def _add_url(self, value: str) -> None:
-        row = Adw.EntryRow(title="URL")
+        row = widgets.EntryRow(title="URL")
         row.set_text(value)
-        row.entry = row  # EntryRow is its own entry; keeps url_rows() uniform
         row.connect("changed", lambda _e: self._update_count())
 
         remove = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER)
