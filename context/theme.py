@@ -234,6 +234,17 @@ class Theme:
         )
         return path
 
+    def surface_is_dark(self) -> bool:
+        """Whether the surface is dark enough to want light widgets on it.
+
+        Measured rather than declared, so a hand-edited theme.json that sets a
+        dark surface still gets dark-theme widgets underneath — the scheme name
+        it started from is not what is actually being drawn.
+        """
+        r, g, b, _ = _rgba(self.surface, (0, 0, 0, 1))
+        # Rec. 709 luma: green reads brighter than red, red brighter than blue.
+        return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 0.5
+
     def rgba(self, name: str):
         """One colour as an (r, g, b, a) tuple, for Cairo."""
         default = getattr(Theme(), name, "#ffffff")
@@ -246,13 +257,129 @@ class Theme:
 @define-color ctx_surface {self.surface};
 @define-color ctx_on_surface {self.on_surface};
 
+/* GTK's own named colours, redefined.
+
+   Setting `gtk-theme-name` or GTK_THEME does not help: the stylesheet is
+   already resolved by the time an application can ask, so `theme_bg_color`
+   stayed at the desktop theme's dark value (Mint-Y-Aqua here) even when the
+   portal reported "prefer light". Every widget Context does not name a colour
+   for — scrollbars, popovers, tooltips, menus — reads these, so redefining
+   them is what makes the light theme actually light rather than a light page
+   with dark furniture on it. Measured, not assumed: overriding the names moves
+   the computed colour, overriding the setting does not. */
+@define-color theme_bg_color {self.surface};
+@define-color theme_fg_color {self.on_surface};
+@define-color theme_base_color {self.card};
+@define-color theme_text_color {self.on_surface};
+@define-color theme_selected_bg_color {self.accent};
+@define-color theme_selected_fg_color {self.surface};
+@define-color insensitive_bg_color {self.surface};
+@define-color insensitive_fg_color alpha({self.on_surface}, 0.5);
+@define-color borders {self.border};
+@define-color window_bg_color {self.surface};
+@define-color window_fg_color {self.on_surface};
+@define-color view_bg_color {self.card};
+@define-color view_fg_color {self.on_surface};
+@define-color headerbar_bg_color {self.card};
+@define-color headerbar_fg_color {self.on_surface};
+@define-color popover_bg_color {self.card};
+@define-color popover_fg_color {self.on_surface};
+@define-color accent_bg_color {self.accent};
+@define-color accent_color {self.accent};
+
+/* Popovers are children of the root, not of the window, so a rule scoped to
+   `.ctx-window` never reaches a dropdown's list. */
+popover > contents,
+popover > arrow {{
+    background-color: {self.card};
+    color: {self.on_surface};
+}}
+
+/* The style classes libadwaita used to define.
+
+   Removing its widgets left these behind on widgets all over Context —
+   `boxed-list` on every list, `dim-label` on every section heading — with
+   nothing defining them any more. They did not fail loudly: the list simply
+   fell back to the desktop theme's dark card, and the headings kept an opacity
+   that made them invisible on a light surface. Defining them here is what
+   finishes the removal. */
+.boxed-list {{
+    background-color: {self.card};
+    border: 1px solid {self.border};
+    border-radius: 12px;
+}}
+.boxed-list > row {{
+    background: transparent;
+    border-bottom: 1px solid {self.border};
+}}
+.boxed-list > row:last-child {{
+    border-bottom: none;
+}}
+
+.dim-label {{
+    opacity: 0.7;
+}}
+
+.heading {{
+    font-weight: bold;
+}}
+.title-4 {{
+    font-weight: bold;
+    font-size: 1.1em;
+}}
+
+/* Flat buttons carry no plate until pointed at — used for the icon buttons
+   that sit inside rows, where a full button would be noise. */
+button.flat {{
+    background: none;
+    background-image: none;
+    border-color: transparent;
+    box-shadow: none;
+}}
+button.flat:hover {{
+    background-color: {self.control_hover};
+}}
+
+button.suggested-action {{
+    background-image: none;
+    background-color: {self.accent};
+    color: {self.surface};
+    border-color: {self.accent};
+}}
+button.destructive-action {{
+    background-image: none;
+    background-color: #c01c28;
+    color: #ffffff;
+    border-color: #c01c28;
+}}
+
+/* The context you are in, marked the way a browser marks the current tab.
+   Placed after the blanket foreground rule above so it is not overridden by
+   it, and matched on descendants too since the row's labels are children. */
+.accent,
+.accent label,
+window.ctx-window .accent,
+window.ctx-window .accent label {{
+    color: {self.accent};
+}}
+
 /* Context draws its own surfaces rather than inheriting a desktop theme's.
    This is the part libadwaita made impossible: it resolves light and dark from
    the system preference before an application gets a say, so a stylesheet like
    this one was always painting over widgets that had already chosen. */
-window.ctx-window,
-window.ctx-window > * {{
+window.ctx-window {{
     background-color: {self.surface};
+    color: {self.on_surface};
+}}
+
+/* Text colour has to reach every descendant, not just direct children.
+   `> *` left the section headings ("Open", "Saved") several levels down still
+   wearing the desktop theme's light-on-dark foreground, which on a light
+   surface is invisible rather than merely wrong. Backgrounds stay unset so
+   cards and controls keep their own. */
+window.ctx-window label,
+window.ctx-window button,
+window.ctx-window entry {{
     color: {self.on_surface};
 }}
 
@@ -466,10 +593,14 @@ def install() -> bool:
     display = Gdk.Display.get_default()
     if display is None:
         return False
+
     _provider = Gtk.CssProvider()
     _provider.load_from_data(current().css())
+    # USER, not APPLICATION: the theme's own rules are installed at THEME
+    # priority but a desktop theme may also install at APPLICATION, and
+    # Context's colours have to be the last word on its own window.
     Gtk.StyleContext.add_provider_for_display(
-        display, _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        display, _provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
     )
     _installed = True
     return True

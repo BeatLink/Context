@@ -1584,3 +1584,84 @@ def test_a_pending_hover_expand_is_cancelled_by_collapsing(
     run_app(gtk_app, body)
     assert seen["queued"] is True
     assert seen["cancelled"] is True
+
+
+@needs_display
+def test_clicking_into_the_sidebar_focuses_the_search(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Becoming active has to leave a widget focused, not just the window.
+
+    ON_DEMAND gives the layer the keyboard when it is clicked, but the
+    compositor says nothing about which widget should have it, and GTK picks
+    none on its own for a layer surface. Typing then went nowhere until the
+    sidebar was left and re-entered — a focus change GTK finally acted on.
+
+    Asserted on the focused widget rather than on the keyboard mode, because
+    the mode was already right while the bug was live.
+    """
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = False
+        window.present()
+        # No compositor to make the window active, so drive the branch the
+        # signal would: a click that landed on no control.
+        window._clicked_widget = None
+        window._focus_search_if_idle()
+        seen["focused"] = window.get_focus()
+        seen["entry"] = window.entry
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    # `Gtk.Entry` delegates focus to an internal `GtkText`, so the focused
+    # widget is inside the entry rather than the entry itself.
+    focused = seen["focused"]
+    assert focused is not None
+    assert focused is seen["entry"] or focused.get_ancestor(Gtk.Entry) is seen["entry"]
+
+
+@needs_display
+def test_focusing_does_not_steal_from_what_was_clicked(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Clicking a button must keep focus on the button.
+
+    The search box is only a fallback for a click that landed on nothing; a
+    sidebar that grabbed focus back unconditionally would undo every click.
+    """
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = False
+        window.present()
+        window.settings_button.grab_focus()
+        # As if the press had landed on the settings button.
+        window._clicked_widget = window.settings_button
+        window._focus_search_if_idle()
+        seen["focused"] = window.get_focus()
+        seen["button"] = window.settings_button
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["focused"] is seen["button"]

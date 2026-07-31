@@ -147,11 +147,18 @@ class ActionRow(Row):
 
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
         text.set_valign(Gtk.Align.CENTER)
-        self._title = Gtk.Label(label=title, xalign=0.0, ellipsize=3)
+        # An ellipsizing label asks for the width of its full text, and GTK
+        # then shrinks it to whatever is left over — which at sidebar width
+        # truncated titles to a few characters even with room to spare. A
+        # small `max_width_chars` lowers what it asks for, so the label takes
+        # the space actually available instead of being squeezed out of it.
+        self._title = Gtk.Label(label=title, xalign=0.0, ellipsize=3, hexpand=True)
+        self._title.set_max_width_chars(12)
         self._title.add_css_class("ctx-row-title")
         text.append(self._title)
 
-        self._subtitle = Gtk.Label(label=subtitle, xalign=0.0, ellipsize=3)
+        self._subtitle = Gtk.Label(label=subtitle, xalign=0.0, ellipsize=3, hexpand=True)
+        self._subtitle.set_max_width_chars(12)
         self._subtitle.add_css_class("ctx-row-subtitle")
         self._subtitle.set_visible(bool(subtitle))
         text.append(self._subtitle)

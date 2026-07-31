@@ -300,6 +300,22 @@ class LauncherWindow(Gtk.ApplicationWindow):
         pointer.connect("leave", lambda *_a: self._on_pointer_leave())
         self.add_controller(pointer)
 
+        # The compositor hands the layer the keyboard when it is clicked, but
+        # says nothing about which widget inside should have it — and GTK does
+        # not choose one on its own for a layer surface. Nothing useful was
+        # focused, so typing went nowhere until the sidebar was left and
+        # re-entered, which finally produced a focus change GTK acted on.
+        self.connect("notify::is-active", self._on_active_changed)
+
+        # What the click landed on, so becoming active can tell "clicked a
+        # button" from "clicked the empty part of the sidebar". Captured on the
+        # way down, before the target widget handles the press.
+        self._clicked_widget = None
+        press = Gtk.GestureClick()
+        press.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        press.connect("pressed", self._on_press_anywhere)
+        self.add_controller(press)
+
         self._read_open_state()
         # A stored collapsed state is ignored when collapsing is switched off,
         # rather than leaving the sidebar shrunk with no button to grow it.
@@ -762,6 +778,48 @@ class LauncherWindow(Gtk.ApplicationWindow):
             return
         self.set_focus(None)
         sidebar.release_focus(self)
+
+    def _on_press_anywhere(self, gesture, _n_press, x: float, y: float) -> None:
+        """Note whether the press landed on a control or on bare sidebar."""
+        target = self.pick(x, y, Gtk.PickFlags.DEFAULT)
+        # Walk up to the nearest thing that takes focus: the press usually
+        # lands on a button's label rather than the button.
+        while target is not None and not target.get_focusable():
+            target = target.get_parent()
+        self._clicked_widget = target
+
+    def _on_active_changed(self, *_args) -> None:
+        """Put the keyboard somewhere useful when the sidebar is clicked into.
+
+        Only when nothing inside is focused already: clicking directly on a
+        button or a row should leave focus where the click put it, and stealing
+        it back to the search box would undo the click.
+
+        Deferred to an idle callback because at the moment `is-active` changes
+        the click has not finished being delivered — focusing here is undone a
+        moment later by GTK settling focus on whatever was pressed.
+        """
+        if not self.get_property("is-active"):
+            return
+        if not self.is_sidebar or self.collapsed:
+            return
+        GLib.idle_add(self._focus_search_if_idle)
+
+    def _focus_search_if_idle(self) -> bool:
+        """Focus the search box unless the click landed on something.
+
+        Not "unless something is focused": GTK gives a freshly presented window
+        its first focusable child — a header button here — so there is always
+        something focused and that test never fired. What matters is whether
+        the user aimed at a control, which `_clicked_widget` records.
+        """
+        # A page pushed over the list owns its own focus.
+        if self.nav.get_visible_page() is not self.home_page:
+            return GLib.SOURCE_REMOVE
+        if self._clicked_widget is None:
+            self.entry.grab_focus()
+        self._clicked_widget = None
+        return GLib.SOURCE_REMOVE
 
     def _on_escape(self) -> bool:
         if self.nav.get_visible_page() is not self.home_page:
