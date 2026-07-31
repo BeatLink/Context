@@ -218,10 +218,17 @@ the handles are stable names, reopening reuses them, and `reconnect` drops them
 on restart — but it means `workspace_removed` is usually False for a context
 that spans.
 
-**Still to do — pinning a context to particular monitors.** Screen 0 is
-wherever the focus is, so the same context can open with its screens the other
-way round depending on where you started. Naming the outputs per context would
-fix that, at the cost of the portability that numbering buys.
+**Screen identity is a setting, not a guess.** `settings.screen_order` names
+which monitor is screen 1, screen 2 and so on, and `monitors.ordered()` is the
+only place a screen number becomes a physical display. Contexts stay screen
+agnostic: they say "screen 2" and never name a monitor, so moving a cable is
+one change on the settings page rather than an edit to every context.
+
+A configured monitor that is not plugged in is skipped rather than leaving a
+gap, so unplugging the middle of three promotes the third to screen 2 instead
+of the layout losing a screen. `max_screens` decides how many arrangements a
+context can hold, and the editor can edit any of them — the two-screen layout
+can be set up while undocked, which is the point of keeping them separate.
 
 ### 6. Launch apps into the current context
 

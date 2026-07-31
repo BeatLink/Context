@@ -44,6 +44,33 @@ def all_monitors(backend=None) -> list[MonitorInfo]:
     return sorted(found, key=lambda m: (m.x, m.y, m.name))
 
 
+def ordered(backend=None) -> list[MonitorInfo]:
+    """Connected outputs as screen 1, screen 2, and so on.
+
+    This is the only place a screen number becomes a physical monitor.
+    Contexts never name a monitor — they say "screen 2" — so moving a cable or
+    rearranging the desk is one change here rather than an edit to every
+    context.
+
+    The configured order comes first, then anything connected it does not
+    mention, left to right. A configured monitor that is not plugged in is
+    skipped rather than leaving a gap, so unplugging the middle screen of three
+    makes the third become screen 2 rather than the layout losing a screen.
+    """
+    from . import settings
+
+    found = all_monitors(backend)
+    by_name = {m.name: m for m in found}
+
+    wanted = []
+    for name in settings.current().screen_order:
+        monitor = by_name.pop(name, None)
+        if monitor is not None:
+            wanted.append(monitor)
+    # Whatever the order did not mention keeps its positional place.
+    return wanted + [m for m in found if m.name in by_name]
+
+
 def focused(backend=None) -> MonitorInfo | None:
     """The output with the pointer or keyboard on it, if the backend says."""
     found = all_monitors(backend)

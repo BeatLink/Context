@@ -60,6 +60,11 @@ reason stronger than "it would also work".
   set; `handle_for(backend, screen)` is one of them. Anything asking "is it
   open", "is it active", or closing has to work over the whole set — a context
   spanning two screens is open when *any* of them has windows.
+- **`monitors.ordered()` is the only place a screen number becomes a monitor.**
+  Contexts say "screen 2" and never name a display. Anything that needs the
+  physical monitor goes through there, so the mapping is one setting rather
+  than scattered assumptions — and never derived from focus, which would make
+  screen 2 a different monitor depending on where the pointer was.
 - **Arrangements are keyed by screen count, not monitor name.** A layout keyed
   by `HDMI-A-1` is worthless the day the cable moves ports. Docked and undocked
   are separate arrangements and both survive.

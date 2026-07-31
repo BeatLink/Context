@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 
 from .logging_setup import get_logger
@@ -39,6 +39,11 @@ MAX_SIDEBAR_WIDTH = 1200
 MIN_RAIL_WIDTH = 32
 MAX_RAIL_WIDTH = 160
 
+# How many screen modes a context can hold a layout for. More than this and the
+# editor stops being readable, and nobody arranges windows across that many.
+MIN_SCREENS = 1
+MAX_SCREENS = 4
+
 
 def config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
@@ -57,6 +62,16 @@ class Settings:
     # Empty means wherever the compositor would put it, which is the only
     # sensible answer on a single-monitor session.
     monitor: str = ""
+    # Which physical monitor is screen 1, screen 2, and so on — by connector
+    # name, in order. Empty means left to right, which is the right answer
+    # until someone says otherwise.
+    #
+    # This is the whole of Context's screen identity: contexts themselves only
+    # ever say "screen 1", so moving a cable or rearranging the desk is a
+    # change here rather than in every context.
+    screen_order: list = field(default_factory=list)
+    # How many screen modes to offer a layout for, whatever is plugged in now.
+    max_screens: int = 2
     sidebar_width: int = 380
     rail_width: int = 56
     collapse_mode: str = "rail"
@@ -90,13 +105,16 @@ class Settings:
         known = {f.name: f for f in fields(cls)}
         values: dict = {}
         for key, value in raw.items():
-            field = known.get(key)
-            if field is None:
+            spec = known.get(key)
+            if spec is None:
                 continue
             try:
-                if field.type is bool or isinstance(field.default, bool):
+                if spec.default_factory is not MISSING:
+                    # Only lists so far, and only of strings.
+                    values[key] = [str(v) for v in value] if isinstance(value, list) else []
+                elif spec.type is bool or isinstance(spec.default, bool):
                     values[key] = bool(value)
-                elif isinstance(field.default, int):
+                elif isinstance(spec.default, int):
                     values[key] = int(value)
                 else:
                     values[key] = str(value)
@@ -118,6 +136,8 @@ class Settings:
             # Not validated against the connected outputs: a monitor that is
             # unplugged today is still the right choice for tomorrow.
             monitor=self.monitor.strip(),
+            screen_order=[str(n).strip() for n in self.screen_order if str(n).strip()],
+            max_screens=_clamp(self.max_screens, MIN_SCREENS, MAX_SCREENS, 2),
             sidebar_width=_clamp(
                 self.sidebar_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, 380
             ),

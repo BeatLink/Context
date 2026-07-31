@@ -251,22 +251,19 @@ def launch_context(
 
 
 def _outputs(wm: Backend):
-    """The screens available, in a stable left-to-right order.
+    """The screens available, as screen 1, screen 2 and so on.
 
-    Ordered by position, never by focus. "Screen 1" has to mean the same
-    physical monitor every time or the arrangement is not honoured: an app the
-    user put on their right-hand display would open on the left whenever they
-    happened to launch from there.
+    Never ordered by focus. "Screen 2" has to mean the same physical monitor
+    every time or the arrangement is not honoured: an app the user put on their
+    right-hand display would open on the left whenever they happened to launch
+    from there.
 
-    Position also survives a replug, which a connector name does not — the same
-    monitor on a different port keeps its place in the row.
+    The order itself is a setting — see `monitors.ordered` — so a context only
+    ever refers to a screen by number.
     """
-    try:
-        found = list(wm.monitors())
-    except OSError as exc:
-        log.warning("could not read monitors: %s", exc)
-        found = []
-    return sorted(found, key=lambda m: (m.x, m.y, m.name))
+    from . import monitors
+
+    return monitors.ordered(wm)
 
 
 def _isolation_for(ctx: Context, resource) -> str | None:

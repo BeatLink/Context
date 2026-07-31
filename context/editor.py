@@ -11,7 +11,7 @@ from gi.repository import Adw, Gdk, Gtk
 
 from .adapters import configurable, describe
 from .apps import App, installed_apps, search_apps
-from . import isolation, monitors, theme
+from . import isolation, monitors, settings, theme
 from .logging_setup import get_logger
 from .layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
 from .resource_page import ResourcePage
@@ -49,7 +49,12 @@ class LayoutPreview(Gtk.DrawingArea):
         self.screen = 0
         self.indices: list[int] = []
         self.on_move_to_screen = None
+        self.on_drag_toward = None
         self._last_x = 0.0
+        # Which way the window under the pointer is about to leave, and
+        # whether this screen is the one it would land on.
+        self._leaving = 0
+        self._drop_target = False
         # The shape the preview is drawn at. Read once rather than per frame,
         # since it costs a compositor query and does not change mid-edit.
         self.aspect = monitors.preview_aspect()
@@ -162,12 +167,39 @@ class LayoutPreview(Gtk.DrawingArea):
             return
         self._drag = (mode, index, x, y, self.layout.slots[index])
 
+    def _leaving_toward(self, pointer_x: float) -> int:
+        """Which way a window is being dragged off this screen, if any.
+
+        Measured against the *drawn* screen rectangle, not the widget. The
+        preview is letterboxed to the monitor's shape and centred, so there is
+        dead space beside it — using the widget edge meant dragging well past
+        the picture of the screen before anything happened.
+        """
+        if self.on_move_to_screen is None:
+            return 0
+        ox, _oy, sw, _sh = self._screen()
+        if pointer_x < ox:
+            return -1
+        if pointer_x > ox + sw:
+            return 1
+        return 0
+
     def _on_drag_update(self, _g, dx: float, dy: float) -> None:
         if self._drag is None:
             return
         mode, index, _sx, _sy, start = self._drag
         # Where the pointer is now, so `_end_drag` can tell whether it left.
         self._last_x = _sx + dx
+
+        if mode == "move":
+            leaving = self._leaving_toward(self._last_x)
+            if leaving != self._leaving:
+                self._leaving = leaving
+                # Tell the editor, so the screen being dragged toward can light
+                # up. Without it the gesture gives no sign of what it will do.
+                if self.on_drag_toward is not None:
+                    self.on_drag_toward(self.screen, leaving)
+                self.queue_draw()
         _ox, _oy, sw, sh = self._screen()
         fx, fy = dx / sw, dy / sh
 
@@ -196,22 +228,28 @@ class LayoutPreview(Gtk.DrawingArea):
     def _end_drag(self) -> None:
         if self._drag is None:
             return
-        mode, index, start_x, _sy, _start = self._drag
+        mode, index, _sx, _sy, _start = self._drag
+        leaving = self._leaving
         self._drag = None
+        self._leaving = 0
+        if self.on_drag_toward is not None:
+            self.on_drag_toward(self.screen, 0)
+        self.queue_draw()
 
-        # Dragged clean off one side: hand the window to the next screen. The
+        # Dragged off one side: hand the window to the next screen. The
         # previews sit in monitor order, so pushing a window right is the same
         # gesture as pushing it right across the desk.
-        if mode == "move" and self.on_move_to_screen is not None:
-            width = self.get_width()
-            if self._last_x < 0:
-                self.on_move_to_screen(self.screen, index, -1)
-                return
-            if self._last_x > width:
-                self.on_move_to_screen(self.screen, index, 1)
-                return
+        if mode == "move" and leaving and self.on_move_to_screen is not None:
+            self.on_move_to_screen(self.screen, index, leaving)
+            return
 
         self.on_changed(self.layout)
+
+    def set_drop_target(self, active: bool) -> None:
+        """Light this screen up as where a dragged window would land."""
+        if active != self._drop_target:
+            self._drop_target = active
+            self.queue_draw()
 
     def _draw_icon(self, cr, index: int, x: float, y: float, w: float, h: float) -> None:
         """The app's icon, centred in its slot. Names live in the tooltip."""
@@ -254,6 +292,19 @@ class LayoutPreview(Gtk.DrawingArea):
         cr.set_source_rgba(*palette.rgba("preview_background"))
         cr.rectangle(ox, oy, sw, sh)
         cr.fill()
+
+        if self._drop_target:
+            # The screen a dragged window would land on.
+            ox, oy, sw, sh = self._screen()
+            cr.set_source_rgba(*palette.rgba("drop_target"))
+            cr.rectangle(ox, oy, sw, sh)
+            cr.fill()
+            cr.set_source_rgba(*palette.rgba("leaving_border"))
+            cr.set_line_width(3)
+            cr.set_dash([8, 6])
+            cr.rectangle(ox, oy, sw, sh)
+            cr.stroke()
+            cr.set_dash([])
 
         if not self.layout.slots:
             cr.set_source_rgba(1, 1, 1, 0.35)
@@ -517,52 +568,38 @@ class EditorPage(Adw.NavigationPage):
         hint.add_css_class("caption")
         content.append(hint)
 
-        # One preview per attached screen, side by side. A context arranges
-        # itself differently depending on how many screens there are, and this
-        # edits the arrangement for the current count — the others are kept.
-        self.screen_count = max(1, len(monitors.all_monitors()))
+        # A context holds a layout per screen count, and this edits one of
+        # them. The mode defaults to what is attached now, but any of them can
+        # be edited from here — arranging the docked layout while undocked is
+        # the whole point of keeping them separate.
+        self.attached = max(1, len(monitors.all_monitors()))
+        self.screen_count = min(self.attached, settings.current().max_screens)
         self.arrangement = ctx.arrangement_for(self.screen_count)
         self.previews: list[LayoutPreview] = []
 
-        screens_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        screens_box.set_vexpand(True)
-        shapes = [m.aspect for m in monitors.all_monitors()]
-        for screen in range(self.screen_count):
-            preview = LayoutPreview(
-                lambda layout, s=screen: self._on_layout_changed(layout, s),
-                lambda index, s=screen: self._on_remove(index, s),
-                lambda index, s=screen: self._on_edit_slot(index, s),
+        mode_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        mode_label = Gtk.Label(label="Layout for", xalign=0.0)
+        mode_label.add_css_class("dim-label")
+        mode_row.append(mode_label)
+
+        self.mode_dropdown = Gtk.DropDown(
+            model=Gtk.StringList.new(
+                [
+                    f"{n} screen{'s' if n != 1 else ''}"
+                    + (" · attached now" if n == self.attached else "")
+                    for n in range(1, settings.current().max_screens + 1)
+                ]
             )
-            if screen < len(shapes):
-                preview.aspect = shapes[screen]
-            preview.screen = screen
-            preview.on_move_to_screen = self._move_to_screen
-            self.previews.append(preview)
+        )
+        self.mode_dropdown.set_selected(self.screen_count - 1)
+        self.mode_dropdown.connect("notify::selected", self._on_mode_changed)
+        mode_row.append(self.mode_dropdown)
+        content.append(mode_row)
 
-            frame = Gtk.Frame()
-            frame.set_vexpand(True)
-            frame.set_hexpand(True)
-            frame.set_child(preview)
-
-            column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            if self.screen_count > 1:
-                label = Gtk.Label(
-                    label=(
-                        monitors.all_monitors()[screen].name
-                        if screen < len(shapes)
-                        else f"Screen {screen + 1}"
-                    ),
-                    xalign=0.0,
-                )
-                label.add_css_class("dim-label")
-                label.add_css_class("caption")
-                column.append(label)
-            column.append(frame)
-            screens_box.append(column)
-
-        content.append(screens_box)
-        # Kept for the code that still speaks in one layout; screen 0's.
-        self.preview = self.previews[0]
+        self.screens_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self.screens_box.set_vexpand(True)
+        content.append(self.screens_box)
+        self._build_previews()
 
         # --- app grid, bottom half --------------------------------------------
         apps_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -596,6 +633,65 @@ class EditorPage(Adw.NavigationPage):
 
         self.refresh_apps()
         self._update_state()
+
+    def _build_previews(self) -> None:
+        """One preview per screen in the mode being edited."""
+        child = self.screens_box.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            self.screens_box.remove(child)
+            child = following
+
+        self.previews = []
+        attached = monitors.ordered()
+        shapes = [m.aspect for m in attached]
+        screens_box = self.screens_box
+        for screen in range(self.screen_count):
+            preview = LayoutPreview(
+                lambda layout, s=screen: self._on_layout_changed(layout, s),
+                lambda index, s=screen: self._on_remove(index, s),
+                lambda index, s=screen: self._on_edit_slot(index, s),
+            )
+            if screen < len(shapes):
+                preview.aspect = shapes[screen]
+            preview.screen = screen
+            preview.on_move_to_screen = self._move_to_screen
+            preview.on_drag_toward = self._on_drag_toward
+            self.previews.append(preview)
+
+            frame = Gtk.Frame()
+            frame.set_vexpand(True)
+            frame.set_hexpand(True)
+            frame.set_child(preview)
+
+            column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            # Named by number, with the monitor it currently means beside it.
+            # The number is what the context stores; the name is only there so
+            # it is obvious which physical screen that is today.
+            caption = f"Screen {screen + 1}"
+            if screen < len(attached):
+                caption += f" · {attached[screen].name}"
+            elif screen >= self.attached:
+                caption += " · not attached"
+            label = Gtk.Label(label=caption, xalign=0.0)
+            label.add_css_class("dim-label")
+            label.add_css_class("caption")
+            column.append(label)
+            column.append(frame)
+            screens_box.append(column)
+
+        # Kept for the code that still speaks in one layout; screen 0's.
+        self.preview = self.previews[0]
+
+    def _on_mode_changed(self, dropdown, _param) -> None:
+        """Switch to editing another screen mode, keeping what was edited."""
+        self.ctx.set_arrangement(self.screen_count, self.arrangement)
+        self.screen_count = dropdown.get_selected() + 1
+        self.arrangement = self.ctx.arrangement_for(self.screen_count)
+        log.debug("editing the %d-screen layout", self.screen_count)
+        self._build_previews()
+        self._update_state()
+
 
     # -- state ---------------------------------------------------------------
 
@@ -650,6 +746,12 @@ class EditorPage(Adw.NavigationPage):
         if screen == 0:
             self.layout = layout
 
+    def _on_drag_toward(self, screen: int, direction: int) -> None:
+        """Light up the screen a dragged window would land on."""
+        target = screen + direction if direction else None
+        for index, preview in enumerate(self.previews):
+            preview.set_drop_target(target is not None and index == target)
+
     def _move_to_screen(self, screen: int, local_index: int, direction: int) -> None:
         """Send a window to the neighbouring screen.
 
@@ -667,6 +769,8 @@ class EditorPage(Adw.NavigationPage):
         resource_index = indices[local_index]
         self.arrangement.assign(resource_index, target)
         log.debug("moved window %d to screen %d", resource_index, target)
+        for preview in self.previews:
+            preview.set_drop_target(False)
         self._update_state()
 
     def _on_preset_selected(self, dropdown, _param) -> None:

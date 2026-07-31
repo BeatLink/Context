@@ -94,3 +94,74 @@ def test_the_setting_is_not_validated_against_what_is_plugged_in(monkeypatch, tm
     assert Settings(monitor="DP-9").validated().monitor == "DP-9"
     assert Settings(monitor="  DP-9  ").validated().monitor == "DP-9"
     assert Settings().validated().monitor == ""
+
+
+# -- screen numbering --------------------------------------------------------
+
+
+def test_screens_are_numbered_by_the_configured_order(two_screens, monkeypatch, tmp_path):
+    """The whole of Context's screen identity is this one setting.
+
+    A context only ever says "screen 2", so moving a cable is a change here
+    rather than an edit to every context that mentioned the old monitor.
+    """
+    from context import settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+
+    assert [m.name for m in monitors.ordered(two_screens)] == ["eDP-1", "HDMI-A-1"]
+
+    settings.update(screen_order=["HDMI-A-1", "eDP-1"])
+    assert [m.name for m in monitors.ordered(two_screens)] == ["HDMI-A-1", "eDP-1"]
+
+
+def test_an_unplugged_monitor_does_not_leave_a_gap(two_screens, monkeypatch, tmp_path):
+    """Unplugging the middle screen should promote the next, not lose one."""
+    from context import settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(screen_order=["DP-9", "HDMI-A-1", "eDP-1"])
+
+    assert [m.name for m in monitors.ordered(two_screens)] == ["HDMI-A-1", "eDP-1"]
+
+
+def test_monitors_the_order_does_not_mention_keep_their_place(
+    two_screens, monkeypatch, tmp_path
+):
+    from context import settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(screen_order=["HDMI-A-1"])
+
+    assert [m.name for m in monitors.ordered(two_screens)] == ["HDMI-A-1", "eDP-1"]
+
+
+def test_the_launcher_uses_the_configured_order(two_screens, monkeypatch, tmp_path):
+    """Screen 1 must be the same monitor for the editor and the launcher."""
+    from context import launcher, settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(screen_order=["HDMI-A-1", "eDP-1"])
+
+    assert [m.name for m in launcher._outputs(two_screens)] == ["HDMI-A-1", "eDP-1"]
+
+
+def test_screen_modes_are_bounded():
+    """More than a handful and the editor stops being readable."""
+    from context.settings import MAX_SCREENS, MIN_SCREENS, Settings
+
+    assert Settings(max_screens=99).validated().max_screens == MAX_SCREENS
+    assert Settings(max_screens=0).validated().max_screens == MIN_SCREENS
+
+
+def test_the_screen_order_survives_a_round_trip(monkeypatch, tmp_path):
+    """Naming a monitor that is unplugged has to persist, as with `monitor`."""
+    from context.settings import Settings
+
+    live = Settings(screen_order=["DP-9", "eDP-1"]).validated()
+    assert live.screen_order == ["DP-9", "eDP-1"]
+    assert Settings(**Settings._coerce(live.__dict__)).screen_order == ["DP-9", "eDP-1"]

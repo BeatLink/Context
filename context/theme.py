@@ -71,6 +71,10 @@ class Theme:
     tile_hover: str = "#ffffff1f"
     tile_selected: str = "#5ac0c038"
 
+    # The screen a dragged window would land on, and the window on its way out.
+    drop_target: str = "#5ac0c024"
+    leaving_border: str = "#5ac0c0"
+
     # Collapsed sidebar. Saved contexts recede, open ones are lit, and the one
     # you are in is ringed — three states that differ in more than shade.
     rail_background: str = "#ffffff08"

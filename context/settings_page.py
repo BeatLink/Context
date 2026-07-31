@@ -58,6 +58,10 @@ def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> Adw.PreferencesR
 
     box.append(control)
     row.set_child(box)
+    # The description is redrawn when a setting changes what it says.
+    row.set_subtitle = (
+        description.set_label if subtitle else lambda _text: None
+    )
     return row
 
 
@@ -78,7 +82,18 @@ def _row_combo(title, subtitle, labels, values, current_value, on_change):
     drop = Gtk.DropDown(model=Gtk.StringList.new(list(labels)), hexpand=True)
     drop.set_selected(values.index(current_value) if current_value in values else 0)
     drop.connect("notify::selected", lambda d, _p: on_change(values[d.get_selected()]))
-    return _stacked(title, subtitle, drop)
+    row = _stacked(title, subtitle, drop)
+    row.dropdown = drop
+    return row
+
+
+def _monitor_description(found, name: str) -> str:
+    """A monitor's make and model, so a connector name means something."""
+    for monitor in found:
+        if monitor.name == name:
+            size = f"{monitor.width}\u00d7{monitor.height}"
+            return f"{name} — {size}"
+    return name
 
 
 def _row_switch(title, subtitle, active, on_change) -> Adw.PreferencesRow:
@@ -105,6 +120,7 @@ class SettingsPage(Adw.NavigationPage):
 
         page = Adw.PreferencesPage()
         page.add(self._appearance())
+        page.add(self._screens())
         page.add(self._behaviour())
         page.add(self._advanced())
         page.add(self._files())
@@ -160,6 +176,87 @@ class SettingsPage(Adw.NavigationPage):
             )
         )
         return group
+
+    def _screens(self) -> Adw.PreferencesGroup:
+        """Which physical monitor is screen 1, screen 2, and so on.
+
+        The whole of Context's screen identity lives here. A context only ever
+        says "screen 2", so moving a cable is one change on this page rather
+        than an edit to every context that mentioned the old one.
+        """
+        live = settings.current()
+        group = Adw.PreferencesGroup(
+            title="Screens",
+            description="Which monitor a context means by screen 1, screen 2, "
+            "and so on.",
+        )
+        group.add(
+            _row_spin(
+                "Screen modes",
+                "How many screen counts a context can hold a separate layout "
+                "for, whatever is plugged in now.",
+                live.max_screens,
+                settings.MIN_SCREENS,
+                settings.MAX_SCREENS,
+                1,
+                lambda v: self._apply(max_screens=v, resync=True),
+            )
+        )
+
+        found = monitors.all_monitors()
+        names = [m.name for m in found]
+        if not names:
+            return group
+
+        # One row per connected monitor: which screen number it answers to.
+        # Ordering by picking a monitor for each slot rather than dragging a
+        # list, since the list is two or three items and a drag target for
+        # that is more machinery than it is worth.
+        current = [m.name for m in monitors.ordered()]
+        self.screen_rows = []
+        for position in range(len(names)):
+            row = _row_combo(
+                f"Screen {position + 1}",
+                _monitor_description(found, current[position])
+                if position < len(current)
+                else "",
+                names,
+                tuple(names),
+                current[position] if position < len(current) else names[0],
+                lambda v, p=position: self._set_screen(p, v),
+            )
+            self.screen_rows.append(row)
+            group.add(row)
+        return group
+
+    def _set_screen(self, position: int, name: str) -> None:
+        """Put `name` at this screen number, swapping whatever was there.
+
+        A swap rather than an insert: every screen number has to name exactly
+        one monitor, and letting two rows pick the same one would leave a
+        screen with nothing on it.
+        """
+        order = [m.name for m in monitors.ordered()]
+        if position >= len(order) or order[position] == name:
+            return
+        if name in order:
+            other = order.index(name)
+            order[position], order[other] = order[other], order[position]
+        else:
+            order[position] = name
+        settings.update(screen_order=order)
+        self.window.settings_changed(needs_restart=True, changed={"screen_order": order})
+        self._sync_screen_rows()
+
+    def _sync_screen_rows(self) -> None:
+        rows = getattr(self, "screen_rows", [])
+        if not rows:
+            return
+        found = monitors.all_monitors()
+        current = [m.name for m in monitors.ordered()]
+        for position, row in enumerate(rows):
+            if position < len(current):
+                row.set_subtitle(_monitor_description(found, current[position]))
 
     def _behaviour(self) -> Adw.PreferencesGroup:
         """What the collapse button does, and what collapsing looks like.

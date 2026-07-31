@@ -109,8 +109,16 @@ with two monitors are different layouts and both are remembered — plug a
 monitor in and the two-screen arrangement comes back, unplug it and the
 one-screen version does.
 
-The editor shows one preview per screen, side by side in the same order as your
-monitors. Drag a window off the edge of one preview to move it to the next.
+Contexts refer to screens by number, never by monitor. **Screens** in settings
+says which physical monitor is screen 1, screen 2 and so on, and **Screen
+modes** says how many arrangements a context can hold. Moving a cable or
+rearranging the desk is one change there rather than an edit to every context.
+
+The editor shows one preview per screen, side by side, labelled with the
+monitor each number currently means. Drag a window off the edge of one preview
+to move it to the next — the screen it would land on lights up while you drag.
+The dropdown above chooses which arrangement you are editing, so the two-screen
+layout can be set up while undocked.
 
 Opening a context brings up all of its screens at once and leaves you on the
 first. Closing shuts all of them.
@@ -197,6 +205,8 @@ need a restart say so.
 | Setting | Meaning |
 | --- | --- |
 | Monitor | Which screen the launcher docks to |
+| Screen modes | How many screen counts a context can hold a layout for |
+| Screen 1, 2, … | Which physical monitor each screen number means |
 | Edge | Which side the launcher docks to |
 | Width | Pixels the launcher reserves |
 | Collapse mode | A rail of icons, hidden entirely, or never |
