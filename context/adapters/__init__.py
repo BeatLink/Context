@@ -9,9 +9,10 @@ from __future__ import annotations
 from ..resources import Resource
 from .base import Adapter, GenericAdapter, launch_desktop_entry
 from .firefox import FirefoxAdapter
+from .terminal import TerminalAdapter
 from .vscode import VSCodeAdapter
 
-SPECIFIC: list = [FirefoxAdapter(), VSCodeAdapter()]
+SPECIFIC: list = [FirefoxAdapter(), VSCodeAdapter(), TerminalAdapter()]
 GENERIC = GenericAdapter()
 
 
@@ -33,7 +34,12 @@ def configurable(resource: Resource) -> bool:
 
 def supports_paths(resource: Resource) -> bool:
     """Whether this resource opens a folder, file or workspace path."""
-    return isinstance(adapter_for(resource), VSCodeAdapter)
+    return isinstance(adapter_for(resource), (VSCodeAdapter, TerminalAdapter))
+
+
+def supports_command(resource: Resource) -> bool:
+    """Whether this resource can be given a command to run."""
+    return isinstance(adapter_for(resource), TerminalAdapter)
 
 
 def supports_profiles(resource: Resource) -> bool:
@@ -44,12 +50,14 @@ def supports_profiles(resource: Resource) -> bool:
 __all__ = [
     "Adapter",
     "FirefoxAdapter",
+    "TerminalAdapter",
     "VSCodeAdapter",
     "GenericAdapter",
     "adapter_for",
     "configurable",
     "describe",
     "launch_desktop_entry",
+    "supports_command",
     "supports_paths",
     "supports_profiles",
 ]

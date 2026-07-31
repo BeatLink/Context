@@ -225,3 +225,116 @@ def test_vscode_rejects_a_missing_path(tmp_path, monkeypatch):
         adapter.launch(
             Resource(app_id="codium.desktop", path=str(tmp_path / "gone")), "ctx-1"
         )
+
+
+# -- Terminals ---------------------------------------------------------------
+
+
+def test_terminal_resources_route_to_the_terminal_adapter():
+    from context.adapters.terminal import TerminalAdapter
+
+    assert isinstance(
+        adapter_for(Resource(app_id="com.gexperts.Tilix.desktop")), TerminalAdapter
+    )
+
+
+def test_terminal_offers_a_path_and_a_command():
+    from context.adapters import supports_command, supports_paths
+
+    resource = Resource(app_id="com.gexperts.Tilix.desktop")
+    assert supports_paths(resource)
+    assert supports_command(resource)
+    assert not supports_profiles(resource)
+
+
+def test_tilix_is_told_to_make_a_new_window(tmp_path, monkeypatch):
+    """Tilix is D-Bus activated: plain `tilix` raises the existing window.
+
+    Without --action=app-new-window a context including a terminal silently
+    gets no terminal.
+    """
+    from context.adapters.terminal import TerminalAdapter
+
+    adapter = TerminalAdapter()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/tilix")
+    monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: commands.append(cmd))
+
+    adapter.launch(
+        Resource(app_id="com.gexperts.Tilix.desktop", path=str(tmp_path)), "ctx-1"
+    )
+    assert "--action=app-new-window" in commands[0]
+    assert str(tmp_path) in commands[0]
+
+
+def test_single_instance_suppresses_the_new_window_flag(tmp_path, monkeypatch):
+    """Asking a single-instance app for a new window either fails or is
+    ignored, so the switch turns it off."""
+    from context.adapters.terminal import TerminalAdapter
+
+    adapter = TerminalAdapter()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/tilix")
+    monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: commands.append(cmd))
+
+    adapter.launch(
+        Resource(
+            app_id="com.gexperts.Tilix.desktop",
+            path=str(tmp_path),
+            single_instance=True,
+        ),
+        "ctx-1",
+    )
+    assert "--action=app-new-window" not in commands[0]
+
+
+def test_force_new_window_off_suppresses_it_too(monkeypatch):
+    from context.adapters.terminal import TerminalAdapter
+
+    adapter = TerminalAdapter()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/tilix")
+    monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: commands.append(cmd))
+
+    adapter.launch(
+        Resource(app_id="com.gexperts.Tilix.desktop", force_new_window=False), "ctx-1"
+    )
+    assert "--action=app-new-window" not in commands[0]
+
+
+def test_terminal_command_comes_last(tmp_path, monkeypatch):
+    """Most terminals treat everything after the command flag as the command."""
+    from context.adapters.terminal import TerminalAdapter
+
+    adapter = TerminalAdapter()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/tilix")
+    monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: commands.append(cmd))
+
+    adapter.launch(
+        Resource(
+            app_id="com.gexperts.Tilix.desktop", path=str(tmp_path), command="htop"
+        ),
+        "ctx-1",
+    )
+    assert commands[0][-2:] == ["--command", "htop"]
+
+
+def test_terminal_rejects_a_path_that_is_not_a_directory(tmp_path, monkeypatch):
+    from context.adapters.terminal import TerminalAdapter
+
+    adapter = TerminalAdapter()
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/tilix")
+    plain = tmp_path / "file.txt"
+    plain.write_text("")
+
+    with pytest.raises(LookupError, match="not a directory"):
+        adapter.launch(
+            Resource(app_id="com.gexperts.Tilix.desktop", path=str(plain)), "ctx-1"
+        )
+
+
+def test_compatibility_flags_survive_being_switched_off():
+    """to_dict drops falsy values, which would lose a disabled switch."""
+    resource = Resource(app_id="x.desktop", force_new_window=False)
+    assert Resource.from_dict(resource.to_dict()).force_new_window is False

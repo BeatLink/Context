@@ -39,11 +39,20 @@ Adapter difficulty, from what's been verified:
 Keep `apps: list[str]` loading from old files (the store already filters unknown
 keys, so migration is additive).
 
-### 2. Firefox adapter — *done*
+### 2. Adapters — *Firefox, VS Code and terminals done*
 
-**Shipped.** URLs are configured per-resource in the UI, and each resource chooses
-between a dedicated per-context profile and the user's main profile. Remaining: VS
-Code and terminal adapters, which are the easy cases (`code <workspace>`, `cwd`).
+**Shipped.** Firefox takes URLs and chooses between a dedicated per-context
+profile and the user's main profile. VS Code opens a folder, a file or a
+`.code-workspace`. Terminals open at a directory and can run a command.
+
+Each resource also carries compatibility switches — whether to force a new
+window, and whether the app is single-instance — because how an app behaves when
+already running differs per app and cannot be reliably detected. Tilix is the
+example that made this necessary: it is D-Bus activated, so plain `tilix` raises
+the window it already has and a context gets no terminal.
+
+Remaining: a settings surface for these that is not per-resource guesswork, and
+adapters for whatever else turns out to matter in use.
 
 The profile-per-context design below is a workaround for Firefox having no
 window-targeting flags. Once contexts track windows directly (item 3), dedicated

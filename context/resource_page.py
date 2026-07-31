@@ -9,7 +9,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from .adapters import supports_paths, supports_profiles
+from .adapters import supports_command, supports_paths, supports_profiles
 from .apps import App
 from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, split_urls
 
@@ -80,6 +80,15 @@ class ResourcePage(Adw.NavigationPage):
             targets.append(self.path_row)
             content.append(targets)
 
+        self.command_row: Adw.EntryRow | None = None
+        if supports_command(resource):
+            command_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+            command_list.add_css_class("boxed-list")
+            self.command_row = Adw.EntryRow(title="Run a command")
+            self.command_row.set_text(resource.command or "")
+            command_list.append(self.command_row)
+            content.append(command_list)
+
         self.main_profile_switch: Gtk.Switch | None = None
         if supports_profiles(resource):
             options = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
@@ -98,6 +107,32 @@ class ResourcePage(Adw.NavigationPage):
             row.set_activatable_widget(self.main_profile_switch)
             options.append(row)
             content.append(options)
+
+        # Compatibility. Apps differ in how they behave when already running, and
+        # there is no reliable way to detect which, so both are exposed.
+        compat = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        compat.add_css_class("boxed-list")
+
+        new_window_row = Adw.ActionRow(
+            title="Open a new window",
+            subtitle="Off if the app should reuse a window it already has",
+        )
+        self.new_window_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.new_window_switch.set_active(resource.force_new_window)
+        new_window_row.add_suffix(self.new_window_switch)
+        new_window_row.set_activatable_widget(self.new_window_switch)
+        compat.append(new_window_row)
+
+        single_row = Adw.ActionRow(
+            title="Single instance only",
+            subtitle="The app refuses to run twice, so its existing window is used",
+        )
+        self.single_instance_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.single_instance_switch.set_active(resource.single_instance)
+        single_row.add_suffix(self.single_instance_switch)
+        single_row.set_activatable_widget(self.single_instance_switch)
+        compat.append(single_row)
+        content.append(compat)
 
         frame = Gtk.Frame()
         self.text = Gtk.TextView(
@@ -172,6 +207,10 @@ class ResourcePage(Adw.NavigationPage):
 
     def _commit(self) -> None:
         self.resource.urls = self.current_urls()
+        self.resource.force_new_window = self.new_window_switch.get_active()
+        self.resource.single_instance = self.single_instance_switch.get_active()
+        if self.command_row is not None:
+            self.resource.command = self.command_row.get_text().strip() or None
         if self.main_profile_switch is not None:
             self.resource.profile_mode = (
                 PROFILE_MAIN if self.main_profile_switch.get_active() else PROFILE_DEDICATED
