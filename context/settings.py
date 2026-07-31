@@ -25,10 +25,14 @@ EDGES = ("left", "right", "top", "bottom")
 LOG_LEVELS = ("debug", "info", "warning", "error", "critical")
 BACKENDS = ("auto", "hyprland", "none")
 COLOR_SCHEMES = ("system", "light", "dark")
-# What collapsing does. A rail keeps a strip of icons and keeps reserving that
-# much space; hiding gives the space back entirely and leaves nothing on screen,
-# so it is only usable with hover-to-expand or a keybind to bring it back.
-COLLAPSE_MODES = ("rail", "hidden")
+# What the collapse button does.
+#
+# "rail" and "none" both stay pinned to the edge: they always reserve space and
+# there is always something on screen. Only "hidden" unpins, giving the space
+# back and leaving a sliver to hover over.
+#
+# "none" removes collapsing altogether — no button, and the keybind says so.
+COLLAPSE_MODES = ("rail", "hidden", "none")
 
 # Below this the sidebar cannot show a list, and above it stops being a rail.
 MIN_SIDEBAR_WIDTH = 200

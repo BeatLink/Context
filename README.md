@@ -40,11 +40,18 @@ beside it rather than underneath.
 <kbd>Down</kbd> moves from the search bar into the list. <kbd>Esc</kbd> clears
 the search.
 
-**Collapsing.** The button in the top corner shrinks the sidebar. Collapsed to a
-**rail** it keeps one icon per context, open ones highlighted, click to switch;
-collapsed to **hidden** it gives back all the space and leaves a sliver at the
-screen edge to hover over. Either way it reopens the way you left it, and the
-saved group stays folded or unfolded as you had it.
+**Collapsing.** The button in the top corner shrinks the sidebar, in whichever
+way the collapse mode says:
+
+- **A rail of icons** — one icon per context, open ones highlighted, click to
+  switch. Keeps reserving the collapsed width.
+- **Hidden entirely** — gives back all the space and leaves a sliver at the
+  screen edge to hover over.
+- **Never collapse** — removes the button; the launcher stays open.
+
+A rail and never-collapse both stay pinned to the edge, reserving space; only
+hiding gives it back. Either collapsing mode reopens the way you left it, and
+the saved group stays folded or unfolded as you had it.
 
 
 ## Switching
@@ -145,14 +152,18 @@ need a restart say so.
 | --- | --- |
 | Colour scheme | Light, dark, or whatever the desktop is set to |
 | Edge | Which side the launcher docks to |
+| Collapse mode | A rail of icons, hidden entirely, or never |
 | Expanded width | Pixels reserved when the launcher is open |
 | Collapsed width | Pixels reserved by the rail |
-| Collapse to | A rail of icons, or hidden entirely |
-| Expand on hover | Open the launcher while the pointer is over the rail |
+| Expand on hover | Open the launcher while the pointer is over it |
 | Hover delay | How long to wait first, so passing over does not open it |
 | Window manager | Which backend drives workspaces |
 | Refresh interval | How often the open list is re-checked |
 | Log level | How much detail is written to the log |
+
+Settings that do nothing in the current collapse mode are not shown: the
+collapsed width only appears for a rail, and the hover settings disappear when
+collapsing is off.
 
 Settings are stored in `$XDG_CONFIG_HOME/context/settings.json` and can be
 edited by hand. Environment variables override them for a single run:

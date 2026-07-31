@@ -149,3 +149,8 @@ def test_the_collapse_mode_defaults_to_a_rail():
 
 def test_an_unknown_collapse_mode_falls_back():
     assert Settings(collapse_mode="vanish").validated().collapse_mode == "rail"
+
+
+def test_never_collapse_is_a_mode():
+    assert "none" in settings.COLLAPSE_MODES
+    assert Settings(collapse_mode="none").validated().collapse_mode == "none"

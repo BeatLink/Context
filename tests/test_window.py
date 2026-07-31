@@ -773,3 +773,163 @@ def test_hiding_always_reveals_on_hover(gtk_app, isolated_store, monkeypatch):
     run_app(gtk_app, body)
     assert seen["scheduled_when_hidden"] is True
     assert seen["scheduled_when_rail"] is False
+
+
+def _mode(monkeypatch, isolated_store, **changes):
+    from context import settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(**changes)
+
+
+def test_never_collapse_hides_the_button(gtk_app, isolated_store, monkeypatch):
+    from context import sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="none")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+        seen["collapses"] = window.collapses
+        window.settings_changed()
+        seen["button_visible"] = (
+            window.collapse_button.get_visible()
+            if window.collapse_button is not None
+            else None
+        )
+        # The button is gone, so the toggle must not shrink it either.
+        window.toggle_collapsed()
+        seen["still_expanded"] = window.collapsed is False
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["collapses"] is False
+    assert seen["still_expanded"] is True
+
+
+def test_switching_collapsing_off_expands_it_again(gtk_app, isolated_store, monkeypatch):
+    """Otherwise the sidebar is left shrunk with no button to grow it."""
+    from context import settings, sidebar, uistate
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+
+        window.toggle_collapsed()
+        seen["collapsed_first"] = window.collapsed
+
+        settings.update(collapse_mode="none")
+        window.settings_changed()
+        seen["expanded_after"] = window.collapsed is False
+        seen["state_cleared"] = uistate.get("collapsed") is False
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["collapsed_first"] is True
+    assert seen["expanded_after"] is True
+    assert seen["state_cleared"] is True
+
+
+def test_a_stored_collapse_is_ignored_when_collapsing_is_off(
+    gtk_app, isolated_store, monkeypatch
+):
+    from context import uistate
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="none")
+    uistate.save(collapsed=True)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["collapsed"] = window.collapsed
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["collapsed"] is False
+
+
+def test_rail_and_never_collapse_stay_pinned(gtk_app, isolated_store, monkeypatch):
+    """Only hiding unpins. A rail and never-collapse both reserve space."""
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["rail"] = window.hides_when_collapsed
+        settings.update(collapse_mode="none")
+        seen["none"] = window.hides_when_collapsed
+        settings.update(collapse_mode="hidden")
+        seen["hidden"] = window.hides_when_collapsed
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["rail"] is False
+    assert seen["none"] is False
+    assert seen["hidden"] is True
+
+
+def test_settings_rows_hide_when_they_do_nothing(gtk_app, isolated_store, monkeypatch):
+    """A width that applies to no mode is noise, not a setting."""
+    from context import settings
+    from context.settings_page import SettingsPage
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail", auto_expand=False)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        page = SettingsPage(window)
+        seen["rail_width_on_rail"] = page.rail_width_row.get_visible()
+        seen["hover_on_rail"] = page.hover_row.get_visible()
+        seen["delay_hidden_without_hover"] = not page.hover_delay_row.get_visible()
+
+        settings.update(collapse_mode="hidden")
+        page._sync_rows()
+        seen["rail_width_when_hidden"] = page.rail_width_row.get_visible()
+        # Hiding always reveals on hover, so the delay still matters.
+        seen["delay_when_hidden"] = page.hover_delay_row.get_visible()
+
+        settings.update(collapse_mode="none")
+        page._sync_rows()
+        seen["hover_when_never"] = page.hover_row.get_visible()
+        seen["expanded_width_always"] = page.expanded_width_row.get_visible()
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["rail_width_on_rail"] is True
+    assert seen["hover_on_rail"] is True
+    assert seen["delay_hidden_without_hover"] is True
+    assert seen["rail_width_when_hidden"] is False
+    assert seen["delay_when_hidden"] is True
+    assert seen["hover_when_never"] is False
+    # The expanded width is what "open" means in every mode.
+    assert seen["expanded_width_always"] is True

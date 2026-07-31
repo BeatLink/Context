@@ -172,11 +172,13 @@ needs Hyprland IPC and is a reason to treat Hyprland as the real target.
 
 ### 5. Collapse the sidebar to a rail — *done*
 
-A button in the header shrinks the sidebar to `CONTEXT_RAIL_WIDTH` (56px by
-default): one icon per context, open ones highlighted, the active one accented,
-click to switch. The exclusive zone follows the window size, so the space is
-handed back to tiled windows with no extra compositor work. The state is kept in
-`$XDG_STATE_HOME/context/ui.json` and restored on start.
+A button in the header shrinks the sidebar, in one of three modes: to a rail of
+icons, to a sliver, or not at all. A rail and never-collapse stay pinned to the
+edge and keep reserving space; only hiding gives it back. The exclusive zone
+follows the window size, so tiled windows reflow with no extra compositor work.
+The state is kept in `$XDG_STATE_HOME/context/ui.json` and restored on start —
+unless collapsing is off, in which case it is ignored rather than leaving the
+sidebar shrunk with no button to grow it.
 
 The rail lists every context rather than the current search results — there is
 no search bar at rail width to explain why some are missing.

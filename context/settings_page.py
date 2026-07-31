@@ -23,7 +23,7 @@ EDGE_LABELS = ("Left", "Right", "Top", "Bottom")
 LEVEL_LABELS = ("Debug", "Info", "Warning", "Error", "Critical")
 BACKEND_LABELS = ("Detect automatically", "Hyprland", "None")
 SCHEME_LABELS = ("Match the desktop", "Light", "Dark")
-COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely")
+COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely", "Never collapse")
 
 
 def _row_spin(title, subtitle, value, low, high, step, on_change) -> Adw.SpinRow:
@@ -83,7 +83,7 @@ class SettingsPage(Adw.NavigationPage):
         live = settings.current()
         group = Adw.PreferencesGroup(
             title="Appearance",
-            description="Where the launcher sits, and how much room it takes.",
+            description="How the launcher looks and where it sits.",
         )
         group.add(
             _row_combo(
@@ -105,69 +105,95 @@ class SettingsPage(Adw.NavigationPage):
                 lambda v: self._apply(sidebar_edge=v, restart=True),
             )
         )
-        group.add(
-            _row_spin(
-                "Expanded width",
-                "Pixels reserved when the launcher is open.",
-                live.sidebar_width,
-                settings.MIN_SIDEBAR_WIDTH,
-                settings.MAX_SIDEBAR_WIDTH,
-                10,
-                lambda v: self._apply(sidebar_width=v),
-            )
-        )
-        group.add(
-            _row_spin(
-                "Collapsed width",
-                "Pixels reserved by the rail.",
-                live.rail_width,
-                settings.MIN_RAIL_WIDTH,
-                settings.MAX_RAIL_WIDTH,
-                4,
-                lambda v: self._apply(rail_width=v),
-            )
-        )
         return group
 
     def _behaviour(self) -> Adw.PreferencesGroup:
+        """Everything about how much room the launcher takes, and when.
+
+        The widths live here rather than under Appearance because that is what
+        they are: the two sizes the collapse button toggles between. A row is
+        hidden when the mode it belongs to is not selected, so the group only
+        ever shows settings that currently do something.
+        """
         live = settings.current()
         group = Adw.PreferencesGroup(
             title="Collapsing",
-            description="What the collapse button does.",
+            description="How much room the launcher takes, and when.",
         )
         group.add(
             _row_combo(
-                "Collapse to",
+                "Collapse mode",
                 "A rail keeps one icon per context. Hidden gives back all the "
-                "space and leaves a sliver to hover over.",
+                "space and leaves a sliver to hover over. Never collapse removes "
+                "the button.",
                 COLLAPSE_LABELS,
                 settings.COLLAPSE_MODES,
                 live.collapse_mode,
-                lambda v: self._apply(collapse_mode=v),
+                lambda v: self._apply(collapse_mode=v, resync=True),
             )
         )
-        group.add(
-            _row_switch(
-                "Expand on hover",
-                "Open the full launcher while the pointer is over it, and "
-                "collapse it again on leaving. Always on when hidden.",
-                live.auto_expand,
-                lambda v: self._apply(auto_expand=v),
-            )
+
+        self.expanded_width_row = _row_spin(
+            "Expanded width",
+            "Pixels reserved when the launcher is open.",
+            live.sidebar_width,
+            settings.MIN_SIDEBAR_WIDTH,
+            settings.MAX_SIDEBAR_WIDTH,
+            10,
+            lambda v: self._apply(sidebar_width=v),
         )
-        group.add(
-            _row_spin(
-                "Hover delay",
-                "Milliseconds to wait before expanding, so passing over the rail "
-                "does not open it.",
-                live.auto_expand_delay_ms,
-                0,
-                2000,
-                20,
-                lambda v: self._apply(auto_expand_delay_ms=v),
-            )
+        group.add(self.expanded_width_row)
+
+        self.rail_width_row = _row_spin(
+            "Collapsed width",
+            "Pixels reserved by the rail.",
+            live.rail_width,
+            settings.MIN_RAIL_WIDTH,
+            settings.MAX_RAIL_WIDTH,
+            4,
+            lambda v: self._apply(rail_width=v),
         )
+        group.add(self.rail_width_row)
+
+        self.hover_row = _row_switch(
+            "Expand on hover",
+            "Open the full launcher while the pointer is over it, and collapse "
+            "it again on leaving. Always on when hidden, since a sliver is not "
+            "much to click.",
+            live.auto_expand,
+            lambda v: self._apply(auto_expand=v, resync=True),
+        )
+        group.add(self.hover_row)
+
+        self.hover_delay_row = _row_spin(
+            "Hover delay",
+            "Milliseconds to wait before expanding, so passing over does not "
+            "open it.",
+            live.auto_expand_delay_ms,
+            0,
+            2000,
+            20,
+            lambda v: self._apply(auto_expand_delay_ms=v),
+        )
+        group.add(self.hover_delay_row)
+
+        self._sync_rows()
         return group
+
+    def _sync_rows(self) -> None:
+        """Hide the settings that the current mode makes meaningless."""
+        live = settings.current()
+        collapses = live.collapse_mode != "none"
+
+        # Only a rail reserves a collapsed width. Hidden reserves a fixed
+        # sliver, and never-collapse reserves nothing different.
+        self.rail_width_row.set_visible(live.collapse_mode == "rail")
+        self.hover_row.set_visible(collapses)
+        # Hiding always reveals on hover whatever the switch says, so the delay
+        # still applies there even with the switch off.
+        self.hover_delay_row.set_visible(
+            collapses and (live.auto_expand or live.collapse_mode == "hidden")
+        )
 
     def _advanced(self) -> Adw.PreferencesGroup:
         live = settings.current()
@@ -238,10 +264,18 @@ class SettingsPage(Adw.NavigationPage):
 
     # -- applying ------------------------------------------------------------
 
-    def _apply(self, restart: bool = False, restyle: bool = False, **changes) -> None:
+    def _apply(
+        self,
+        restart: bool = False,
+        restyle: bool = False,
+        resync: bool = False,
+        **changes,
+    ) -> None:
         settings.update(**changes)
         if restyle:
             theme.apply_color_scheme()
+        if resync:
+            self._sync_rows()
         self.window.settings_changed(needs_restart=restart, changed=changes)
 
     def _write_theme(self) -> None:

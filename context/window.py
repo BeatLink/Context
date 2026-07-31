@@ -132,6 +132,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.collapse_button.add_css_class("flat")
             self.collapse_button.set_tooltip_text("Collapse to a rail")
             self.collapse_button.connect("clicked", lambda _b: self.toggle_collapsed())
+            self.collapse_button.set_visible(self.collapses)
             self.header.pack_end(self.collapse_button)
         self.toolbar.add_top_bar(self.header)
 
@@ -287,7 +288,11 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.add_controller(pointer)
 
         self._read_open_state()
-        self.collapsed = bool(self.is_sidebar and uistate.get("collapsed", False))
+        # A stored collapsed state is ignored when collapsing is switched off,
+        # rather than leaving the sidebar shrunk with no button to grow it.
+        self.collapsed = bool(
+            self.is_sidebar and self.collapses and uistate.get("collapsed", False)
+        )
         self._apply_collapsed()
         self.refresh()
 
@@ -332,6 +337,13 @@ class LauncherWindow(Adw.ApplicationWindow):
 
     def settings_changed(self, needs_restart: bool = False, changed=None) -> None:
         """Honour what can be applied now; say so for what cannot."""
+        # Switching collapsing off while collapsed would leave the sidebar
+        # shrunk with no way to grow it, since the button has just gone.
+        if self.collapsed and not self.collapses:
+            self.collapsed = False
+            uistate.save(collapsed=False)
+        if self.collapse_button is not None:
+            self.collapse_button.set_visible(self.collapses)
         self._apply_collapsed()
         self._restart_poll()
         if needs_restart:
@@ -349,7 +361,7 @@ class LauncherWindow(Adw.ApplicationWindow):
 
     def _on_pointer_enter(self) -> None:
         self._take_keyboard(focus=False)
-        if not self.collapsed:
+        if not (self.collapsed and self.collapses):
             return
         # Hiding always reveals on hover, whatever the setting says: with
         # nothing on screen but a two-pixel sliver, hover is the only way back
@@ -384,6 +396,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.refresh()
 
     def toggle_collapsed(self) -> None:
+        if not self.collapses:
+            log.info("collapsing is switched off")
+            return
         # A deliberate toggle ends any hover peek, so the state that gets saved
         # is the one the user chose rather than the one hovering produced.
         self._auto_expanded = False
@@ -394,7 +409,18 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.refresh()
 
     @property
+    def collapses(self) -> bool:
+        """Whether collapsing is offered at all."""
+        return settings.current().collapse_mode != "none"
+
+    @property
     def hides_when_collapsed(self) -> bool:
+        """Whether collapsing unpins the sidebar rather than shrinking it.
+
+        Only hiding does. A rail and never-collapse both stay pinned to the
+        edge, reserving space and keeping something on screen — they differ
+        only in how much.
+        """
         return settings.current().collapse_mode == "hidden"
 
     def _apply_collapsed(self) -> None:
