@@ -433,6 +433,15 @@ that reach both the widgets and the Cairo drawing, the file is watched so
 saving restyles the running launcher, and the scheme setting is gone: a look
 is a file, not an option. Constraints recorded in CLAUDE.md under "Theming".
 
+### 17. The overview — *first step done*
+
+A new direction taking shape step by step, keeping the sidebar as it is. Done
+so far: a New Context button in the sidebar's header, and an `overview`
+command — one screen with the search bar on top, contexts (open, then saved)
+on one side, and the installed apps on the other, where clicking an app
+creates a context around it and opens it on the spot. Next steps to be decided
+as it gets used.
+
 ## Next
 
 ### 11. Ephemeral teardown

@@ -67,6 +67,7 @@ the saved group stays folded or unfolded as you had it.
 | `switch-window-all` | Pick a window across every context |
 | `previous` | Return to the last context |
 | `settings` | Open the settings page |
+| `overview` | Contexts and apps on one screen; an app opens as a new context |
 | `toggle-rail` | Collapse or expand the sidebar |
 | `restart` | Restart Context, keeping open contexts open |
 | `move-window` | Send the focused window to another context |

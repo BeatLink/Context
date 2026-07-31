@@ -143,6 +143,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.header.set_show_start_title_buttons(False)
             self.header.set_show_end_title_buttons(False)
 
+        self.new_button = Gtk.Button(icon_name="list-add-symbolic")
+        self.new_button.add_css_class("flat")
+        self.new_button.set_tooltip_text("New context")
+        self.new_button.connect("clicked", lambda _b: self._new_context())
+        self.header.pack_start(self.new_button)
+
         self.settings_button = Gtk.Button(icon_name="preferences-system-symbolic")
         self.settings_button.add_css_class("flat")
         self.settings_button.set_tooltip_text("Settings")
@@ -894,6 +900,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
         else:
             self.close()
         return True
+
+    def _new_context(self) -> None:
+        """A blank context straight into its editor, no name required first.
+
+        The title is provisional — the editor's own field is where it gets
+        named, exactly as for a context created by typing.
+        """
+        self._pick_apps(self.store.create("New context"))
 
     def _pick_apps(self, ctx: Context) -> None:
         """Editor for a context that was just created; committing launches it."""

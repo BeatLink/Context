@@ -41,6 +41,7 @@ COMMANDS = {
     "switch-window-all": lambda app: app.switch_window_all(),
     "previous": lambda app: app.previous_context(),
     "settings": lambda app: app.ensure_window().open_settings(),
+    "overview": lambda app: app.open_overview(),
     "toggle-rail": lambda app: app.toggle_collapsed(),
     "restart": lambda app: app.restart(),
     # Window management. These act on the focused window, so they are bound to
@@ -165,6 +166,22 @@ class ContextApplication(Gtk.Application):
         # that goes on to focus or launch something overrides this immediately.
         hand_keyboard_back(backend=self.backend)
         return False
+
+    def open_overview(self) -> None:
+        """Everything on one screen: contexts one side, apps the other.
+
+        The same keybind again puts it away rather than stacking another.
+        """
+        from .overview import OverviewWindow
+
+        existing = self.switcher
+        if isinstance(existing, OverviewWindow):
+            existing.close()
+            self.switcher = None
+            return
+        picker = OverviewWindow(self, self.store, backend=self.backend)
+        picker.on_context = self.go_to_context
+        self._show_picker(picker)
 
     def restart(self) -> None:
         """Replace this process with a fresh one.
