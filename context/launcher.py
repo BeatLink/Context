@@ -37,6 +37,18 @@ class CloseResult:
     workspace_removed: bool = False
 
 
+def active_context(contexts, backend: Backend | None = None):
+    """The context whose workspace is focused right now, if any."""
+    wm: Backend = backend or backends.detect()
+    handle = wm.current_handle()
+    if handle is None:
+        return None
+    for ctx in contexts:
+        if ctx.handle_for(wm.name) == handle:
+            return ctx
+    return None
+
+
 def context_is_open(ctx: Context, backend: Backend | None = None) -> bool:
     wm: Backend = backend or backends.detect()
     handle = ctx.handle_for(wm.name)

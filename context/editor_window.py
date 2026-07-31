@@ -27,6 +27,7 @@ class EditorWindow(Adw.Window):
         ctx: Context,
         on_done,
         on_cancel,
+        on_delete=None,
         is_new: bool = False,
     ) -> None:
         super().__init__(application=app, title=ctx.title or "New context")
@@ -46,6 +47,7 @@ class EditorWindow(Adw.Window):
             ctx,
             lambda *args: self._finish(on_done, *args),
             lambda: self._finish(on_cancel),
+            on_delete=(lambda c: self._finish(on_delete, c)) if on_delete else None,
             is_new=is_new,
         )
         self.nav.add(self.page)
@@ -70,5 +72,5 @@ class EditorWindow(Adw.Window):
 
     def _finish(self, callback, *args) -> None:
         self.close()
-        if callback is not None:
+        if callback is  not None:
             callback(*args)

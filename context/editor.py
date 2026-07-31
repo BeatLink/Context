@@ -287,11 +287,14 @@ class AppTile(Gtk.FlowBoxChild):
 class EditorPage(Adw.NavigationPage):
     """Full-screen page for creating or editing a context."""
 
-    def __init__(self, ctx: Context, on_done, on_cancel, is_new: bool = False) -> None:
+    def __init__(
+        self, ctx: Context, on_done, on_cancel, on_delete=None, is_new: bool = False
+    ) -> None:
         super().__init__(title=ctx.title or "New context")
         self.ctx = ctx
         self.on_done = on_done
         self.on_cancel = on_cancel
+        self.on_delete = on_delete
         self.is_new = is_new
         self.apps = installed_apps()
         # An ordered list rather than a set: a context may hold two terminals, and
@@ -342,6 +345,20 @@ class EditorPage(Adw.NavigationPage):
         ephemeral_row.add_suffix(self.ephemeral_switch)
         ephemeral_row.set_activatable_widget(self.ephemeral_switch)
         details.append(ephemeral_row)
+
+        # Forgetting a context lives here rather than beside its launch button,
+        # so it takes opening the editor and a confirmation to lose one.
+        if on_delete is not None and not is_new:
+            delete_row = Adw.ActionRow(
+                title="Forget this context",
+                subtitle="Removes the definition. Windows it opened are left alone.",
+            )
+            delete_button = Gtk.Button(label="Forget", valign=Gtk.Align.CENTER)
+            delete_button.add_css_class("destructive-action")
+            delete_button.connect("clicked", lambda _b: self._confirm_delete())
+            delete_row.add_suffix(delete_button)
+            details.append(delete_row)
+
         content.append(details)
 
         # --- layout preview, top half -----------------------------------------
@@ -502,6 +519,25 @@ class EditorPage(Adw.NavigationPage):
         self._update_state()
 
     # -- commit --------------------------------------------------------------
+
+    def _confirm_delete(self) -> None:
+        dialog = Adw.MessageDialog(
+            heading=f"Forget “{self.ctx.title}”?",
+            body="The context definition is removed. Any windows it opened stay open.",
+            modal=True,
+        )
+        root = self.get_root()
+        if root is not None:
+            dialog.set_transient_for(root)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Forget")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.connect(
+            "response",
+            lambda _d, response: self.on_delete(self.ctx) if response == "delete" else None,
+        )
+        dialog.present()
 
     def _commit_cancel(self) -> None:
         self.on_cancel()

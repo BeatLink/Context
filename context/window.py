@@ -13,7 +13,7 @@ from gi.repository import Adw, Gdk, GLib, Gtk
 
 from . import sidebar
 from .editor_window import EditorWindow
-from .launcher import context_is_open
+from .launcher import active_context, context_is_open
 from .layout import Layout
 from .resources import Resource
 from .store import Context, ContextStore
@@ -37,9 +37,20 @@ def relative_time(stamp: float) -> str:
 
 
 class ContextRow(Adw.ActionRow):
-    def __init__(self, ctx: Context, on_open, on_edit, on_delete, on_close, is_open=False) -> None:
+    """A context in the list.
+
+    Open contexts get a close button; saved ones do not, and neither gets a
+    delete button — forgetting a context happens in its editor, so it cannot be
+    triggered by a stray click next to launch.
+    """
+
+    def __init__(
+        self, ctx: Context, on_open, on_edit, on_close, is_open=False, is_active=False
+    ) -> None:
         super().__init__()
         self.ctx = ctx
+        self.is_open = is_open
+        self.is_active = is_active
         self.set_title(GLib.markup_escape_text(ctx.title))
         self.set_activatable(True)
 
@@ -48,14 +59,19 @@ class ContextRow(Adw.ActionRow):
             subtitle.append(f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}")
         if ctx.ephemeral:
             subtitle.append("ephemeral")
-        if is_open:
-            subtitle.insert(0, "open")
         self.set_subtitle(" · ".join(subtitle))
 
         icon = Gtk.Image.new_from_icon_name(
-            "user-trash-symbolic" if ctx.ephemeral else "view-grid-symbolic"
+            "media-playback-start-symbolic" if is_open else "view-grid-symbolic"
         )
         self.add_prefix(icon)
+
+        # The context you are actually in is marked the way a browser marks the
+        # selected tab, so it is obvious at a glance which one is current.
+        if is_active:
+            self.add_css_class("accent")
+            self.set_title(f"<b>{GLib.markup_escape_text(ctx.title)}</b>")
+            self.set_use_markup(True)
 
         self.close = Gtk.Button(icon_name="media-playback-stop-symbolic", valign=Gtk.Align.CENTER)
         self.close.add_css_class("flat")
@@ -69,12 +85,6 @@ class ContextRow(Adw.ActionRow):
         self.edit.set_tooltip_text("Edit this context")
         self.edit.connect("clicked", lambda _b: on_edit(ctx))
         self.add_suffix(self.edit)
-
-        self.remove = Gtk.Button(icon_name="window-close-symbolic", valign=Gtk.Align.CENTER)
-        self.remove.add_css_class("flat")
-        self.remove.set_tooltip_text("Forget this context")
-        self.remove.connect("clicked", lambda _b: on_delete(ctx))
-        self.add_suffix(self.remove)
 
         self.connect("activated", lambda _r: on_open(ctx))
 
@@ -138,10 +148,24 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.list_label = Gtk.Label(xalign=0.0)
         self.list_label.add_css_class("heading")
         self.list_label.add_css_class("dim-label")
-        content.append(self.list_label)
+
+        # Open and saved contexts are different things and want different
+        # actions, so they get their own groups rather than one mixed list.
+        self.open_label = Gtk.Label(xalign=0.0)
+        self.open_label.add_css_class("heading")
+        self.open_label.add_css_class("dim-label")
+
+        self.open_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.open_listbox.add_css_class("boxed-list")
 
         self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.listbox.add_css_class("boxed-list")
+
+        groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        groups.append(self.open_label)
+        groups.append(self.open_listbox)
+        groups.append(self.list_label)
+        groups.append(self.listbox)
 
         self.empty_state = Adw.StatusPage(
             icon_name="view-grid-symbolic",
@@ -153,7 +177,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.stack = Gtk.Stack()
         scroller = Gtk.ScrolledWindow(vexpand=True)
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_child(self.listbox)
+        scroller.set_child(groups)
         self.stack.add_named(scroller, "list")
         self.stack.add_named(self.empty_state, "empty")
         content.append(self.stack)
@@ -178,12 +202,29 @@ class LauncherWindow(Adw.ApplicationWindow):
         key.connect("key-pressed", self._on_key_pressed)
         self.entry.add_controller(key)
 
-        # Only hold keyboard focus while the launcher is actually being typed in,
-        # so opening a context leaves the new window focused rather than the bar.
-        focus = Gtk.EventControllerFocus()
-        focus.connect("enter", lambda *_a: sidebar.grab_keyboard(self, True))
-        focus.connect("leave", lambda *_a: sidebar.grab_keyboard(self, False))
-        self.entry.add_controller(focus)
+        # Keyboard focus is taken only while the entry is actively being used.
+        #
+        # It cannot be tied to GTK focus alone: once the layer takes keyboard
+        # focus the entry keeps it, so no `leave` ever arrives and clicking
+        # another window cannot take it back — the panel holds the keyboard until
+        # something outside GTK intervenes. Instead the grab is released whenever
+        # the pointer leaves the sidebar, which is the gesture that means "I am
+        # done here", and the entry drops GTK focus at the same time.
+        # The grab has to happen on the click itself. With KeyboardMode.NONE the
+        # layer has no keyboard, so GTK never gives the entry focus and a
+        # focus-enter handler would never run — the entry would be untypable.
+        # Capture phase, so the mode is raised before GTK routes the click.
+        entry_click = Gtk.GestureClick()
+        entry_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        entry_click.connect("pressed", lambda *_a: self._take_keyboard())
+        self.entry.add_controller(entry_click)
+
+        # Releasing when the pointer leaves the sidebar is what lets a click on
+        # another window take focus back; tying it to GTK focus-leave does not
+        # work, since the entry keeps focus while the layer holds the keyboard.
+        pointer = Gtk.EventControllerMotion()
+        pointer.connect("leave", lambda *_a: self._release_keyboard())
+        self.add_controller(pointer)
 
         self.refresh()
 
@@ -197,36 +238,65 @@ class LauncherWindow(Adw.ApplicationWindow):
         return rows
 
     def refresh(self) -> None:
-        query = self.entry.get_text()
+        """Show open contexts, the way a browser shows open tabs.
+
+        Saved contexts are not listed by default: they appear once you search,
+        which is the browser's "new tab" behaviour — the list is what is running,
+        and searching is how you reach everything else.
+        """
+        query = self.entry.get_text().strip()
+        searching = bool(query)
         matches = self.store.search(query)
 
-        self.listbox.remove_all()
-        for ctx in matches:
-            self.listbox.append(
+        active = self._active_context()
+        opened = [c for c in matches if self._is_open(c)]
+        saved = [c for c in matches if c not in opened] if searching else []
+
+        self.open_listbox.remove_all()
+        for ctx in opened:
+            self.open_listbox.append(
                 ContextRow(
                     ctx,
                     self._open,
                     self._edit,
-                    self._delete,
                     self._close,
-                    is_open=self._is_open(ctx),
+                    is_open=True,
+                    is_active=active is not None and ctx.id == active.id,
                 )
             )
 
-        if not self.store.contexts:
-            self.stack.set_visible_child_name("empty")
-            self.list_label.set_visible(False)
-        elif not matches:
+        self.listbox.remove_all()
+        for ctx in saved:
+            self.listbox.append(
+                ContextRow(ctx, self._open, self._edit, self._close, is_open=False)
+            )
+
+        self.open_label.set_visible(bool(opened))
+        self.open_listbox.set_visible(bool(opened))
+        self.open_label.set_label("Open")
+
+        self.list_label.set_visible(bool(saved))
+        self.list_label.set_label("Saved")
+        self.listbox.set_visible(bool(saved))
+
+        if opened or saved:
+            self.stack.set_visible_child_name("list")
+            return
+
+        self.stack.set_visible_child_name("empty")
+        if searching:
             self.empty_state.set_title("No matches")
             self.empty_state.set_description(
-                "Press Enter to create a new context with this name."
+                "Press Enter to start a new context with this name."
             )
-            self.stack.set_visible_child_name("empty")
-            self.list_label.set_visible(False)
+        elif self.store.contexts:
+            self.empty_state.set_title("Nothing open")
+            self.empty_state.set_description(
+                "Search above to reopen a saved context, or name a new one."
+            )
         else:
-            self.stack.set_visible_child_name("list")
-            self.list_label.set_visible(True)
-            self.list_label.set_label("Matching contexts" if query.strip() else "Recent contexts")
+            self.empty_state.set_title("No contexts yet")
+            self.empty_state.set_description("Type a name above to create your first one.")
 
     def _on_entry_changed(self, entry: Gtk.Entry) -> None:
         text = entry.get_text().strip()
@@ -256,13 +326,30 @@ class LauncherWindow(Adw.ApplicationWindow):
                 return True
         return False
 
+    def _take_keyboard(self) -> None:
+        """Raise the layer's keyboard mode so the entry can be typed in."""
+        if not self.is_sidebar:
+            return
+        sidebar.grab_keyboard(self, True)
+        self.entry.grab_focus()
+
+    def _release_keyboard(self) -> None:
+        """Hand the keyboard back to whatever the user clicks next."""
+        if not self.is_sidebar:
+            return
+        # Dropping GTK focus as well, so the entry does not silently keep it and
+        # re-grab the keyboard the moment the pointer returns.
+        self.set_focus(None)
+        sidebar.grab_keyboard(self, False)
+
     def _on_escape(self) -> bool:
         if self.nav.get_visible_page() is not self.home_page:
             self.nav.pop()
         elif self.is_sidebar:
-            # A docked sidebar has no way to be reopened, so Escape only clears
-            # the search rather than dismissing it.
+            # A docked sidebar has no way to be reopened, so Escape clears the
+            # search and hands the keyboard back rather than dismissing it.
             self.entry.set_text("")
+            self._release_keyboard()
         else:
             self.close()
         return True
@@ -277,7 +364,12 @@ class LauncherWindow(Adw.ApplicationWindow):
         # A separate maximised window rather than a page in the sidebar: the
         # layout preview needs the monitor's shape, and the app grid needs width.
         self.editor_window = EditorWindow(
-            self.get_application(), ctx, self._on_editor_done, on_cancel, is_new=is_new
+            self.get_application(),
+            ctx,
+            self._on_editor_done,
+            on_cancel,
+            on_delete=None if is_new else self._delete,
+            is_new=is_new,
         )
         self.editor_window.present()
         self.editor = self.editor_window.page
@@ -336,6 +428,14 @@ class LauncherWindow(Adw.ApplicationWindow):
         if result.workspace is not None:
             message += f" · {result.backend} {result.workspace}"
         self.toasts.add_toast(Adw.Toast(title=message, timeout=3))
+
+    def _active_context(self):
+        if self.on_close is None:
+            return None
+        try:
+            return active_context(self.store.contexts)
+        except OSError:
+            return None
 
     def _is_open(self, ctx: Context) -> bool:
         if self.on_close is None:

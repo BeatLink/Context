@@ -9,9 +9,10 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw
+from gi.repository import Adw, Gio
 
 from . import backends
+from .backends import Workspace
 from .launcher import close_context as close_ctx
 from .launcher import launch_context as launch_ctx
 from .store import Context, ContextStore
@@ -22,7 +23,10 @@ from .window import LauncherWindow
 
 class ContextApplication(Adw.Application):
     def __init__(self) -> None:
-        super().__init__(application_id="io.beatlink.Context")
+        super().__init__(
+            application_id="io.beatlink.Context",
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
+        )
         configure()
         self.log = get_logger("app")
         self.store = ContextStore()
@@ -36,6 +40,33 @@ class ContextApplication(Adw.Application):
     def do_shutdown(self) -> None:
         self.watcher.stop()
         Adw.Application.do_shutdown(self)
+
+    def do_command_line(self, command_line) -> int:
+        """Entry point for every launch, first or subsequent.
+
+        GApplication already enforces a single instance — a second launch hands
+        its command line to the first over D-Bus and exits. That was previously
+        silent, which made a stale instance look like a broken build: relaunches
+        appeared to do nothing. Now the running instance says so and focuses the
+        context in view, and the launcher is presented rather than duplicated.
+        """
+        if self.window is not None:
+            self.log.info("already running; focusing the existing launcher")
+            self._focus_active_context()
+        self.activate()
+        return 0
+
+    def _focus_active_context(self) -> None:
+        """Switch to whichever context is open, so a relaunch lands somewhere."""
+        switch = getattr(self.backend, "switch_to", None)
+        if switch is None:
+            return
+        for ctx in self.store.contexts:
+            handle = ctx.handle_for(self.backend.name)
+            if handle and self.backend.workspace_exists(handle):
+                self.log.info("switching to open context %s", ctx.title)
+                switch(Workspace(handle=handle, label=ctx.title))
+                return
 
     def do_activate(self) -> None:
         # Started here rather than in do_startup: the watcher only matters once
