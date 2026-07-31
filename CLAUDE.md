@@ -155,6 +155,14 @@ launching real applications, and point `XDG_DATA_DIRS` at it.
   the exception, via `MOZ_APP_REMOTINGNAME` — measured working.
 - **`Gio.DesktopAppInfo.new` raises `TypeError`** on a missing entry rather than
   returning `None`. Catch both; a stale app ID otherwise crashes the launcher.
+- **Scrub the launcher's own environment before launching anything.**
+  `child_env()` exists for this and its list only grows. `ELECTRON_RUN_AS_NODE`
+  is the one that cost real time: editors set it for their integrated
+  terminals, so a Context started from one passes it to every application it
+  launches, and every Electron application dies with "Cannot find module
+  'electron'" while the launch reports success. `Gio.AppLaunchContext` copies
+  the process environment rather than taking a dict, so removing a variable
+  needs `unsetenv`, not merely setting the others.
 - **Never let a launched app inherit `LD_PRELOAD`.** The sidebar re-execs with
   gtk4-layer-shell preloaded, and injecting that into Firefox segfaults it. Launch
   through `child_env()` — both `subprocess` and `Gio.AppLaunchContext`, since Gio

@@ -199,6 +199,50 @@ way apps are launched:
 
 This is what makes Context replace rofi rather than sit next to it.
 
+### 3b. Isolated contexts
+
+An application that cannot see a running copy of itself cannot hand off to it.
+No hand-off means the process Context spawns is the process that owns the
+window, which makes pid matching work, `--new-window` unnecessary, and the
+single-instance switch redundant. It would dissolve most of item 3.
+
+The mechanism is a private IPC namespace, not a container. Applications find
+each other over three channels, and all three are addressed by directory:
+
+| Channel | Isolated by |
+| --- | --- |
+| D-Bus session bus | a private bus, `DBUS_SESSION_BUS_ADDRESS` |
+| Abstract/unix sockets | a private `XDG_RUNTIME_DIR` |
+| Lock files in the profile | a per-context data directory |
+
+The Wayland socket has to be shared, or there is no window. That is fine:
+Wayland gives a client no way to enumerate other clients, so sharing it leaks
+nothing an application could use to find its twin.
+
+**The real constraint is not isolation, it is the data store.** Two copies of a
+notes application writing the same database without knowing about each other
+corrupt it. So isolation cannot be a global default — it is only safe for an
+application whose state is either read-only, per-context, or already
+concurrency-safe. That makes it a per-context choice:
+
+- **Isolated** — a private bus and runtime directory. Applications launch fresh
+  and never hand off. Anything that keeps a shared database must also be given a
+  per-context data directory, or left out of the context.
+- **Shared** (default) — as now.
+
+A per-application override matters as much as the per-context one: a context may
+legitimately want an isolated browser beside a shared editor.
+
+Sequencing: the isolation is cheap to build and hard to make safe. The safety is
+the work — knowing which applications tolerate a second instance is the same
+per-application knowledge the compatibility switches already encode, so this
+should extend that rather than become a separate system. Do it after window
+identity so there is a way to verify it actually helped.
+
+Note also that `bwrap`, `firejail` and `flatpak` are all absent from the target
+system; `unshare` and `systemd-run` are present. A private bus needs
+`dbus-daemon`, not a container runtime, so nothing new has to be packaged.
+
 ### 7b. A thumbnail switcher
 
 The switcher is a list: icon, title, and which context a window belongs to.

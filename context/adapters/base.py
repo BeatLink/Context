@@ -18,6 +18,21 @@ from gi.repository import Gio
 from ..resources import Resource
 
 
+# Variables that belong to whatever started the launcher and must never reach
+# an application it launches.
+#
+# ELECTRON_RUN_AS_NODE makes an Electron binary run as plain Node, so it never
+# builds a window: it dies with "Cannot find module 'electron'". Editors set it
+# for their own integrated terminals, so a Context started from one inherits it
+# and every Electron application in every context fails — reported as "I can't
+# launch Trilium", with the launch itself reporting success.
+STRIPPED_VARS = (
+    "ELECTRON_RUN_AS_NODE",
+    "ELECTRON_NO_ATTACH_CONSOLE",
+    "CONTEXT_LAYER_SHELL_PRELOADED",
+)
+
+
 def child_env() -> dict[str, str]:
     """The environment launched apps should get.
 
@@ -33,7 +48,8 @@ def child_env() -> dict[str, str]:
             env["LD_PRELOAD"] = ":".join(kept)
         else:
             env.pop("LD_PRELOAD", None)
-    env.pop("CONTEXT_LAYER_SHELL_PRELOADED", None)
+    for name in STRIPPED_VARS:
+        env.pop(name, None)
     return env
 
 
@@ -46,11 +62,14 @@ def launch_desktop_entry(app_id: str, uris: list[str] | None = None) -> None:
         raise LookupError(f"no desktop entry for {app_id}")
 
     context = Gio.AppLaunchContext()
-    # Gio copies the launcher's own environment, so scrub it here too.
-    for key, value in child_env().items():
+    # Gio copies the launcher's own environment rather than taking a dict, so
+    # anything removed has to be unset explicitly — setting the rest is not
+    # enough to drop a variable that should not be there.
+    wanted = child_env()
+    for key, value in wanted.items():
         context.setenv(key, value)
-    if "LD_PRELOAD" not in child_env():
-        context.unsetenv("LD_PRELOAD")
+    for key in set(os.environ) - set(wanted):
+        context.unsetenv(key)
 
     if uris:
         info.launch_uris(uris, context)

@@ -453,3 +453,53 @@ def test_main_profile_reports_a_failed_launch(monkeypatch):
         adapter.launch(
             Resource(app_id="firefox.desktop", profile_mode=PROFILE_MAIN), "ctx-1"
         )
+
+
+def test_child_env_strips_electron_run_as_node(monkeypatch):
+    """ELECTRON_RUN_AS_NODE makes every Electron app die on launch.
+
+    It makes the binary run as plain Node, so it never builds a window and
+    exits with "Cannot find module 'electron'". Editors set it for their own
+    integrated terminals, so a Context started from one inherits it and every
+    Electron application in every context fails — while the launch itself
+    reports success, because the desktop entry was handed off fine.
+    """
+    monkeypatch.setenv("ELECTRON_RUN_AS_NODE", "1")
+    monkeypatch.setenv("ELECTRON_NO_ATTACH_CONSOLE", "1")
+    env = child_env()
+    assert "ELECTRON_RUN_AS_NODE" not in env
+    assert "ELECTRON_NO_ATTACH_CONSOLE" not in env
+
+
+def test_child_env_keeps_the_rest_of_the_environment(monkeypatch):
+    monkeypatch.setenv("ELECTRON_RUN_AS_NODE", "1")
+    monkeypatch.setenv("ELECTRON_OZONE_PLATFORM_HINT", "auto")
+    env = child_env()
+    # Only the variables that break a launch go; the ones that configure one
+    # correctly must survive.
+    assert env["ELECTRON_OZONE_PLATFORM_HINT"] == "auto"
+
+
+def test_the_launch_context_unsets_rather_than_only_setting(monkeypatch):
+    """Gio copies the process environment, so removal has to be explicit."""
+    from context.adapters import base
+
+    monkeypatch.setenv("ELECTRON_RUN_AS_NODE", "1")
+    unset: list[str] = []
+
+    class FakeContext:
+        def setenv(self, key, value):
+            return None
+
+        def unsetenv(self, key):
+            unset.append(key)
+
+    class FakeInfo:
+        def launch(self, files, context):
+            return True
+
+    monkeypatch.setattr(base.Gio, "AppLaunchContext", lambda: FakeContext())
+    monkeypatch.setattr(base.Gio.DesktopAppInfo, "new", lambda _id: FakeInfo())
+
+    base.launch_desktop_entry("anything.desktop")
+    assert "ELECTRON_RUN_AS_NODE" in unset
