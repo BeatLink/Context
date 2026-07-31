@@ -873,11 +873,17 @@ class EditorPage(widgets.NavigationPage):
         self._refresh_tile(app_id)
         self._update_state()
 
-    def _on_edit_slot(self, index: int) -> None:
-        """Configure the window at `index` from the preview itself."""
-        if not (0 <= index < len(self.entries)):
+    def _on_edit_slot(self, index: int, screen: int = 0) -> None:
+        """Configure the window at `index` on `screen` from the preview.
+
+        `index` is the slot's position on its screen, not overall — the same
+        mapping `_on_remove` does, and the same reason: each preview shows only
+        its own screen's windows.
+        """
+        indices = self.arrangement.indices_on(screen)
+        if not 0 <= index < len(indices):
             return
-        resource = self.entries[index]
+        resource = self.entries[indices[index]]
         app = next((a for a in self.apps if a.id == resource.app_id), None)
         if app is None:
             return

@@ -111,3 +111,39 @@ def test_a_new_context_offers_no_forget(gtk_app, isolated_store):
 
     run_app(gtk_app, body)
     assert seen["has_button"] is False
+
+
+def test_the_preview_edit_hotspot_opens_the_resource_page(gtk_app, isolated_store):
+    """The drawn edit control on a layout slot pushes that window's settings.
+
+    Pinned because it shipped broken twice over: the preview hands its
+    callback (index, screen) and the handler took only index, so every click
+    raised a TypeError that died silently in the gesture handler — the button
+    looked dead. And the handler read `entries[index]` directly, where index
+    is the slot's position on its screen, not overall.
+    """
+    from context.editor_window import EditorWindow
+    from context.resource_page import ResourcePage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("edit-me")
+    ctx.resources = [Resource(app_id="firefox.desktop", urls=["https://x.com"])]
+    store.save()
+    seen = {}
+
+    def body(app):
+        window = EditorWindow(
+            app, ctx, on_done=lambda *a: None, on_cancel=lambda: None
+        )
+        page = window.page
+        # What the drawn hotspot calls on a click, screen default included.
+        page.previews[0].on_edit(0)
+        nav = page.get_parent()
+        seen["pushed"] = isinstance(nav.get_visible_page(), ResourcePage)
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["pushed"] is True
