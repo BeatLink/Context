@@ -18,6 +18,35 @@ from .store import Context
 
 HANDLE = 14  # px hit area for the resize grips
 
+# The app grid draws its own tiles rather than using list rows, so it does not
+# pick up the dark styling libadwaita applies elsewhere: the cards came out
+# white on a dark page and the add buttons were nearly invisible against them.
+GRID_CSS = b"""
+.ctx-tile {
+    background-color: alpha(currentColor, 0.06);
+    border: 1px solid alpha(currentColor, 0.12);
+    border-radius: 10px;
+}
+.ctx-tile:hover {
+    background-color: alpha(currentColor, 0.12);
+}
+.ctx-tile.ctx-chosen {
+    background-color: alpha(@accent_bg_color, 0.22);
+    border-color: @accent_bg_color;
+}
+.ctx-tile button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px;
+    background-color: alpha(currentColor, 0.14);
+    border-radius: 999px;
+}
+.ctx-tile button:hover {
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
+}
+"""
+
 
 class LayoutPreview(Gtk.DrawingArea):
     """A scale model of the monitor, one rectangle per window.
@@ -26,12 +55,14 @@ class LayoutPreview(Gtk.DrawingArea):
     grid so windows line up. Colours come from the theme so it matches the shell.
     """
 
-    def __init__(self, on_changed, on_remove) -> None:
+    def __init__(self, on_changed, on_remove, on_edit) -> None:
         super().__init__()
         self.layout = Layout()
-        self.labels: list[str] = []
+        self.entries: list[tuple[object, str]] = []  # (Gio.Icon | None, name)
         self.on_changed = on_changed
         self.on_remove = on_remove
+        self.on_edit = on_edit
+        self._textures: dict[int, object] = {}
         self.active: int | None = None
         self._drag: tuple[str, int, float, float, Slot] | None = None
 
@@ -49,9 +80,11 @@ class LayoutPreview(Gtk.DrawingArea):
         motion.connect("motion", self._on_motion)
         self.add_controller(motion)
 
-    def set_layout(self, layout: Layout, labels: list[str]) -> None:
+    def set_layout(self, layout: Layout, entries: list) -> None:
         self.layout = layout
-        self.labels = labels
+        self.entries = entries
+        self._textures.clear()
+        self.set_tooltip_text(None)
         self.queue_draw()
 
     def _screen(self) -> tuple[float, float, float, float]:
@@ -83,6 +116,10 @@ class LayoutPreview(Gtk.DrawingArea):
             # Close hotspot, top right of the slot
             if x + w - 22 <= px <= x + w - 4 and y + 4 <= py <= y + 22:
                 return "close", index
+            # Edit hotspot, immediately left of it: settings belong on the window
+            # they apply to rather than in the grid below.
+            if x + w - 44 <= px <= x + w - 26 and y + 4 <= py <= y + 22:
+                return "edit", index
             right = abs(px - (x + w)) <= HANDLE
             bottom = abs(py - (y + h)) <= HANDLE
             if right and bottom:
@@ -103,11 +140,17 @@ class LayoutPreview(Gtk.DrawingArea):
             "resize-y": "s-resize",
             "move": "grab",
             "close": "pointer",
+            "edit": "pointer",
         }
         self.set_cursor(Gdk.Cursor.new_from_name(cursors.get(hit[0], "default"), None) if hit else None)
         active = hit[1] if hit else None
         if active != self.active:
             self.active = active
+            # The slot shows an icon, so the name is surfaced on hover instead.
+            if active is not None and active < len(self.entries):
+                self.set_tooltip_text(self.entries[active][1])
+            else:
+                self.set_tooltip_text(None)
             self.queue_draw()
 
     def _on_drag_begin(self, _g, x: float, y: float) -> None:
@@ -119,6 +162,10 @@ class LayoutPreview(Gtk.DrawingArea):
         if mode == "close":
             self._drag = None
             self.on_remove(index)
+            return
+        if mode == "edit":
+            self._drag = None
+            self.on_edit(index)
             return
         self._drag = (mode, index, x, y, self.layout.slots[index])
 
@@ -156,6 +203,38 @@ class LayoutPreview(Gtk.DrawingArea):
             self._drag = None
             self.on_changed(self.layout)
 
+    def _draw_icon(self, cr, index: int, x: float, y: float, w: float, h: float) -> None:
+        """The app's icon, centred in its slot. Names live in the tooltip."""
+        entry = self.entries[index] if index < len(self.entries) else None
+        icon, name = entry if entry else (None, f"Window {index + 1}")
+
+        size = int(min(64, max(24, min(w, h) * 0.4)))
+        paintable = self._textures.get(index)
+        if paintable is None:
+            paintable = _icon_texture(icon, size)
+            if paintable is not None:
+                self._textures[index] = paintable
+
+        if paintable is not None:
+            cr.save()
+            cr.translate(x + (w - size) / 2, y + (h - size) / 2)
+            snapshot = Gtk.Snapshot()
+            paintable.snapshot(snapshot, size, size)
+            node = snapshot.to_node()
+            if node is not None:
+                node.draw(cr)
+            cr.restore()
+            return
+
+        # No icon available: fall back to the name so the slot is still legible.
+        cr.set_source_rgba(1, 1, 1, 0.9)
+        cr.select_font_face("Sans")
+        cr.set_font_size(12)
+        extents = cr.text_extents(name)
+        if extents.width < w - 12:
+            cr.move_to(x + (w - extents.width) / 2, y + h / 2 + 4)
+            cr.show_text(name)
+
     def _draw(self, _area, cr, _w, _h) -> None:
         ox, oy, sw, sh = self._screen()
 
@@ -187,19 +266,30 @@ class LayoutPreview(Gtk.DrawingArea):
             cr.rectangle(x + 2, y + 2, max(1.0, w - 4), max(1.0, h - 4))
             cr.stroke()
 
-            label = self.labels[index] if index < len(self.labels) else f"Window {index + 1}"
-            cr.set_source_rgba(1, 1, 1, 0.92)
-            cr.select_font_face("Sans")
-            cr.set_font_size(12)
-            extents = cr.text_extents(label)
-            if extents.width < w - 12:
-                cr.move_to(x + (w - extents.width) / 2, y + h / 2 + 4)
-                cr.show_text(label)
+            self._draw_icon(cr, index, x, y, w, h)
 
             # Resize grip, bottom right
             cr.set_source_rgba(1, 1, 1, 0.5)
             cr.rectangle(x + w - 10, y + h - 10, 6, 6)
             cr.fill()
+
+            # Edit affordance, left of the close button
+            if w > 90 and h > 44:
+                ex, ey = x + w - 35, y + 13
+                cr.set_source_rgba(0, 0, 0, 0.35)
+                cr.arc(ex, ey, 8, 0, 6.2832)
+                cr.fill()
+                cr.set_source_rgba(1, 1, 1, 0.85)
+                cr.set_line_width(1.4)
+                # A small pencil: a diagonal stroke with a tip
+                cr.move_to(ex - 3, ey + 3)
+                cr.line_to(ex + 3, ey - 3)
+                cr.stroke()
+                cr.move_to(ex - 4, ey + 4)
+                cr.line_to(ex - 2.5, ey + 2)
+                cr.line_to(ex - 1, ey + 3.5)
+                cr.close_path()
+                cr.fill()
 
             # Close affordance, top right
             if w > 60 and h > 44:
@@ -212,6 +302,39 @@ class LayoutPreview(Gtk.DrawingArea):
                 cr.move_to(cx - 3.5, cy - 3.5); cr.line_to(cx + 3.5, cy + 3.5)
                 cr.move_to(cx + 3.5, cy - 3.5); cr.line_to(cx - 3.5, cy + 3.5)
                 cr.stroke()
+
+
+_grid_css_loaded = False
+
+
+def _install_grid_css() -> None:
+    """Load the app-grid stylesheet once per display."""
+    global _grid_css_loaded
+    if _grid_css_loaded:
+        return
+    display = Gdk.Display.get_default()
+    if display is None:
+        return
+    provider = Gtk.CssProvider()
+    provider.load_from_data(GRID_CSS)
+    Gtk.StyleContext.add_provider_for_display(
+        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+    _grid_css_loaded = True
+
+
+def _icon_texture(icon, size: int):
+    """Render a Gio.Icon to a texture, or None if it cannot be looked up."""
+    if icon is None:
+        return None
+    display = Gdk.Display.get_default()
+    if display is None:
+        return None
+    theme = Gtk.IconTheme.get_for_display(display)
+    paintable = theme.lookup_by_gicon(
+        icon, size, 1, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.FORCE_REGULAR
+    )
+    return paintable
 
 
 class AppTile(Gtk.FlowBoxChild):
@@ -228,7 +351,8 @@ class AppTile(Gtk.FlowBoxChild):
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.set_size_request(104, 118)
-        box.add_css_class("card")
+        box.add_css_class("ctx-tile")
+        self.box = box
         box.set_margin_top(4)
         box.set_margin_bottom(4)
         box.set_margin_start(4)
@@ -279,9 +403,9 @@ class AppTile(Gtk.FlowBoxChild):
             resource is not None and configurable(resource)
         )
         if count:
-            self.add_css_class("accent")
+            self.box.add_css_class("ctx-chosen")
         else:
-            self.remove_css_class("accent")
+            self.box.remove_css_class("ctx-chosen")
 
 
 class EditorPage(Adw.NavigationPage):
@@ -296,6 +420,7 @@ class EditorPage(Adw.NavigationPage):
         self.on_cancel = on_cancel
         self.on_delete = on_delete
         self.is_new = is_new
+        _install_grid_css()
         self.apps = installed_apps()
         # An ordered list rather than a set: a context may hold two terminals, and
         # position in this list is what maps a resource to a layout slot.
@@ -310,6 +435,10 @@ class EditorPage(Adw.NavigationPage):
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
+        # No minimise or close: the editor is a fullscreen overlay, and Cancel
+        # and Save are the only two ways out of it.
+        header.set_show_start_title_buttons(False)
+        header.set_show_end_title_buttons(False)
 
         cancel = Gtk.Button(label="Cancel")
         cancel.connect("clicked", lambda _b: self.on_cancel())
@@ -384,7 +513,9 @@ class EditorPage(Adw.NavigationPage):
         hint.add_css_class("caption")
         content.append(hint)
 
-        self.preview = LayoutPreview(self._on_layout_changed, self._on_remove)
+        self.preview = LayoutPreview(
+            self._on_layout_changed, self._on_remove, self._on_edit_slot
+        )
         preview_frame = Gtk.Frame()
         preview_frame.set_vexpand(True)
         preview_frame.set_child(self.preview)
@@ -430,9 +561,15 @@ class EditorPage(Adw.NavigationPage):
     def _ordered_resources(self) -> list[Resource]:
         return list(self.entries)
 
-    def _labels(self) -> list[str]:
-        names = {a.id: a.name for a in self.apps}
-        return [names.get(r.app_id, r.app_id.removesuffix(".desktop")) for r in self.entries]
+    def _preview_entries(self) -> list[tuple[object, str]]:
+        """(icon, name) per window, for the preview to draw and label."""
+        by_id = {a.id: a for a in self.apps}
+        out = []
+        for resource in self.entries:
+            app = by_id.get(resource.app_id)
+            name = app.name if app else resource.app_id.removesuffix(".desktop")
+            out.append((app.icon if app else None, name))
+        return out
 
     def _count_of(self, app_id: str) -> int:
         return sum(1 for r in self.entries if r.app_id == app_id)
@@ -443,7 +580,7 @@ class EditorPage(Adw.NavigationPage):
             f"Apps · {count} selected" if count else "Apps · none selected yet"
         )
         self.done_button.set_sensitive(bool(self.current_title()))
-        self.preview.set_layout(self.layout, self._labels())
+        self.preview.set_layout(self.layout, self._preview_entries())
 
     def _on_layout_changed(self, layout: Layout) -> None:
         self.layout = layout
@@ -499,17 +636,30 @@ class EditorPage(Adw.NavigationPage):
         self._refresh_tile(app_id)
         self._update_state()
 
+    def _on_edit_slot(self, index: int) -> None:
+        """Configure the window at `index` from the preview itself."""
+        if not (0 <= index < len(self.entries)):
+            return
+        resource = self.entries[index]
+        app = next((a for a in self.apps if a.id == resource.app_id), None)
+        if app is None:
+            return
+        self._push_resource_page(app, resource)
+
+    def _push_resource_page(self, app: App, resource: Resource) -> None:
+        nav = self.get_parent()
+        if not isinstance(nav, Adw.NavigationView):
+            return
+        self.resource_page = ResourcePage(app, resource, self._on_resource_done)
+        nav.push(self.resource_page)
+
     def _on_configure(self, app: App) -> None:
         resource = next((r for r in reversed(self.entries) if r.app_id == app.id), None)
         if resource is None:
             resource = Resource(app_id=app.id)
             self.entries.append(resource)
             self.layout = self.layout.resized(len(self.entries))
-        nav = self.get_parent()
-        if not isinstance(nav, Adw.NavigationView):
-            return
-        self.resource_page = ResourcePage(app, resource, self._on_resource_done)
-        nav.push(self.resource_page)
+        self._push_resource_page(app, resource)
 
     def _on_resource_done(self, resource: Resource) -> None:
         nav = self.get_parent()

@@ -128,7 +128,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         content.append(heading)
 
         self.entry = Gtk.Entry(
-            placeholder_text="Name a new context, or search existing…",
+            placeholder_text="Search or create a context",
             activates_default=False,
         )
         self.entry.set_hexpand(True)
@@ -214,19 +214,45 @@ class LauncherWindow(Adw.ApplicationWindow):
         # layer has no keyboard, so GTK never gives the entry focus and a
         # focus-enter handler would never run — the entry would be untypable.
         # Capture phase, so the mode is raised before GTK routes the click.
-        entry_click = Gtk.GestureClick()
-        entry_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        entry_click.connect("pressed", lambda *_a: self._take_keyboard())
-        self.entry.add_controller(entry_click)
-
-        # Releasing when the pointer leaves the sidebar is what lets a click on
-        # another window take focus back; tying it to GTK focus-leave does not
-        # work, since the entry keeps focus while the layer holds the keyboard.
+        # The keyboard is taken when the pointer enters the sidebar and released
+        # when it leaves.
+        #
+        # It cannot be taken on click: with KeyboardMode.NONE the layer has no
+        # keyboard, so raising the mode from a click handler happens too late for
+        # that same click to reach the entry — the first click was swallowed and
+        # only a second one landed. Entering is also the earliest unambiguous
+        # signal that the user is coming here to type, and leaving is what lets a
+        # click on another window take focus back, which GTK focus-leave never
+        # reports while the layer holds the keyboard.
         pointer = Gtk.EventControllerMotion()
+        pointer.connect("enter", lambda *_a: self._take_keyboard(focus=False))
         pointer.connect("leave", lambda *_a: self._release_keyboard())
         self.add_controller(pointer)
 
         self.refresh()
+
+        # Which contexts are open changes outside this window — a context is
+        # launched, its last window closes, you switch workspaces by keyboard.
+        # Nothing notifies the launcher, so the open list is re-checked on a
+        # timer; without it the list only updated when the user acted here.
+        GLib.timeout_add_seconds(2, self._poll_open_state)
+
+    def _poll_open_state(self) -> bool:
+        """Re-read which contexts are open, refreshing only when it changed."""
+        if self.on_close is None:
+            return True
+        try:
+            state = {c.id for c in self.store.contexts if self._is_open(c)}
+            active = self._active_context()
+            active_id = active.id if active else None
+        except OSError:
+            return True
+
+        signature = (frozenset(state), active_id)
+        if signature != getattr(self, "_open_signature", None):
+            self._open_signature = signature
+            self.refresh()
+        return True
 
     def _visible_rows(self) -> list[ContextRow]:
         rows = []
@@ -326,12 +352,18 @@ class LauncherWindow(Adw.ApplicationWindow):
                 return True
         return False
 
-    def _take_keyboard(self) -> None:
-        """Raise the layer's keyboard mode so the entry can be typed in."""
+    def _take_keyboard(self, focus: bool = True) -> None:
+        """Raise the layer's keyboard mode so the sidebar can be typed in.
+
+        `focus` is False when this fires from the pointer entering: the keyboard
+        is made available, but which widget gets it is left to the click, so
+        hovering does not steal the caret from somewhere else.
+        """
         if not self.is_sidebar:
             return
         sidebar.grab_keyboard(self, True)
-        self.entry.grab_focus()
+        if focus:
+            self.entry.grab_focus()
 
     def _release_keyboard(self) -> None:
         """Hand the keyboard back to whatever the user clicks next."""
