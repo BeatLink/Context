@@ -22,13 +22,6 @@ from .store import Context, ContextStore
 log = get_logger("window")
 
 
-def display_name() -> str:
-    real = GLib.get_real_name()
-    if real and real != "Unknown":
-        return real.split(",")[0].strip() or GLib.get_user_name()
-    return GLib.get_user_name()
-
-
 def relative_time(stamp: float) -> str:
     delta = max(0, int(time.time() - stamp))
     if delta < 60:
@@ -122,14 +115,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         content.set_margin_start(18)
         content.set_margin_end(18)
 
-        heading = Gtk.Label(
-            label=f"Hey {display_name()}, what would you like to do today?",
-            xalign=0.0,
-            wrap=True,
-        )
-        heading.add_css_class("title-1")
-        content.append(heading)
-
         self.entry = Gtk.Entry(
             placeholder_text="Search or create a context",
             activates_default=False,
@@ -164,11 +149,21 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.listbox.add_css_class("boxed-list")
 
+        # Saved contexts live behind an expander. With nothing open they are the
+        # only thing to show, so it starts expanded; once a context is running
+        # the open list is what matters and this collapses out of the way,
+        # still one click from being reopened.
+        self.saved_expander = Gtk.Expander()
+        self.saved_expander.set_label_widget(self.list_label)
+        self.saved_expander.set_child(self.listbox)
+        self.saved_expander.connect("notify::expanded", self._on_saved_toggled)
+        # Remembers a deliberate expansion, so a refresh does not undo it.
+        self._saved_pinned_open = False
+
         groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         groups.append(self.open_label)
         groups.append(self.open_listbox)
-        groups.append(self.list_label)
-        groups.append(self.listbox)
+        groups.append(self.saved_expander)
 
         self.empty_state = Adw.StatusPage(
             icon_name="view-grid-symbolic",
@@ -268,11 +263,12 @@ class LauncherWindow(Adw.ApplicationWindow):
         return rows
 
     def refresh(self) -> None:
-        """Show open contexts, the way a browser shows open tabs.
+        """Open contexts on top, saved ones in an expander beneath them.
 
-        Saved contexts are not listed by default: they appear once you search,
-        which is the browser's "new tab" behaviour — the list is what is running,
-        and searching is how you reach everything else.
+        With nothing running the saved list is all there is, so it shows
+        expanded. Once a context is open it collapses — the open list is what
+        you want then — but stays one click away rather than hidden behind a
+        search.
         """
         query = self.entry.get_text().strip()
         searching = bool(query)
@@ -280,7 +276,7 @@ class LauncherWindow(Adw.ApplicationWindow):
 
         active = self._active_context()
         opened = [c for c in matches if self._is_open(c)]
-        saved = [c for c in matches if c not in opened] if searching else []
+        saved = [c for c in matches if c not in opened]
 
         self.open_listbox.remove_all()
         for ctx in opened:
@@ -305,9 +301,19 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.open_listbox.set_visible(bool(opened))
         self.open_label.set_label("Open")
 
+        self.saved_expander.set_visible(bool(saved))
         self.list_label.set_visible(bool(saved))
-        self.list_label.set_label("Saved")
-        self.listbox.set_visible(bool(saved))
+        self.list_label.set_label(f"Saved · {len(saved)}")
+
+        # Expanded when there is nothing else to look at, or while searching, or
+        # because the user opened it themselves.
+        should_expand = bool(saved) and (
+            not opened or searching or self._saved_pinned_open
+        )
+        if self.saved_expander.get_expanded() != should_expand:
+            self._suppress_toggle = True
+            self.saved_expander.set_expanded(should_expand)
+            self._suppress_toggle = False
 
         if opened or saved:
             self.stack.set_visible_child_name("list")
@@ -319,14 +325,15 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.empty_state.set_description(
                 "Press Enter to start a new context with this name."
             )
-        elif self.store.contexts:
-            self.empty_state.set_title("Nothing open")
-            self.empty_state.set_description(
-                "Search above to reopen a saved context, or name a new one."
-            )
         else:
             self.empty_state.set_title("No contexts yet")
             self.empty_state.set_description("Type a name above to create your first one.")
+
+    def _on_saved_toggled(self, expander, _param) -> None:
+        """Remember a deliberate expand, so the next refresh does not undo it."""
+        if getattr(self, "_suppress_toggle", False):
+            return
+        self._saved_pinned_open = expander.get_expanded()
 
     def _on_entry_changed(self, entry: Gtk.Entry) -> None:
         text = entry.get_text().strip()

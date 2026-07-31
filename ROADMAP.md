@@ -147,16 +147,94 @@ follows the window size, so the compositor side needs no new work: the toggle
 changes the size request and swaps the content. Worth persisting the state so it
 survives a restart.
 
+### 6. Launch apps into the current context
+
+Launching an app outside Context puts it wherever the compositor decides, which
+is how windows end up somewhere the context does not own. Context should be the
+way apps are launched:
+
+- a launcher — the app grid already exists in the editor, so this is mostly
+  presenting it as its own view
+- launching adds the app to the *current* context rather than a new one, and
+  tiles it into the layout beside what is already there
+- optionally, remember it: an app opened this way can be added to the context's
+  definition so it comes back next time
+
+This is what makes Context replace rofi rather than sit next to it.
+
+### 7. Switch contexts and windows
+
+Two related pickers, both of which the desktop currently answers separately:
+
+- **Context switching** — jump to a context by name. The sidebar list does this
+  by clicking, but there is no keyboard path, and no equivalent of alt-tab
+  between the last two.
+- **Window switching** — every window in the current context, and optionally
+  across all of them. `hyprctl clients` already reports enough to build this;
+  the bar's taskbar covers the current workspace only.
+
+Together these replace the bar's window list and rofi's window mode.
+
+### 8. Move windows between contexts
+
+A window opened in the wrong place should be movable rather than closed and
+relaunched. `hyprctl dispatch movetoworkspacesilent <ws>,address:0x…` does the
+work; what is missing is the UI — a menu on the window, or dragging its tile
+between contexts in the sidebar.
+
+This also covers adopting a window that Context never launched, which is the
+other half of tracking windows rather than profiles (item 3).
+
+## Phasing out what Context replaces
+
+The Hyprland config mirrors Cinnamon feature by feature. As Context takes over a
+job, the config-level version should go rather than compete with it — two things
+managing windows is how the minimise black hole happened, where a special
+workspace silently swallowed every newly launched window.
+
+| Hyprland feature | Replaced by | Status |
+| --- | --- | --- |
+| `$mod, M` minimise to a special workspace | contexts hold windows | **removed** |
+| Workspace-wide float toggle | layouts place windows | **removed** |
+| rofi `drun` on `$mod+Space` | launching into a context (item 6) | after item 6 |
+| rofi `window` on `$mod+W` | window switcher (item 7) | after item 7 |
+| `wlr/taskbar` in the bar | context and window switching (item 7) | after item 7 |
+| `hyprland/workspaces` in the bar | the sidebar's context list | after item 5 |
+| `$mod, 1..5` workspace binds | context switching (item 7) | keep as an escape hatch |
+| Overview | contexts are the overview | reconsider after item 7 |
+
+Numbered workspaces are worth keeping even once contexts cover the same ground:
+they are the way back to a plain desktop when Context is not running, which
+matters while it is still the thing under development.
+
+### 9. Settings
+
+There is no settings page: everything is an environment variable
+(`CONTEXT_SIDEBAR_EDGE`, `CONTEXT_SIDEBAR_WIDTH`, `CONTEXT_BACKEND`,
+`CONTEXT_LOG_LEVEL`), which is fine for development and wrong for a shell people
+use. A settings view should cover at least the sidebar's edge and width, whether
+it starts collapsed, and the log level.
+
+Per-context, the one that matters for the sidebar staying readable:
+
+- **Show in the sidebar** — pinned contexts are always listed.
+- **Only show on search** — the context still exists and still opens by name, but
+  does not take up room in the list.
+
+With a handful of contexts everything can be listed; with fifty it cannot, and
+the alternative to this option is an arbitrary cutoff. It lives on the context's
+own editor page alongside the ephemeral toggle.
+
 ## Next
 
-### 6. Ephemeral teardown
+### 10. Ephemeral teardown
 
 `ephemeral` is stored and editable but nothing acts on it. Closing an ephemeral
 context should remove its workspace, delete its browser profile, and drop it from
 the list — carefully, since "throw this away" must never eat real work. Needs a
 confirmation path and a definition of what counts as unsaved.
 
-### 7. Session restore
+### 11. Session restore
 
 `xdg-session-management-v1` was merged 2026-03-23 after six years, and KWin has a
 draft implementation. This is the protocol that finally makes window position and
@@ -164,7 +242,7 @@ state restoration possible on Wayland. Once Hyprland supports it, a context can
 restore its actual layout rather than re-deriving it from a recipe. Worth tracking;
 not actionable yet.
 
-### 8. Login flow
+### 12. Login flow
 
 Show the launcher at login: previous contexts, or a new-context page.
 
@@ -174,7 +252,7 @@ thing," and forcing a decision there is exactly the friction that made Activitie
 feel heavy. Needs a zero-friction default path — resume last context, or a plain
 desktop — before this becomes the login entrypoint.
 
-### 9. Hyprland as the primary target
+### 13. Hyprland as the primary target
 
 Once resources and placement land, Hyprland becomes the real target and Cinnamon
 stays only as a testing fallback. Requires a dev session on a spare VT or VM, since
