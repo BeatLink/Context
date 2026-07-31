@@ -902,12 +902,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
         return True
 
     def _new_context(self) -> None:
-        """A blank context straight into its editor, no name required first.
+        """The + opens the overview.
 
-        The title is provisional — the editor's own field is where it gets
-        named, exactly as for a context created by typing.
+        Starting from an app or an existing context there is the fast path; a
+        blank context is still one typed name away in the search bar.
         """
-        self._pick_apps(self.store.create("New context"))
+        app = self.get_application()
+        if app is not None and hasattr(app, "open_overview"):
+            app.open_overview()
 
     def _pick_apps(self, ctx: Context) -> None:
         """Editor for a context that was just created; committing launches it."""

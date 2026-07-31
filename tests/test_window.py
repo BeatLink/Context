@@ -1890,23 +1890,21 @@ def test_focusing_does_not_steal_from_what_was_clicked(
     assert seen["focused"] is seen["button"]
 
 
-def test_the_new_context_button_starts_a_fresh_context(gtk_app, isolated_store):
-    """The header's + creates a context and opens its editor straight away,
-    the same flow as typing a name — the editor is where it gets named."""
+def test_the_new_context_button_opens_the_overview(gtk_app, isolated_store):
+    """The header's + opens the overview, and creates nothing by itself —
+    what the new context becomes is chosen there."""
     from context.store import ContextStore
     from context.window import LauncherWindow
 
     store = ContextStore()
-    seen = {"edited": []}
+    seen = {"overview": 0}
 
     def body(app):
+        app.open_overview = lambda: seen.update(overview=seen["overview"] + 1)
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        window._open_editor = lambda ctx, on_cancel, is_new=False: seen[
-            "edited"
-        ].append((ctx, is_new))
         window.new_button.emit("clicked")
         app.quit()
 
     run_app(gtk_app, body)
-    assert len(store.contexts) == 1
-    assert seen["edited"] == [(store.contexts[0], True)]
+    assert seen["overview"] == 1
+    assert store.contexts == []
