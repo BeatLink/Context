@@ -58,10 +58,11 @@ The entrypoint you see when you log in.
 
 ### The editor
 
-Creating or editing a context opens a maximised window of its own — not a page
-inside the sidebar, which is too narrow for a layout preview to mean anything. It
-is laid out like PowerToys Workspaces: the window arrangement on top, the app
-catalogue below.
+Creating or editing a context takes over the whole screen — not a page inside the
+sidebar, which is too narrow for a layout preview to mean anything, and fullscreen
+rather than maximised so it is not tiled beside whatever else is open. It is laid
+out like PowerToys Workspaces: the window arrangement on top, the app catalogue
+below.
 
 - **Layout preview** — a scale model of the monitor with one rectangle per window.
   Drag a window to move it, its bottom-right corner to resize, or the × to remove

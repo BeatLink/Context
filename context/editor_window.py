@@ -32,7 +32,10 @@ class EditorWindow(Adw.Window):
 
         self.set_default_size(1280, 860)
         self.set_modal(False)
-        self.maximize()
+        # Genuinely fullscreen rather than maximised: under a tiling compositor a
+        # maximised window still shares the workspace and sits inside the bars,
+        # which leaves the layout preview competing with whatever else is open.
+        self.fullscreen()
 
         self.nav = Adw.NavigationView()
         self.page = EditorPage(
