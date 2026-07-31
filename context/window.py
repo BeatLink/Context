@@ -183,15 +183,22 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.entry.connect("changed", self._on_entry_changed)
         self.entry.connect("activate", self._on_entry_activate)
 
-        self.start_button = Gtk.Button(label="Start")
-        self.start_button.add_css_class("suggested-action")
-        self.start_button.set_sensitive(False)
-        self.start_button.connect("clicked", lambda _b: self._on_entry_activate(self.entry))
+        # No Start button: Enter is the trigger, and the row below is the
+        # clickable path — a button that mirrored the row said the same thing
+        # twice in half the sidebar's width.
+        content.append(self.entry)
 
-        entry_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        entry_row.append(self.entry)
-        entry_row.append(self.start_button)
-        content.append(entry_row)
+        # A built-in way to start something new, always in the list. With a
+        # name typed it starts that; blank, it opens the editor to be named.
+        self.create_row = widgets.ActionRow(title="New context")
+        self.create_row.set_activatable(True)
+        self.create_row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        self.create_row.connect("activated", lambda _r: self._create_from_entry())
+        self.create_row.set_subtitle("Name it in the editor")
+        self.create_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.create_list.add_css_class("boxed-list")
+        self.create_list.append(self.create_row)
+        content.append(self.create_list)
 
         self.list_label = Gtk.Label(xalign=0.0)
         self.list_label.add_css_class("heading")
@@ -751,10 +758,13 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def _on_entry_changed(self, entry: Gtk.Entry) -> None:
         text = entry.get_text().strip()
-        self.start_button.set_sensitive(bool(text))
-        self.start_button.set_label(
-            "Open" if any(c.title.lower() == text.lower() for c in self.store.contexts) else "Start"
-        )
+        if not text:
+            subtitle = "Name it in the editor"
+        elif any(c.title.lower() == text.lower() for c in self.store.contexts):
+            subtitle = f"Open “{text}”"
+        else:
+            subtitle = f"Start “{text}”"
+        self.create_row.set_subtitle(subtitle)
         self.refresh()
 
     def _on_entry_activate(self, entry: Gtk.Entry) -> None:
@@ -900,6 +910,17 @@ class LauncherWindow(Gtk.ApplicationWindow):
         else:
             self.close()
         return True
+
+    def _create_from_entry(self) -> None:
+        """The list's built-in row: what Enter does, clickable.
+
+        With nothing typed there is nothing to name it by, so the editor opens
+        on a blank context and the name is chosen there.
+        """
+        if self.entry.get_text().strip():
+            self._on_entry_activate(self.entry)
+        else:
+            self._pick_apps(self.store.create("New context"))
 
     def _new_context(self) -> None:
         """The + opens the overview.

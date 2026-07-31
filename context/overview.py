@@ -46,6 +46,11 @@ class OverviewWindow(Gtk.ApplicationWindow):
         header = widgets.HeaderBar(title="Overview")
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
+        self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
+        self.back_button.add_css_class("flat")
+        self.back_button.set_tooltip_text("Back")
+        self.back_button.connect("clicked", lambda _b: self._dismiss())
+        header.pack_start(self.back_button)
         toolbar.add_top_bar(header)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
@@ -60,6 +65,10 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.entry = Gtk.SearchEntry(placeholder_text="Search contexts and apps")
         self.entry.connect("search-changed", lambda _e: self.refresh())
         self.entry.connect("activate", lambda _e: self._activate_first())
+        # A focused search entry consumes Escape as stop-search, so the
+        # window shortcut below never fires while typing — which is most of
+        # the time. stop-search is the entry's own Escape.
+        self.entry.connect("stop-search", lambda _e: self._dismiss())
         content.append(self.entry)
 
         columns = Gtk.Box(spacing=18)
