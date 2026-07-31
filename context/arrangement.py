@@ -60,7 +60,22 @@ class Arrangement:
             return self.screens[screen]
         return Layout()
 
+    def grow_to(self, screens: int) -> None:
+        """Make sure this arrangement actually has `screens` screens.
+
+        An arrangement loaded from a single-screen context has one layout, so
+        assigning a window to screen 2 clamped straight back to screen 1 and
+        the move silently did nothing. Anything that edits an N-screen mode has
+        to grow the arrangement to N first.
+        """
+        while len(self.screens) < max(1, screens):
+            self.screens.append(Layout())
+
     def assign(self, index: int, screen: int) -> None:
+        # Grow rather than clamp: being asked for a screen that does not exist
+        # yet means the arrangement is behind the mode being edited, not that
+        # the caller is wrong.
+        self.grow_to(screen + 1)
         self.assignments[index] = max(0, min(screen, self.screen_count - 1))
 
     def healed(self, count: int) -> tuple["Arrangement", list[str]]:

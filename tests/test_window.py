@@ -1036,3 +1036,85 @@ def test_restart_is_a_command(gtk_app, isolated_store):
     from context.app import COMMANDS
 
     assert "restart" in COMMANDS
+
+
+def test_dragging_a_window_off_a_preview_moves_it_to_the_next_screen(
+    gtk_app, isolated_store, monkeypatch
+):
+    """The whole cross-screen gesture, from drag-begin to the assignment.
+
+    It reported success at every step while doing nothing: the arrangement had
+    one screen, so `assign` clamped the target back to where it started.
+    """
+    from context import settings
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(max_screens=2)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create(
+            "probe", resources=[Resource(app_id="a"), Resource(app_id="b")]
+        )
+        page = EditorPage(ctx, lambda *x: None, lambda: None, on_delete=None)
+        page.screen_count = 2
+        page._build_previews()
+        page._update_state()
+
+        seen["screens"] = len(page.arrangement.screens)
+        seen["before"] = dict(page.arrangement.assignments)
+
+        preview = page.previews[0]
+        preview.set_size_request(400, 300)
+        # A drag that ends past the right edge of the drawn screen.
+        preview._drag = ("move", 0, 10.0, 10.0, preview.layout.slots[0])
+        preview._on_drag_update(None, 5000.0, 0.0)
+        seen["leaving"] = preview._leaving
+        seen["lit"] = page.previews[1]._drop_target
+        preview._end_drag()
+
+        seen["after"] = dict(page.arrangement.assignments)
+        app.quit()
+
+    run_app(gtk_app, body)
+    # Two previews means two screens in the data, or the move has nowhere to go.
+    assert seen["screens"] == 2
+    assert seen["leaving"] == 1
+    assert seen["lit"] is True
+    assert seen["before"][0] == 0
+    assert seen["after"][0] == 1
+
+
+def test_a_lone_preview_has_nowhere_to_drag_to(gtk_app, isolated_store, monkeypatch):
+    from context import settings
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(max_screens=1)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create("probe", resources=[Resource(app_id="a")])
+        page = EditorPage(ctx, lambda *x: None, lambda: None, on_delete=None)
+        page.screen_count = 1
+        page._build_previews()
+        page._update_state()
+
+        preview = page.previews[0]
+        preview._drag = ("move", 0, 10.0, 10.0, preview.layout.slots[0])
+        preview._on_drag_update(None, 5000.0, 0.0)
+        preview._end_drag()
+        seen["assignments"] = dict(page.arrangement.assignments)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["assignments"][0] == 0

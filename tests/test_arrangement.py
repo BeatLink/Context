@@ -140,3 +140,28 @@ def test_a_legacy_context_still_loads(tmp_path):
     assert ctx.handles_for("hyprland") == ["ctx-work"]
     assert [r.app_id for r in ctx.resources] == ["a.desktop", "b.desktop"]
     assert ctx.arrangement_for(1).screen_count == 1
+
+
+def test_assigning_to_a_new_screen_grows_the_arrangement():
+    """Clamping instead made every cross-screen drag silently do nothing.
+
+    A context that has only ever run on one screen carries a one-screen
+    arrangement. `assign` clamped to that, so dragging a window to screen 2
+    put it straight back on screen 1 and the editor showed no change.
+    """
+    a = Arrangement(screens=[Layout()], assignments={0: 0, 1: 0})
+    a.assign(1, 1)
+    assert a.assignments[1] == 1
+    assert len(a.screens) == 2
+
+
+def test_growing_never_shrinks():
+    a = Arrangement.spread(4, 3)
+    a.grow_to(2)
+    assert len(a.screens) == 3
+
+
+def test_growing_to_nothing_still_leaves_one_screen():
+    a = Arrangement()
+    a.grow_to(0)
+    assert a.screen_count == 1

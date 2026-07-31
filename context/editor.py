@@ -635,7 +635,14 @@ class EditorPage(Adw.NavigationPage):
         self._update_state()
 
     def _build_previews(self) -> None:
-        """One preview per screen in the mode being edited."""
+        """One preview per screen in the mode being edited.
+
+        The arrangement is grown to match first. A context that has only ever
+        run on one screen carries a one-screen arrangement, and showing two
+        previews over it meant the second could be dragged to but never
+        assigned — `healed` would shrink it back on the next refresh.
+        """
+        self.arrangement.grow_to(self.screen_count)
         child = self.screens_box.get_first_child()
         while child is not None:
             following = child.get_next_sibling()
