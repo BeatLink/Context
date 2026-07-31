@@ -58,8 +58,10 @@ The entrypoint you see when you log in.
 
 ### The editor
 
-Creating or editing a context opens a full-screen editor, laid out like PowerToys
-Workspaces: the window arrangement on top, the app catalogue below.
+Creating or editing a context opens a maximised window of its own — not a page
+inside the sidebar, which is too narrow for a layout preview to mean anything. It
+is laid out like PowerToys Workspaces: the window arrangement on top, the app
+catalogue below.
 
 - **Layout preview** — a scale model of the monitor with one rectangle per window.
   Drag a window to move it, its bottom-right corner to resize, or the × to remove
@@ -200,7 +202,8 @@ backend exists so everything else stays developable meanwhile.
 | --- | --- |
 | `context/app.py` | `Adw.Application` subclass and `main()` |
 | `context/window.py` | Launcher window, entry bar, context rows, navigation |
-| `context/editor.py` | Full-screen editor: layout preview and app grid |
+| `context/editor.py` | Editor page: layout preview and app grid |
+| `context/editor_window.py` | Hosts the editor as its own maximised window |
 | `context/layout.py` | `Slot`, `Layout`, and the preset arrangements |
 | `context/apps.py` | Installed-app discovery via `Gio.AppInfo` |
 | `context/sidebar.py` | Layer-shell docking and the LD_PRELOAD re-exec |

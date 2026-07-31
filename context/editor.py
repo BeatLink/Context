@@ -503,6 +503,9 @@ class EditorPage(Adw.NavigationPage):
 
     # -- commit --------------------------------------------------------------
 
+    def _commit_cancel(self) -> None:
+        self.on_cancel()
+
     def _commit(self) -> None:
         title = self.current_title()
         if not title:

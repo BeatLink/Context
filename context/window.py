@@ -12,7 +12,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk
 
 from . import sidebar
-from .editor import EditorPage
+from .editor_window import EditorWindow
 from .launcher import context_is_open
 from .layout import Layout
 from .resources import Resource
@@ -264,27 +264,27 @@ class LauncherWindow(Adw.ApplicationWindow):
         """Editor for a context that was just created; committing launches it."""
         self.entry.set_text("")
         self.refresh()
-        self.editor = EditorPage(
-            ctx,
-            self._on_editor_done,
-            lambda: self._cancel_new(ctx),
-            is_new=True,
+        self._open_editor(ctx, lambda: self._cancel_new(ctx), is_new=True)
+
+    def _open_editor(self, ctx: Context, on_cancel, is_new: bool = False) -> None:
+        # A separate maximised window rather than a page in the sidebar: the
+        # layout preview needs the monitor's shape, and the app grid needs width.
+        self.editor_window = EditorWindow(
+            self.get_application(), ctx, self._on_editor_done, on_cancel, is_new=is_new
         )
-        self.nav.push(self.editor)
+        self.editor_window.present()
+        self.editor = self.editor_window.page
 
     def _cancel_new(self, ctx: Context) -> None:
         # The context was created up front to give the editor something to edit,
         # so backing out has to remove it again rather than leave an empty one.
         self.store.delete(ctx)
-        self.nav.pop()
         self.refresh()
 
     def _edit(self, ctx: Context) -> None:
-        self.editor = EditorPage(ctx, self._on_editor_done, self._cancel_edit)
-        self.nav.push(self.editor)
+        self._open_editor(ctx, self._cancel_edit)
 
     def _cancel_edit(self) -> None:
-        self.nav.pop()
         self.refresh()
 
     def _on_editor_done(
@@ -301,7 +301,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         ctx.ephemeral = ephemeral
         ctx.layout = layout
         self.store.save()
-        self.nav.pop()
         self.refresh()
         if was_new:
             self._open(ctx)
