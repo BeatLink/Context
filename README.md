@@ -152,8 +152,8 @@ need a restart say so.
 | --- | --- |
 | Colour scheme | Light, dark, or whatever the desktop is set to |
 | Edge | Which side the launcher docks to |
+| Width | Pixels the launcher reserves |
 | Collapse mode | A rail of icons, hidden entirely, or never |
-| Expanded width | Pixels reserved when the launcher is open |
 | Collapsed width | Pixels reserved by the rail |
 | Expand on hover | Open the launcher while the pointer is over it |
 | Hover delay | How long to wait first, so passing over does not open it |

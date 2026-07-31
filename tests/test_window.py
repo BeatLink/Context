@@ -920,7 +920,7 @@ def test_settings_rows_hide_when_they_do_nothing(gtk_app, isolated_store, monkey
         settings.update(collapse_mode="none")
         page._sync_rows()
         seen["hover_when_never"] = page.hover_row.get_visible()
-        seen["expanded_width_always"] = page.expanded_width_row.get_visible()
+        seen["rail_width_when_never"] = page.rail_width_row.get_visible()
         app.quit()
 
     store = ContextStore()
@@ -931,5 +931,48 @@ def test_settings_rows_hide_when_they_do_nothing(gtk_app, isolated_store, monkey
     assert seen["rail_width_when_hidden"] is False
     assert seen["delay_when_hidden"] is True
     assert seen["hover_when_never"] is False
-    # The expanded width is what "open" means in every mode.
-    assert seen["expanded_width_always"] is True
+    assert seen["rail_width_when_never"] is False
+
+
+def test_the_launcher_width_is_not_a_collapsing_setting(gtk_app, isolated_store, monkeypatch):
+    """It applies in every mode, including the one that never collapses.
+
+    Collapsing only decides what the launcher shrinks *to*, so that width sits
+    with the collapse mode and this one sits with the rest of the appearance.
+    """
+    from context import settings
+    from context.settings_page import SettingsPage
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="none")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        page = SettingsPage(window)
+        seen["titles"] = _row_titles(page)
+        settings.update(sidebar_width=444)
+        seen["applied"] = settings.current().sidebar_width
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert "Width" in seen["titles"]
+    assert "Expanded width" not in seen["titles"]
+    assert seen["applied"] == 444
+
+
+def _row_titles(page) -> list[str]:
+    titles = []
+    stack = [page]
+    while stack:
+        widget = stack.pop()
+        title = getattr(widget, "get_title", None)
+        if title is not None and isinstance(widget, Adw.PreferencesRow):
+            titles.append(widget.get_title())
+        child = widget.get_first_child()
+        while child is not None:
+            stack.append(child)
+            child = child.get_next_sibling()
+    return titles

@@ -105,20 +105,35 @@ class SettingsPage(Adw.NavigationPage):
                 lambda v: self._apply(sidebar_edge=v, restart=True),
             )
         )
+        # The launcher's own width, which applies whether or not it collapses.
+        # Collapsing only decides what it shrinks *to*, so that width belongs
+        # with the collapse mode and this one does not.
+        group.add(
+            _row_spin(
+                "Width",
+                "Pixels the launcher reserves.",
+                live.sidebar_width,
+                settings.MIN_SIDEBAR_WIDTH,
+                settings.MAX_SIDEBAR_WIDTH,
+                10,
+                lambda v: self._apply(sidebar_width=v),
+            )
+        )
         return group
 
     def _behaviour(self) -> Adw.PreferencesGroup:
-        """Everything about how much room the launcher takes, and when.
+        """What the collapse button does, and what collapsing looks like.
 
-        The widths live here rather than under Appearance because that is what
-        they are: the two sizes the collapse button toggles between. A row is
-        hidden when the mode it belongs to is not selected, so the group only
-        ever shows settings that currently do something.
+        The launcher's own width is not here — it applies in every mode, so it
+        belongs under Appearance. What is here is the width it shrinks *to*,
+        which only means anything while collapsing does. A row is hidden when
+        the current mode makes it meaningless, so the group only ever shows
+        settings that currently do something.
         """
         live = settings.current()
         group = Adw.PreferencesGroup(
             title="Collapsing",
-            description="How much room the launcher takes, and when.",
+            description="What the collapse button does.",
         )
         group.add(
             _row_combo(
@@ -132,17 +147,6 @@ class SettingsPage(Adw.NavigationPage):
                 lambda v: self._apply(collapse_mode=v, resync=True),
             )
         )
-
-        self.expanded_width_row = _row_spin(
-            "Expanded width",
-            "Pixels reserved when the launcher is open.",
-            live.sidebar_width,
-            settings.MIN_SIDEBAR_WIDTH,
-            settings.MAX_SIDEBAR_WIDTH,
-            10,
-            lambda v: self._apply(sidebar_width=v),
-        )
-        group.add(self.expanded_width_row)
 
         self.rail_width_row = _row_spin(
             "Collapsed width",
