@@ -1118,3 +1118,107 @@ def test_a_lone_preview_has_nowhere_to_drag_to(gtk_app, isolated_store, monkeypa
 
     run_app(gtk_app, body)
     assert seen["assignments"][0] == 0
+
+
+def test_the_edited_screen_mode_survives_done(gtk_app, isolated_store, monkeypatch):
+    """The editor handed back only the flat layout, so mode edits were lost.
+
+    Arranging two screens and pressing Done left the context exactly as it
+    was — the arrangement was never given to anything that saves.
+    """
+    from context import settings
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(max_screens=2)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create(
+            "probe", resources=[Resource(app_id="a"), Resource(app_id="b")]
+        )
+        page = EditorPage(ctx, lambda *a_: None, lambda: None, on_delete=None)
+        page.screen_count = 2
+        page._build_previews()
+        page._update_state()
+        page._move_to_screen(0, 1, 1)
+
+        seen["before"] = sorted(ctx.arrangements)
+        page.title_row.set_text("probe")
+        page._commit()
+        seen["after"] = sorted(ctx.arrangements)
+        seen["assignments"] = dict(ctx.arrangement_for(2).assignments)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["before"] == []
+    assert seen["after"] == [2]
+    assert seen["assignments"][1] == 1
+
+
+def test_switching_screen_mode_rebuilds_the_previews(
+    gtk_app, isolated_store, monkeypatch
+):
+    from context import settings
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(max_screens=3)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create("probe", resources=[Resource(app_id="a")])
+        page = EditorPage(ctx, lambda *a_: None, lambda: None, on_delete=None)
+
+        page.mode_dropdown.set_selected(2)
+        seen["three"] = (page.screen_count, len(page.previews))
+        page.mode_dropdown.set_selected(0)
+        seen["one"] = (page.screen_count, len(page.previews))
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["three"] == (3, 3)
+    assert seen["one"] == (1, 1)
+
+
+def test_switching_mode_keeps_what_the_other_mode_had(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Each screen mode is a separate layout; editing one must not clear another."""
+    from context import settings
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(max_screens=2)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create(
+            "probe", resources=[Resource(app_id="a"), Resource(app_id="b")]
+        )
+        page = EditorPage(ctx, lambda *a_: None, lambda: None, on_delete=None)
+
+        page.mode_dropdown.set_selected(1)      # two screens
+        page._move_to_screen(0, 1, 1)
+        page.mode_dropdown.set_selected(0)      # back to one
+        seen["one_screen"] = dict(page.arrangement.assignments)
+        page.mode_dropdown.set_selected(1)      # and back again
+        seen["two_screen"] = dict(page.arrangement.assignments)
+        app.quit()
+
+    run_app(gtk_app, body)
+    # One screen keeps everything on screen 0; the two-screen edit survived.
+    assert set(seen["one_screen"].values()) == {0}
+    assert seen["two_screen"][1] == 1

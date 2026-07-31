@@ -127,3 +127,63 @@ def test_the_spin_control_is_left_to_the_theme(isolated_settings):
     css = theme.Theme().css().decode()
     block = css[css.index(".ctx-spin"):]
     assert "min-height" not in block.split("}")[0]
+
+
+def test_all_displays_is_a_monitor_choice(isolated_settings):
+    """A layer surface belongs to one output, so this means one window each."""
+    from context import monitors, settings
+
+    settings.update(monitor=settings.ALL_MONITORS)
+    assert monitors.everywhere()
+
+    settings.update(monitor="eDP-1")
+    assert not monitors.everywhere()
+
+
+def test_all_displays_asks_for_one_dock_per_screen(isolated_settings, backend):
+    from context import monitors, settings
+    from context.backends.base import MonitorInfo
+
+    backend.outputs = [
+        MonitorInfo(name="A", width=1920, height=1080),
+        MonitorInfo(name="B", width=1920, height=1080, x=1920),
+    ]
+    settings.update(monitor=settings.ALL_MONITORS)
+    assert [m.name for m in monitors.docks_on(backend)] == ["A", "B"]
+
+
+def test_one_monitor_asks_for_one_dock(isolated_settings, backend):
+    from context import monitors, settings
+    from context.backends.base import MonitorInfo
+
+    backend.outputs = [MonitorInfo(name="A", width=1920, height=1080)]
+    settings.update(monitor="")
+    assert len(monitors.docks_on(backend)) == 1
+
+
+def test_all_displays_with_nothing_connected_still_gives_one_dock(
+    isolated_settings, backend
+):
+    """Better one launcher the compositor places than none at all."""
+    from context import monitors, settings
+
+    backend.outputs = []
+    settings.update(monitor=settings.ALL_MONITORS)
+    assert monitors.docks_on(backend) == [None]
+
+
+# -- when to offer to save ---------------------------------------------------
+
+
+def test_the_save_prompt_defaults_to_closing():
+    """The least intrusive of the three that ask."""
+    assert Settings().save_prompt == "close"
+
+
+def test_an_unknown_save_prompt_falls_back():
+    assert Settings(save_prompt="sometimes").validated().save_prompt == "close"
+
+
+def test_every_save_moment_is_accepted():
+    for moment in settings.SAVE_PROMPTS:
+        assert Settings(save_prompt=moment).validated().save_prompt == moment

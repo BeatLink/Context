@@ -23,6 +23,12 @@ EDGE_LABELS = ("Left", "Right", "Top", "Bottom")
 LEVEL_LABELS = ("Debug", "Info", "Warning", "Error", "Critical")
 BACKEND_LABELS = ("Detect automatically", "Hyprland", "None")
 COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely", "Never collapse")
+SAVE_LABELS = (
+    "Never",
+    "Whenever it changes",
+    "When switching away",
+    "When closing it",
+)
 
 
 def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> Adw.PreferencesRow:
@@ -122,6 +128,7 @@ class SettingsPage(Adw.NavigationPage):
         page.add(self._appearance())
         page.add(self._screens())
         page.add(self._behaviour())
+        page.add(self._saving())
         page.add(self._advanced())
         page.add(self._files())
 
@@ -145,8 +152,8 @@ class SettingsPage(Adw.NavigationPage):
                 "Monitor",
                 "Which screen the launcher docks to. Applies on restart."
                 + (f" Connected: {', '.join(found)}." if found else ""),
-                ("Wherever the compositor puts it", *found),
-                ("", *found),
+                ("Wherever the compositor puts it", "All displays", *found),
+                ("", settings.ALL_MONITORS, *found),
                 live.monitor,
                 lambda v: self._apply(monitor=v, restart=True),
             )
@@ -335,6 +342,26 @@ class SettingsPage(Adw.NavigationPage):
         self.hover_delay_row.set_visible(
             collapses and (live.auto_expand or live.collapse_mode == "hidden")
         )
+
+    def _saving(self) -> Adw.PreferencesGroup:
+        live = settings.current()
+        group = Adw.PreferencesGroup(
+            title="Saving",
+            description="A context drifts as you use it — windows get opened, "
+            "moved and closed. This is when to offer to keep the changes.",
+        )
+        group.add(
+            _row_combo(
+                "Ask to save",
+                "Whenever it changes asks the most, since a context changes "
+                "often. The other two ask as you leave.",
+                SAVE_LABELS,
+                settings.SAVE_PROMPTS,
+                live.save_prompt,
+                lambda v: self._apply(save_prompt=v),
+            )
+        )
+        return group
 
     def _advanced(self) -> Adw.PreferencesGroup:
         live = settings.current()

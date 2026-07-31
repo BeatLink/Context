@@ -123,9 +123,11 @@ layout can be set up while undocked.
 Opening a context brings up all of its screens at once and leaves you on the
 first. Closing shuts all of them.
 
-The launcher itself docks to one screen, chosen in settings. Naming a monitor
-that is not currently connected is fine — it is used when you plug it back in,
-and until then the launcher appears on whichever screen has focus.
+The launcher itself docks to one screen, chosen in settings, or to **all
+displays** — one launcher per monitor, since a docked panel belongs to a single
+screen. Naming a monitor that is not currently connected is fine: it is used
+when you plug it back in, and until then the launcher appears on whichever
+screen has focus.
 
 ## Managing windows
 
@@ -143,6 +145,11 @@ offers each one a home, so nothing stays orphaned.
 moved, resized, opened and closed. `capture` reads the live positions back into
 the arrangement for however many screens you have now, so reopening rebuilds
 what you actually had. What each app opens is kept.
+
+Context can also offer this itself, at whichever moment suits — whenever a
+context changes, when you switch away from it, or when you close it. **Ask to
+save** in settings chooses; a context is only offered once per run, so one you
+decline stops asking.
 
 **Throw a window between screens.** `window-left` and `window-right` move the
 focused window to the context's next screen, staying inside the context.
@@ -204,7 +211,7 @@ need a restart say so.
 
 | Setting | Meaning |
 | --- | --- |
-| Monitor | Which screen the launcher docks to |
+| Monitor | Which screen the launcher docks to, or all of them |
 | Screen modes | How many screen counts a context can hold a layout for |
 | Screen 1, 2, … | Which physical monitor each screen number means |
 | Edge | Which side the launcher docks to |
@@ -215,6 +222,7 @@ need a restart say so.
 | Hover delay | How long to wait first, so passing over does not open it |
 | Window manager | Which backend drives workspaces |
 | Refresh interval | How often the open list is re-checked |
+| Ask to save | When to offer to keep a context's changes |
 | Log level | How much detail is written to the log |
 
 Settings that do nothing in the current collapse mode are not shown: the

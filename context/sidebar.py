@@ -198,6 +198,10 @@ def place(window, name: str | None = None) -> str | None:
     if LayerShell is None or not available():
         return None
     wanted = name if name is not None else settings.current().monitor
+    if wanted == settings.ALL_MONITORS:
+        # "Every screen" is a set of windows, each named individually; a window
+        # that was not told which is left to the compositor.
+        return None
     monitor = gdk_monitor(wanted)
     if monitor is None:
         return None
@@ -205,7 +209,12 @@ def place(window, name: str | None = None) -> str | None:
     return wanted
 
 
-def apply(window, edge: str | None = None, width: int | None = None) -> bool:
+def apply(
+    window,
+    edge: str | None = None,
+    width: int | None = None,
+    monitor: str | None = None,
+) -> bool:
     """Turn `window` into an anchored sidebar. Must run before it is realized."""
     if not available():
         return False
@@ -215,7 +224,7 @@ def apply(window, edge: str | None = None, width: int | None = None) -> bool:
     vertical = edge in ("left", "right")
 
     LayerShell.init_for_window(window)
-    place(window)
+    place(window, monitor)
     LayerShell.set_namespace(window, "context-sidebar")
     LayerShell.set_layer(window, LayerShell.Layer.TOP)
 

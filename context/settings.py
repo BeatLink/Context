@@ -33,6 +33,18 @@ BACKENDS = ("auto", "hyprland", "none")
 # "none" removes collapsing altogether — no button, and the keybind says so.
 COLLAPSE_MODES = ("rail", "hidden", "none")
 
+# A layer surface belongs to exactly one output — the protocol's `output` arg is
+# a single wl_output, and NULL means "you choose", not "all of them". So showing
+# the launcher everywhere is one window per screen rather than one that spans.
+ALL_MONITORS = "*"
+
+# When to offer to save a context that has drifted from what was saved.
+#
+# "change" is the eager one and the most intrusive: a context drifts constantly
+# as windows are opened and moved, so it asks often. "switch" and "close" ask at
+# the moments you were leaving anyway, which is where a prompt costs least.
+SAVE_PROMPTS = ("never", "change", "switch", "close")
+
 # Below this the sidebar cannot show a list, and above it stops being a rail.
 MIN_SIDEBAR_WIDTH = 200
 MAX_SIDEBAR_WIDTH = 1200
@@ -61,6 +73,8 @@ class Settings:
     # Which output the launcher docks to, by compositor name (eDP-1, HDMI-A-1).
     # Empty means wherever the compositor would put it, which is the only
     # sensible answer on a single-monitor session.
+    # "" is wherever the compositor puts it; ALL_MONITORS puts one launcher on
+    # every screen. Anything else is a connector name.
     monitor: str = ""
     # Which physical monitor is screen 1, screen 2, and so on — by connector
     # name, in order. Empty means left to right, which is the right answer
@@ -72,6 +86,8 @@ class Settings:
     screen_order: list = field(default_factory=list)
     # How many screen modes to offer a layout for, whatever is plugged in now.
     max_screens: int = 2
+    # Whether, and when, to offer to save a context that has changed.
+    save_prompt: str = "close"
     sidebar_width: int = 380
     rail_width: int = 56
     collapse_mode: str = "rail"
@@ -138,6 +154,11 @@ class Settings:
             monitor=self.monitor.strip(),
             screen_order=[str(n).strip() for n in self.screen_order if str(n).strip()],
             max_screens=_clamp(self.max_screens, MIN_SCREENS, MAX_SCREENS, 2),
+            save_prompt=(
+                self.save_prompt.strip().lower()
+                if self.save_prompt.strip().lower() in SAVE_PROMPTS
+                else "close"
+            ),
             sidebar_width=_clamp(
                 self.sidebar_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, 380
             ),

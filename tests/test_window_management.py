@@ -297,3 +297,64 @@ def test_capture_uses_the_monitor_a_window_is_actually_on():
     slot = ctx.arrangement_for(1).layout_for(0).slots[0]
     # 200px into a monitor that starts at 1000, not 1200px into the first.
     assert slot.x == pytest.approx(0.2)
+
+
+# -- drift -------------------------------------------------------------------
+
+
+def test_a_context_that_matches_its_layout_has_not_drifted(ctx):
+    wm = GeometryBackend(
+        {"ctx-work": [{"app_id": "a", "x": 0, "y": 0, "width": 1000, "height": 1000}]}
+    )
+    ctx.set_handle("fake", "ctx-work")
+    launcher.capture_arrangement(ctx, backend=wm)
+
+    assert not launcher.has_drifted(ctx, backend=wm)
+
+
+def test_a_moved_window_counts_as_drift(ctx):
+    wm = GeometryBackend(
+        {"ctx-work": [{"app_id": "a", "x": 0, "y": 0, "width": 1000, "height": 1000}]}
+    )
+    ctx.set_handle("fake", "ctx-work")
+    launcher.capture_arrangement(ctx, backend=wm)
+
+    wm.geometry["ctx-work"] = [
+        {"app_id": "a", "x": 500, "y": 0, "width": 500, "height": 1000}
+    ]
+    assert launcher.has_drifted(ctx, backend=wm)
+
+
+def test_a_new_window_counts_as_drift(ctx):
+    wm = GeometryBackend(
+        {"ctx-work": [{"app_id": "a", "x": 0, "y": 0, "width": 1000, "height": 1000}]}
+    )
+    ctx.set_handle("fake", "ctx-work")
+    launcher.capture_arrangement(ctx, backend=wm)
+
+    wm.geometry["ctx-work"].append(
+        {"app_id": "b", "x": 0, "y": 0, "width": 500, "height": 500}
+    )
+    assert launcher.has_drifted(ctx, backend=wm)
+
+
+def test_a_few_pixels_is_not_drift(ctx):
+    """Gaps and borders never divide evenly into a fraction of the screen.
+
+    Treating that as a change would make the offer to save worthless, since it
+    would appear for a context nobody had touched.
+    """
+    wm = GeometryBackend(
+        {"ctx-work": [{"app_id": "a", "x": 0, "y": 0, "width": 1000, "height": 1000}]}
+    )
+    ctx.set_handle("fake", "ctx-work")
+    launcher.capture_arrangement(ctx, backend=wm)
+
+    wm.geometry["ctx-work"] = [
+        {"app_id": "a", "x": 4, "y": 4, "width": 992, "height": 992}
+    ]
+    assert not launcher.has_drifted(ctx, backend=wm)
+
+
+def test_a_context_with_no_workspace_has_not_drifted(ctx, backend):
+    assert not launcher.has_drifted(ctx, backend=backend)

@@ -95,6 +95,26 @@ def by_name(name: str | None, backend=None) -> MonitorInfo | None:
     return None
 
 
+def everywhere() -> bool:
+    """Whether the launcher should appear on every screen."""
+    from . import settings
+
+    return settings.current().monitor == settings.ALL_MONITORS
+
+
+def docks_on(backend=None) -> list[MonitorInfo | None]:
+    """The screens the launcher should dock to, one entry per window.
+
+    A single `None` means "wherever the compositor puts it", which is what one
+    unconfigured launcher gets. Otherwise one monitor per window, because a
+    layer surface belongs to exactly one output.
+    """
+    if everywhere():
+        found = ordered(backend)
+        return list(found) if found else [None]
+    return [preferred(backend)]
+
+
 def preferred(backend=None) -> MonitorInfo | None:
     """The output the launcher should dock to.
 
@@ -105,6 +125,9 @@ def preferred(backend=None) -> MonitorInfo | None:
     from . import settings
 
     wanted = settings.current().monitor
+    if wanted == settings.ALL_MONITORS:
+        # Asking for every screen and then for one: the focused one stands in.
+        return focused(backend)
     return by_name(wanted, backend) or focused(backend)
 
 

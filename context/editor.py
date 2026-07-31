@@ -912,9 +912,14 @@ class EditorPage(Adw.NavigationPage):
         title = self.current_title()
         if not title:
             return
+        # The arrangement being edited, before anything else reads it. Without
+        # this every screen-mode edit was thrown away on Done: only the flat
+        # `layout` was handed back, so arranging two screens and saving left
+        # the context exactly as it was.
+        self.ctx.set_arrangement(self.screen_count, self.arrangement)
         log.info(
-            "saving context %s: %d windows, %d slots",
-            title, len(self.entries), len(self.layout.slots),
+            "saving context %s: %d windows, %d slots across %d screen(s)",
+            title, len(self.entries), len(self.layout.slots), self.screen_count,
         )
         self.on_done(
             self.ctx,

@@ -89,8 +89,18 @@ class ContextRow(Adw.ActionRow):
 
 
 class LauncherWindow(Adw.ApplicationWindow):
-    def __init__(self, app: Adw.Application, store: ContextStore, on_open, on_close=None) -> None:
+    def __init__(
+        self,
+        app: Adw.Application,
+        store: ContextStore,
+        on_open,
+        on_close=None,
+        monitor: str | None = None,
+    ) -> None:
         super().__init__(application=app, title="Context")
+        # Which screen this launcher docks to. None means the setting decides,
+        # which is what a single launcher uses.
+        self.monitor = monitor
         self.store = store
         self.on_open = on_open
         self.on_close = on_close
@@ -105,7 +115,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         # be on the display before one is built.
         theme.install()
         # Docks the window to a screen edge where the compositor supports it.
-        self.is_sidebar = sidebar.apply(self)
+        self.is_sidebar = sidebar.apply(self, monitor=self.monitor)
 
         self.nav = Adw.NavigationView()
 
@@ -324,6 +334,12 @@ class LauncherWindow(Adw.ApplicationWindow):
         if self._read_open_state():
             log.debug("open contexts changed: %d open", len(self._open_ids))
             self.refresh()
+        # The "whenever it changes" save prompt rides along here rather than
+        # running a timer of its own: it needs the same compositor query, and
+        # `offer_to_save` does nothing unless that is the moment chosen.
+        app = self.get_application()
+        if app is not None and hasattr(app, "offer_to_save"):
+            app.offer_to_save("change")
         return True
 
     def open_settings(self) -> None:

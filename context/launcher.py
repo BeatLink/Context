@@ -494,3 +494,50 @@ def _slot_from(client: dict, monitor) -> "Slot":
         width=min(1.0, max(0.05, client.get("width", width) / width)),
         height=min(1.0, max(0.05, client.get("height", height) / height)),
     )
+
+
+@traced(log)
+def has_drifted(ctx: Context, backend: Backend | None = None) -> bool:
+    """Whether a context's windows no longer match what was saved.
+
+    Compares what is running against the stored arrangement: how many windows,
+    which applications, and roughly where. Positions are compared loosely — a
+    window a few pixels off is the compositor's rounding, not a change the user
+    made, and prompting for that would make the offer worthless.
+    """
+    wm: Backend = backend or backends.detect()
+    handles = ctx.handles_for(wm.name)
+    if not handles:
+        return False
+
+    outputs = _outputs(wm)
+    by_id = {m.id: m for m in outputs}
+    saved = ctx.arrangement_for(len(handles))
+
+    for screen, handle in enumerate(handles):
+        clients = _clients_on(wm, handle)
+        indices = saved.indices_on(screen)
+        if len(clients) != len(indices):
+            return True
+
+        slots = saved.layout_for(screen).slots
+        fallback = outputs[screen] if screen < len(outputs) else None
+        for position, client in enumerate(clients):
+            if position >= len(slots):
+                return True
+            live = _slot_from(client, by_id.get(client.get("monitor_id"), fallback))
+            if not _slots_match(live, slots[position]):
+                return True
+    return False
+
+
+# Below this a difference is the compositor's rounding rather than a move: gaps,
+# borders and integer pixels never divide evenly into a fraction of the screen.
+DRIFT_TOLERANCE = 0.02
+
+
+def _slots_match(live, saved) -> bool:
+    return all(
+        abs(getattr(live, field) - getattr(saved, field)) <= DRIFT_TOLERANCE
+        for field in ("x", "y", "width", "height")
+    )

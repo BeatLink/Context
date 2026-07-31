@@ -15,7 +15,7 @@ from gi.repository import Adw, Gio, GLib
 
 from . import backends, switcher, uistate
 from .backends import Workspace
-from .launcher import active_context, capture_arrangement
+from .launcher import active_context, capture_arrangement, has_drifted
 from .launcher import move_window_to_context, move_window_to_screen
 from .launcher import unmanaged_windows
 from .launcher import close_context as close_ctx
@@ -65,7 +65,14 @@ class ContextApplication(Adw.Application):
         self.store = ContextStore()
         self.backend = backends.detect()
         self.log.info("backend: %s", self.backend.name)
+        # The primary launcher, and the extras when it is shown on every
+        # screen. `window` stays the one everything else talks to — toasts and
+        # refreshes go to it — while `windows` is what gets kept in step.
         self.window: LauncherWindow | None = None
+        self.extra_windows: list[LauncherWindow] = []
+        # Contexts already offered a save this run, so a drifting one that is
+        # left unsaved does not ask again at every opportunity.
+        self.asked_about: set[str] = set()
         self.launching: set[str] = set()
         self.switcher: switcher.SwitcherWindow | None = None
 
@@ -286,8 +293,55 @@ class ContextApplication(Adw.Application):
 
     def go_to_context(self, ctx: Context) -> None:
         """Switch to a context, launching it if its windows are gone."""
+        # Before leaving: the context being left is the one that drifted, and
+        # switching away is the last chance to notice.
+        self.offer_to_save("switch", leaving=ctx)
         uistate.note_visit(ctx.id)
         self.launch_context(ctx)
+
+    # -- saving what a context became ----------------------------------------
+
+    def offer_to_save(self, moment: str, leaving: Context | None = None) -> bool:
+        """Ask whether to keep how a context has been rearranged.
+
+        `moment` is what just happened — a change, a switch, a close. It only
+        asks when that is the moment the user chose, so the setting is honoured
+        without every caller having to check it.
+        """
+        from . import settings
+
+        wanted = settings.current().save_prompt
+        if wanted == "never" or wanted != moment:
+            return False
+
+        current = active_context(self.store.contexts, backend=self.backend)
+        if current is None or (leaving is not None and current.id == leaving.id):
+            return False
+        if not has_drifted(current, backend=self.backend):
+            return False
+        self._ask_to_save(current)
+        return True
+
+    def _ask_to_save(self, ctx: Context) -> None:
+        if self.window is None or ctx.id in self.asked_about:
+            return
+        # Once per context per run: a context that drifts and is not saved
+        # would otherwise ask again on every switch.
+        self.asked_about.add(ctx.id)
+
+        toast = Adw.Toast(title=f"“{ctx.title}” has changed", timeout=8)
+        toast.set_button_label("Save layout")
+        toast.connect("button-clicked", lambda _t: self._save_drift(ctx))
+        self.window.toasts.add_toast(toast)
+
+    def _save_drift(self, ctx: Context) -> None:
+        windows, screens = capture_arrangement(ctx, backend=self.backend)
+        self.store.save()
+        self.asked_about.discard(ctx.id)
+        self.log.info(
+            "saved %s: %d window(s) across %d screen(s)", ctx.title, windows, screens
+        )
+        self.refresh_all()
 
     def _focus_active_context(self) -> None:
         """Switch to whichever context is open, so a relaunch lands somewhere."""
@@ -310,10 +364,43 @@ class ContextApplication(Adw.Application):
                 self.log.info("reconnected to %d running context(s)", len(live))
             self.store.save()
 
-            self.window = LauncherWindow(
-                self, self.store, self.launch_context, self.close_context
+            self._build_launchers()
+        for launcher_window in self.launchers:
+            launcher_window.present()
+
+    @property
+    def launchers(self) -> list[LauncherWindow]:
+        return ([self.window] if self.window is not None else []) + self.extra_windows
+
+    def _build_launchers(self) -> None:
+        """One launcher per screen it should dock to.
+
+        A layer surface belongs to exactly one output, so showing the launcher
+        everywhere means a window each rather than one that spans. They share
+        the store, so they show the same contexts and stay in step through
+        `refresh_all`.
+        """
+        from . import monitors
+
+        docks = monitors.docks_on(self.backend)
+        for index, monitor in enumerate(docks):
+            window = LauncherWindow(
+                self,
+                self.store,
+                self.launch_context,
+                self.close_context,
+                monitor=getattr(monitor, "name", None),
             )
-        self.window.present()
+            if index == 0:
+                self.window = window
+            else:
+                self.extra_windows.append(window)
+        self.log.info("launcher on %d screen(s)", len(docks))
+
+    def refresh_all(self) -> None:
+        """Keep every launcher showing the same thing."""
+        for launcher_window in self.launchers:
+            launcher_window.refresh_open_state()
 
     def launch_context(self, ctx: Context) -> None:
         """Start a context on a worker thread.
@@ -359,10 +446,12 @@ class ContextApplication(Adw.Application):
             self.log.error("could not launch %s: %s", app_id, error)
         if self.window is not None:
             self.window.report_launch(ctx, result)
-            self.window.refresh_open_state()
+        self.refresh_all()
         return False
 
     def close_context(self, ctx: Context) -> None:
+        # Before closing, while there is still something to read.
+        self.offer_to_save("close")
         result = close_ctx(ctx, backend=self.backend)
         # close_context may drop the workspace handle.
         self.store.save()
