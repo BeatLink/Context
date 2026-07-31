@@ -280,16 +280,33 @@ With a handful of contexts everything can be listed; with fifty it cannot, and
 the alternative to this option is an arbitrary cutoff. It lives on the context's
 own editor page alongside the ephemeral toggle.
 
+### 10. Context timers
+
+A context is a unit of work, which makes it the natural thing to time. Each
+context gets a timer toggle; with it on, the clock runs while the context is
+focused and stops when it is not, so the total is time actually spent rather
+than time the window was open.
+
+- Per-context enable switch, off by default — not every context is work worth
+  measuring.
+- Time accrues only while the context is the active one, using the same
+  focus tracking the sidebar already does.
+- Today and total shown on the context's row and in its editor.
+- History kept per day, so it can answer "how long did I spend on this".
+
+Optional later: a target per context with a notification when it is reached, and
+an idle threshold so time does not accrue while the machine is untouched.
+
 ## Next
 
-### 10. Ephemeral teardown
+### 11. Ephemeral teardown
 
 `ephemeral` is stored and editable but nothing acts on it. Closing an ephemeral
 context should remove its workspace, delete its browser profile, and drop it from
 the list — carefully, since "throw this away" must never eat real work. Needs a
 confirmation path and a definition of what counts as unsaved.
 
-### 11. Session restore
+### 12. Session restore
 
 `xdg-session-management-v1` was merged 2026-03-23 after six years, and KWin has a
 draft implementation. This is the protocol that finally makes window position and
@@ -297,7 +314,7 @@ state restoration possible on Wayland. Once Hyprland supports it, a context can
 restore its actual layout rather than re-deriving it from a recipe. Worth tracking;
 not actionable yet.
 
-### 12. Login flow
+### 13. Login flow
 
 Show the launcher at login: previous contexts, or a new-context page.
 
@@ -307,7 +324,7 @@ thing," and forcing a decision there is exactly the friction that made Activitie
 feel heavy. Needs a zero-friction default path — resume last context, or a plain
 desktop — before this becomes the login entrypoint.
 
-### 13. Hyprland as the primary target
+### 14. Hyprland as the primary target
 
 Once resources and placement land, Hyprland becomes the real target and Cinnamon
 stays only as a testing fallback. Requires a dev session on a spare VT or VM, since

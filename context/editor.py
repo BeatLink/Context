@@ -11,6 +11,7 @@ from gi.repository import Adw, Gdk, Gtk
 
 from .adapters import configurable, describe
 from .apps import App, installed_apps, search_apps
+from . import theme
 from .logging_setup import get_logger
 from .layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
 from .resource_page import ResourcePage
@@ -21,23 +22,9 @@ log = get_logger("editor")
 
 HANDLE = 14  # px hit area for the resize grips
 
-# The app grid draws its own tiles rather than using list rows, so it does not
-# pick up the dark styling libadwaita applies elsewhere: the cards came out
-# white on a dark page and the add buttons were nearly invisible against them.
-GRID_CSS = b"""
-.ctx-tile {
-    background-color: alpha(currentColor, 0.06);
-    border: 1px solid alpha(currentColor, 0.12);
-    border-radius: 10px;
-}
-.ctx-tile:hover {
-    background-color: alpha(currentColor, 0.12);
-}
-.ctx-tile.ctx-chosen {
-    background-color: alpha(@accent_bg_color, 0.22);
-    border-color: @accent_bg_color;
-}
-"""
+# The app grid and the layout preview draw themselves, so libadwaita has no
+# styling for them; colours come from the theme instead. See context/theme.py.
+
 
 
 class LayoutPreview(Gtk.DrawingArea):
@@ -230,8 +217,10 @@ class LayoutPreview(Gtk.DrawingArea):
     def _draw(self, _area, cr, _w, _h) -> None:
         ox, oy, sw, sh = self._screen()
 
+        palette = theme.current()
+
         # Monitor backdrop
-        cr.set_source_rgba(0, 0, 0, 0.28)
+        cr.set_source_rgba(*palette.rgba("preview_background"))
         cr.rectangle(ox, oy, sw, sh)
         cr.fill()
 
@@ -249,11 +238,13 @@ class LayoutPreview(Gtk.DrawingArea):
             x, y, w, h = self._slot_rect(slot)
             focused = index == self.active
 
-            cr.set_source_rgba(0.35, 0.75, 0.75, 0.5 if focused else 0.32)
+            cr.set_source_rgba(
+                *palette.rgba("slot_fill_active" if focused else "slot_fill")
+            )
             cr.rectangle(x + 2, y + 2, max(1.0, w - 4), max(1.0, h - 4))
             cr.fill()
 
-            cr.set_source_rgba(0.35, 0.75, 0.75, 1.0 if focused else 0.7)
+            cr.set_source_rgba(*palette.rgba("slot_border"))
             cr.set_line_width(2 if focused else 1)
             cr.rectangle(x + 2, y + 2, max(1.0, w - 4), max(1.0, h - 4))
             cr.stroke()
@@ -308,7 +299,7 @@ def _install_grid_css() -> None:
     if display is None:
         return
     provider = Gtk.CssProvider()
-    provider.load_from_data(GRID_CSS)
+    provider.load_from_data(theme.current().css())
     Gtk.StyleContext.add_provider_for_display(
         display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
     )
@@ -343,6 +334,10 @@ class AppTile(Gtk.FlowBoxChild):
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.set_size_request(104, 118)
+        # Without this a FlowBox stretches its children to fill the height, so a
+        # single row of apps grew to the full height of the grid.
+        box.set_valign(Gtk.Align.START)
+        box.set_vexpand(False)
         box.add_css_class("ctx-tile")
         self.box = box
         box.set_margin_top(4)
@@ -520,6 +515,7 @@ class EditorPage(Adw.NavigationPage):
             max_children_per_line=10,
             row_spacing=4,
             column_spacing=4,
+            valign=Gtk.Align.START,
         )
         scroller = Gtk.ScrolledWindow(vexpand=True)
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)

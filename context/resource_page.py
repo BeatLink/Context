@@ -11,7 +11,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from .adapters import supports_command, supports_paths, supports_profiles
 from .apps import App
-from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, split_urls
+from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, normalize_url
 
 
 class ResourcePage(Adw.NavigationPage):
@@ -65,20 +65,33 @@ class ResourcePage(Adw.NavigationPage):
             targets.add_css_class("boxed-list")
 
             self.path_row = Adw.ActionRow(title="Opens")
-            self.path_row.set_subtitle(resource.path or "nothing yet")
+            self.path_row.set_subtitle(resource.path or "nothing chosen")
+            self.path_row.set_subtitle_lines(2)
+
+            clear = Gtk.Button(icon_name="edit-clear-symbolic", valign=Gtk.Align.CENTER)
+            clear.add_css_class("flat")
+            clear.set_tooltip_text("Clear")
+            clear.connect("clicked", lambda _b: self._set_path(None))
+            self.path_row.add_suffix(clear)
+            targets.append(self.path_row)
+
+            # A terminal only makes sense opened at a directory; an editor also
+            # takes a file or a workspace, so the choices differ per adapter.
+            modes = [("Folder…", "folder")]
+            if not supports_command(resource):
+                modes += [("File…", "file"), ("Workspace…", "workspace")]
+
             buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            for label, mode in (
-                ("Folder…", "folder"),
-                ("File…", "file"),
-                ("Workspace…", "workspace"),
-            ):
-                button = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
-                button.add_css_class("flat")
+            buttons.set_halign(Gtk.Align.START)
+            for label, mode in modes:
+                button = Gtk.Button(label=label)
                 button.connect("clicked", lambda _b, m=mode: self._choose_path(m))
                 buttons.append(button)
-            self.path_row.add_suffix(buttons)
-            targets.append(self.path_row)
-            content.append(targets)
+
+            section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            section.append(targets)
+            section.append(buttons)
+            content.append(section)
 
         self.command_row: Adw.EntryRow | None = None
         if supports_command(resource):
@@ -134,37 +147,74 @@ class ResourcePage(Adw.NavigationPage):
         compat.append(single_row)
         content.append(compat)
 
-        frame = Gtk.Frame()
-        self.text = Gtk.TextView(
-            wrap_mode=Gtk.WrapMode.WORD_CHAR,
-            top_margin=8,
-            bottom_margin=8,
-            left_margin=8,
-            right_margin=8,
-        )
-        self.text.get_buffer().set_text("\n".join(resource.urls))
-        self.text.get_buffer().connect("changed", lambda _b: self._update_count())
-        scroller = Gtk.ScrolledWindow(vexpand=True)
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_child(self.text)
-        frame.set_child(scroller)
-        content.append(frame)
+        # URLs as a list of rows rather than a text box: each is separately
+        # removable, and a typo in one does not require re-reading the rest.
+        self.url_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.url_list.add_css_class("boxed-list")
+
+        add_url = Gtk.Button(label="Add a URL", halign=Gtk.Align.START)
+        add_url.add_css_class("flat")
+        add_url.connect("clicked", lambda _b: self._add_url(""))
+
+        url_scroller = Gtk.ScrolledWindow(vexpand=True)
+        url_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        url_scroller.set_child(self.url_list)
+
+        self.url_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.url_section.append(url_scroller)
+        self.url_section.append(add_url)
+        content.append(self.url_section)
 
         self.count_label = Gtk.Label(xalign=0.0)
         self.count_label.add_css_class("dim-label")
         content.append(self.count_label)
+
+        # After count_label exists: adding a row updates it.
+        for url in resource.urls:
+            self._add_url(url)
+
+        # Terminals and editors take a path, not URLs.
+        self.url_section.set_visible(not supports_paths(resource))
+        self.count_label.set_visible(not supports_paths(resource))
 
         toolbar.set_content(content)
         self.set_child(toolbar)
 
         self._update_count()
 
-    def current_text(self) -> str:
-        buffer = self.text.get_buffer()
-        return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
+    def url_rows(self) -> list:
+        rows = []
+        row = self.url_list.get_first_child()
+        while row is not None:
+            if hasattr(row, "entry"):
+                rows.append(row)
+            row = row.get_next_sibling()
+        return rows
 
     def current_urls(self) -> list[str]:
-        return split_urls(self.current_text())
+        return [
+            normalize_url(r.entry.get_text().strip())
+            for r in self.url_rows()
+            if r.entry.get_text().strip()
+        ]
+
+    def _add_url(self, value: str) -> None:
+        row = Adw.EntryRow(title="URL")
+        row.set_text(value)
+        row.entry = row  # EntryRow is its own entry; keeps url_rows() uniform
+        row.connect("changed", lambda _e: self._update_count())
+
+        remove = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER)
+        remove.add_css_class("flat")
+        remove.connect("clicked", lambda _b: self._remove_url(row))
+        row.add_suffix(remove)
+
+        self.url_list.append(row)
+        self._update_count()
+
+    def _remove_url(self, row) -> None:
+        self.url_list.remove(row)
+        self._update_count()
 
     def _update_count(self) -> None:
         count = len(self.current_urls())
@@ -195,15 +245,18 @@ class ResourcePage(Adw.NavigationPage):
             except GLib.Error:
                 return  # Cancelled.
             if chosen is not None:
-                self.resource.path = chosen.get_path()
-                if self.path_row is not None:
-                    self.path_row.set_subtitle(self.resource.path or "nothing yet")
+                self._set_path(chosen.get_path())
 
         root = self.get_root()
         if mode == "folder":
             dialog.select_folder(root, None, done)
         else:
             dialog.open(root, None, done)
+
+    def _set_path(self, path: str | None) -> None:
+        self.resource.path = path
+        if self.path_row is not None:
+            self.path_row.set_subtitle(path or "nothing chosen")
 
     def _commit(self) -> None:
         self.resource.urls = self.current_urls()

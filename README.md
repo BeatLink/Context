@@ -2,36 +2,18 @@
 
 A context-oriented desktop shell.
 
-Rather than managing windows and workspaces, you work in **contexts**: named groups
-of applications opened to specific resources, each focused on doing one thing.
-"Surf reddit" is a Firefox window on reddit. "Work on coding project" is VS Code on
-one side and API docs on the other. "Pay bills" is a banking tab and a spreadsheet.
+Rather than managing windows and workspaces, you work in **contexts**: named
+groups of applications opened to specific things, each focused on doing one job.
+"Surf reddit" is a Firefox window on reddit. "Work on a project" is your editor
+on one side and API docs on the other. "Pay bills" is a banking tab and a
+spreadsheet.
 
-You don't arrange windows. You say what you're doing, and the context is what
-appears.
+You don't arrange windows. You say what you're doing, and the context appears.
 
-## Why
+## Requirements
 
-The dominant desktop metaphor is application- and document-centric: you manage
-windows, and the *task* they serve exists only in your head. Contexts make the task
-the object you manipulate.
-
-This idea has a research lineage — **activity-based computing** (Giornata, Kimura,
-Bardram et al.) — where "each activity groups multiple application windows with
-associated resources." It has been validated repeatedly in studies and has
-repeatedly failed to reach mainstream. The closest shipped analogue, KDE Plasma
-Activities, was proposed for outright removal in Plasma 6; its own maintainers cited
-"conceptually unclear" scope, frequent bugs, and low adoption *even in KDE's own
-apps*.
-
-Two lessons shape this project:
-
-1. **Don't overlap with workspaces.** Activities failed partly by being a third
-   axis next to virtual desktops and window groups. Here, a context *is* the
-   workspace — one concept, not a layer on top of one.
-2. **App integration is the whole problem.** "Firefox at reddit" and "VS Code at
-   this workspace" are per-app work. That's not a detail to add later; it's the
-   feature. See [ROADMAP.md](ROADMAP.md).
+- A Wayland compositor with `zwlr-layer-shell`. Hyprland is the target.
+- Nix, for the development shell.
 
 ## Running
 
@@ -40,207 +22,148 @@ nix develop
 python3 -m context
 ```
 
-Contexts persist to `$XDG_DATA_HOME/context/contexts.json`.
+Context is single-instance: running it again raises the launcher you already
+have.
 
 ## The launcher
 
-The entrypoint you see when you log in.
+A sidebar docked to the edge of the screen, with space reserved so windows sit
+beside it rather than underneath.
 
-- **Text bar** — doubles as create and search. Type a name and press Enter to start
-  a new context; typing filters the list as you go. An exact title match (case
-  insensitive) opens the existing context rather than duplicating it, and the button
-  flips `Start` → `Open` so you can see which will happen.
-- **Context list** — previous contexts, most recently used first. Click a row to
-  launch it, the pencil to edit it, the × to forget it. Open contexts are marked
-  `open` and gain a stop button that closes them.
-- <kbd>Down</kbd> moves from the bar into the list. <kbd>Esc</kbd> goes back a page,
-  or closes the launcher from the top level.
+- **Search bar** — type to filter, or type a new name and press <kbd>Enter</kbd>
+  to create a context. A name matching an existing context opens it instead.
+- **Open** — contexts running right now. The one you are in is highlighted.
+  Click a row to switch to it, the stop button to close it, the pencil to edit.
+- **Saved** — everything else, in a section below. It is expanded when nothing
+  is open and folds away once something is, one click from opening again.
 
-### The editor
-
-Creating or editing a context takes over the whole screen — not a page inside the
-sidebar, which is too narrow for a layout preview to mean anything, and fullscreen
-rather than maximised so it is not tiled beside whatever else is open. It is laid
-out like PowerToys Workspaces: the window arrangement on top, the app catalogue
-below.
-
-- **Layout preview** — a scale model of the monitor with one rectangle per window.
-  Drag a window to move it, its bottom-right corner to resize, or the × to remove
-  it. Everything snaps to a 5% grid. A dropdown offers starting arrangements:
-  maximised, side by side, top and bottom, main and side, three columns, main and
-  stack, grid.
-- **App grid** — every installed application, searchable. `+` adds a window to the
-  layout; adding an app twice gives it two windows. The pencil sets what it opens.
-
-Layouts are stored as fractions of the monitor rather than pixels, so they carry
-between displays.
-
-On launch the windows **tile**. A tiling compositor decides placement when a window
-maps rather than accepting coordinates afterwards, so the slots are read as split
-directions — further right means a vertical split, further down a horizontal one —
-and each app is launched after preselecting its direction.
-
-Tiling rather than floating means gaps, borders and the space reserved by the bars
-are all honoured for free. Floating needed each of those computed by hand, and
-needed every later window caught and floated too, since anything opening on the
-workspace would otherwise tile into a layout it was never part of.
-
-`preselect` only chooses a side, so every split starts even. The proportions are
-then corrected with `resizewindowpixel`, which drives a tiled split the way
-dragging the divider does — the neighbour reflows to match, and nothing floats.
-Sizes are a fraction of the area the windows actually occupy, measured from the
-windows themselves, so gaps and reserved space are accounted for.
-
-### As a sidebar
-
-On a Wayland compositor supporting `zwlr-layer-shell` (Hyprland does), it runs as a
-**persistent sidebar**: docked to a screen edge, spanning its full length, with the
-space reserved so tiled windows sit beside it rather than underneath. It stays put
-across workspace switches, and <kbd>Esc</kbd> clears the search rather than
-dismissing it, since a docked panel has no way to be reopened.
+<kbd>Down</kbd> moves from the search bar into the list. <kbd>Esc</kbd> clears
+the search.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `CONTEXT_SIDEBAR_EDGE` | `left` | `left`, `right`, `top`, or `bottom` |
 | `CONTEXT_SIDEBAR_WIDTH` | `380` | Thickness in px, minimum 200 |
 
-Elsewhere — X11, or a compositor without layer-shell — it falls back to an ordinary
-window with no loss of function.
+## The editor
 
-`gtk4-layer-shell` must be loaded before `libwayland-client` or its GDK hooks never
-install and anchoring silently does nothing. `python3 -m context` re-execs itself
-once with the right `LD_PRELOAD` to arrange that; the dev shell exports
-`CONTEXT_LAYER_SHELL_LIB` so it knows what to preload.
+Creating or editing a context opens a full-screen editor: the window arrangement
+on top, the app catalogue below.
 
-## Resources and adapters
+**Layout.** A scale model of your monitor, one rectangle per window. Drag a
+window to move it, its corner to resize, the × to remove it. Each window shows
+the app's icon, with its name on hover, and a pencil for what it opens.
+Everything snaps to a 5% grid, and a dropdown offers arrangements to start from:
+maximised, side by side, top and bottom, main and side, three columns, main and
+stack, grid.
 
-A context holds **resources**: an app plus what it should open.
+**Apps.** Every installed application, searchable. Click a card to add it to the
+layout; add one twice to give it two windows.
+
+**Details.** The context's name, an ephemeral toggle, and a Forget button.
+
+Layouts are stored as fractions of the monitor, so they carry between displays.
+
+## What apps open
+
+Each app in a context can be pointed at something.
+
+| App | Opens |
+| --- | --- |
+| Firefox | A list of URLs, one window with a tab each |
+| VS Code / VSCodium | A folder, a file, or a `.code-workspace` |
+| Terminals | A directory, optionally running a command |
+| Anything else | Just launches |
+
+**Firefox** can use either a profile of its own or the one you already browse
+with. A dedicated profile keeps the context's tabs, cookies and history separate
+and restores them when you come back. Your main profile brings your addons,
+logins and history, at the cost of tabs not being separated per context.
+
+**Compatibility.** Two switches per app, for when it does not behave:
+
+- **Open a new window** — turn off if the app should reuse a window it has.
+- **Single instance only** — for apps that refuse to run twice.
+
+## Opening and closing
+
+Opening a context switches to its workspace. If it is not running, its apps
+launch and tile into the layout; if it is, you simply arrive where you left off.
+
+**Closing** a context shuts its windows but keeps the context itself, so opening
+it again rebuilds it. **Forgetting** a context deletes the definition and lives
+in the editor, behind a confirmation.
+
+If Context is restarted while contexts are open, it reconnects to them.
+
+## Theming
+
+Colours come from `$XDG_CONFIG_HOME/context/theme.json`. Anything it does not
+set keeps the default:
 
 ```json
-{"app_id": "firefox.desktop", "urls": ["https://reddit.com"]}
+{
+  "accent": "#5ac0c0",
+  "surface": "#1e1e1e",
+  "slot_fill": "#5ac0c052",
+  "tile_selected": "#5ac0c038"
+}
 ```
 
-An **adapter** turns a resource into a launch. `adapter_for()` picks the first one
-that claims it, falling back to a generic desktop-entry launch, so apps with no
-special handling still work and adding an adapter is always additive.
+Set `CONTEXT_THEME` to load a theme from elsewhere.
 
-### Firefox
+## Where things are kept
 
-Each Firefox resource picks one of two modes.
-
-**Dedicated profile** (default) — a profile per context under
-`$XDG_DATA_HOME/context/firefox-profiles/<id>`.
-
-Verified on Firefox 153: a single invocation with several URLs opens one window
-with one tab each. There are no window-targeting flags, so a shared profile would
-send new tabs to whatever window was last focused — contexts would interleave and
-could not reliably reuse their own window. A separate profile also buys tab restore
-on reopen, an isolated cookie jar, and a distinct PID for window matching.
-
-First launch seeds the configured URLs. Later launches pass none, so Firefox's own
-session restore reopens what you actually left there rather than resetting to the
-original list. New profiles get a `user.js` that suppresses onboarding.
-
-A profile can only be held by one process, and the lock outlives a closing window,
-so a relaunch waits for the previous instance to let go. Firefox exits silently and
-non-zero when the profile is still busy, so the exit status is checked — otherwise a
-failed relaunch looks like a success and the context comes back empty.
-
-Costs: ~150–250MB per live instance, and no shared history or bookmarks.
-
-**Main profile** — opens in the browser you already use, so addons, logins, history
-and settings are the ones you have. The context's first URL opens a new window and
-the rest join it as tabs.
-
-Because the main profile is normally already running, a second instance is
-impossible; the URLs are handed to the running Firefox instead. That means tabs are
-not isolated between contexts, closing a context closes those windows like any
-other, and teardown never touches the profile.
-
-## Contexts and workspaces
-
-A context lives in a workspace. Opening one:
-
-- **Workspace exists and holds windows** → switch to it, launch nothing.
-- **Otherwise** → create it if needed, switch to it, launch the apps. An existing
-  but *empty* workspace still relaunches, which is what makes a closed context
-  reopen properly.
-
-**Closing** a context is distinct from forgetting it: its windows are asked to
-close, and the definition, URLs, and history stay. Reopening rebuilds it.
-
-Closing only ever touches windows on that context's own workspace — never sticky
-windows, never another workspace. Whether the empty workspace is then removed is
-per-backend: Hyprland's named workspaces disappear by themselves, while Cinnamon
-can only drop the *last* workspace, since `num-workspaces` is a count and removing
-one from the middle would renumber the rest and repoint other contexts' handles.
-When it can't be removed the workspace is simply left in place.
-
-Which window manager provides the workspace is behind a backend interface, so the
-app stays testable on whatever session is actually running.
-
-| Backend | Handle | Requires |
-| --- | --- | --- |
-| `hyprland` | named workspace, `ctx-<slug>` | `hyprctl` + `HYPRLAND_INSTANCE_SIGNATURE` |
-| `cinnamon` | workspace index | `wmctrl` + `org.cinnamon.desktop.wm.preferences` |
-| `none` | — | nothing; apps open on the current workspace |
-
-`detect()` prefers Hyprland, falls back to Cinnamon, then `none`. Override with
-`CONTEXT_BACKEND=hyprland|cinnamon|none` — also how tests force the no-op backend.
-
-### Workspace identity
-
-Each backend returns an opaque **handle**, stored per-backend on the context as
-`workspaces: {backend: handle}`. Identity comes from the handle, never the title, so
-renaming a context relabels its existing workspace instead of orphaning it and
-creating a duplicate. The map is per-backend, so one context can hold both a
-Cinnamon index and a Hyprland name without collision.
-
-### Testing the Hyprland backend
-
-Hyprland **cannot be nested inside an X11 session**. Since 0.42 it uses its own
-aquamarine backend, which offers only DRM and Wayland — no X11 backend exists, and
-its Wayland client demands protocol versions newer than Weston, Sway, or Muffin
-advertise. Verified on this machine:
-
-| Host | Failure |
+| Path | Contents |
 | --- | --- |
-| Cinnamon X11 (direct) | `DRM backend failed` — GPUs held by the X server |
-| Weston 15 | `wl_compositor: expected at most 5, got 6` |
-| Sway 1.12 | `xdg_wm_base: expected at most 5, got 6` |
-| Cinnamon on Wayland (Muffin 6.6.3) | `wl_compositor: expected at most 5, got 6` |
+| `$XDG_DATA_HOME/context/contexts.json` | Context definitions |
+| `$XDG_DATA_HOME/context/firefox-profiles/` | Per-context browser profiles |
+| `$XDG_STATE_HOME/context/context.log` | Log, rotated |
+| `$XDG_CONFIG_HOME/context/theme.json` | Theme |
 
-What works: Hyprland inside Hyprland, a spare VT (`chvt 2`), or a VM. The Cinnamon
-backend exists so everything else stays developable meanwhile.
+`CONTEXT_LOG_LEVEL` takes `debug`, `info`, `warning`, `error` or `critical`.
+
+## Window managers
+
+Context drives the compositor through a backend, chosen automatically:
+
+| Backend | Requires |
+| --- | --- |
+| `hyprland` | `hyprctl` and a running Hyprland |
+| `cinnamon` | `wmctrl` and the Cinnamon settings schema |
+| `none` | Nothing; apps open on the current workspace |
+
+`CONTEXT_BACKEND` overrides the choice.
+
+Hyprland cannot run nested inside another session, so testing the Hyprland
+backend needs a real session — a spare VT or a VM.
+
+## Development
+
+```sh
+nix develop
+python3 -m pytest tests/ -q            # logic
+xvfb-run -a python3 -m pytest tests/   # including the interface
+```
+
+See [CLAUDE.md](CLAUDE.md) for the working notes and [ROADMAP.md](ROADMAP.md)
+for what is planned.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `context/app.py` | `Adw.Application` subclass and `main()` |
-| `context/window.py` | Launcher window, entry bar, context rows, navigation |
-| `context/editor.py` | Editor page: layout preview and app grid |
-| `context/editor_window.py` | Hosts the editor as its own maximised window |
-| `context/layout.py` | `Slot`, `Layout`, and the preset arrangements |
-| `context/apps.py` | Installed-app discovery via `Gio.AppInfo` |
-| `context/sidebar.py` | Layer-shell docking and the LD_PRELOAD re-exec |
-| `context/resources.py` | `Resource`, URL parsing, legacy `apps` migration |
-| `context/resource_page.py` | The "what should this open?" page |
-| `context/adapters/base.py` | The `Adapter` protocol and `GenericAdapter` |
-| `context/adapters/__init__.py` | `adapter_for()` and the adapter registry |
-| `context/adapters/firefox.py` | Profile-per-context Firefox launching |
-| `context/store.py` | `Context` dataclass and JSON-backed `ContextStore` |
-| `context/launcher.py` | Instantiating a context: workspace + app launch |
-| `context/backends/base.py` | The `Backend` protocol, `Workspace`, `NullBackend` |
-| `context/backends/__init__.py` | `detect()` and the backend registry |
-| `context/backends/hyprland.py` | Named workspaces over `hyprctl` |
-| `context/backends/cinnamon.py` | Indexed workspaces over `wmctrl` + gsettings |
-
-## Status
-
-Contexts can be created, edited, listed, and launched: apps start from their desktop
-entries into a per-context workspace, and reopening switches rather than relaunching.
-
-Firefox opens at a context's URLs in its own profile. Still to come: adapters for
-VS Code and terminals, window placement within a context, and teardown for
-ephemeral contexts (`FirefoxAdapter.teardown` exists but nothing calls it yet).
+| `context/app.py` | Application entry point |
+| `context/window.py` | The launcher sidebar |
+| `context/editor.py` | The editor: layout preview and app grid |
+| `context/editor_window.py` | Hosts the editor full screen |
+| `context/resource_page.py` | What an app opens |
+| `context/apps.py` | Installed-app discovery |
+| `context/store.py` | Contexts, saved to disk |
+| `context/layout.py` | Slots, presets, and layout repair |
+| `context/launcher.py` | Opening and closing contexts |
+| `context/theme.py` | Colours |
+| `context/logging_setup.py` | Logging |
+| `context/sidebar.py` | Docking the launcher to a screen edge |
+| `context/adapters/` | How each app opens what it is given |
+| `context/backends/` | How each window manager is driven |

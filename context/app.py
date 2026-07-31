@@ -77,8 +77,11 @@ class ContextApplication(Adw.Application):
 
     def launch_context(self, ctx: Context) -> None:
         result = launch_ctx(ctx, backend=self.backend)
-        # launch_context records the workspace handle on the context.
+        # launch_context records the workspace handle, and may have repaired the
+        # layout, so both are written back.
         self.store.save()
+        if result.layout_repaired:
+            self.log.info("repaired the layout for %s", ctx.title)
         self.log.info(
             "launched %s: workspace=%s launched=%d failed=%d",
             ctx.title, result.workspace, len(result.launched), len(result.failed),

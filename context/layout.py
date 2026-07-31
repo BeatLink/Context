@@ -12,6 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+# Nothing smaller than this is usable as a window.
+MIN_SIZE = 0.05
+
+
 @dataclass(frozen=True)
 class Slot:
     x: float = 0.0
@@ -74,6 +78,51 @@ class Layout:
         if len(self.slots) == count:
             return Layout(slots=list(self.slots))
         return preset_for(count)
+
+    def healed(self, count: int) -> tuple["Layout", list[str]]:
+        """Return a usable layout for `count` windows, and what was repaired.
+
+        A layout can be wrong in ways that are only noticed when it is used: a
+        hand-edited contexts.json, a context whose apps changed without its
+        slots, a slot dragged to nothing. Rather than launching into a broken
+        arrangement or refusing to launch at all, the layout is repaired to
+        something sane and what changed is reported.
+        """
+        problems: list[str] = []
+
+        if count <= 0:
+            return Layout(), problems
+
+        slots = list(self.slots)
+
+        # Degenerate slots: zero-sized, or extending past the screen.
+        repaired = []
+        for slot in slots:
+            fixed = Slot(
+                x=min(max(0.0, slot.x), 0.95),
+                y=min(max(0.0, slot.y), 0.95),
+                width=min(max(MIN_SIZE, slot.width), 1.0),
+                height=min(max(MIN_SIZE, slot.height), 1.0),
+            )
+            # Keep it on screen.
+            fixed = Slot(
+                x=fixed.x,
+                y=fixed.y,
+                width=min(fixed.width, 1.0 - fixed.x),
+                height=min(fixed.height, 1.0 - fixed.y),
+            )
+            if fixed != slot:
+                problems.append("resized a window that did not fit the screen")
+            repaired.append(fixed)
+
+        if len(repaired) != count:
+            problems.append(
+                f"had {len(repaired)} window{'s' if len(repaired) != 1 else ''} "
+                f"for {count} app{'s' if count != 1 else ''}"
+            )
+            return preset_for(count), problems
+
+        return Layout(slots=repaired), problems
 
 
 # Named arrangements, keyed by how many windows they hold. These are what the

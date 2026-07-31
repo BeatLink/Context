@@ -109,10 +109,30 @@ def test_ratios_applied_after_launching(ctx, backend, stub_adapters):
     ].index("preselect")
 
 
-def test_no_layout_means_no_ratio_pass(backend, stub_adapters):
+def test_a_context_with_no_layout_gets_one(backend, stub_adapters):
+    """Healing fills in a layout, so every context launches into a known
+    arrangement rather than wherever the compositor happens to put things."""
     ctx = Context(title="plain", resources=[Resource(app_id="a.desktop")])
     launch_context(ctx, backend=backend)
+    assert len(ctx.layout.slots) == 1
+    # One window has nothing to split against, so no ratio pass is needed.
     assert not backend.sequence("ratios")
+
+
+def test_a_broken_layout_is_repaired_on_launch(backend, stub_adapters):
+    """A hand-edited contexts.json should not stop a context opening."""
+    from context.layout import Layout, Slot
+
+    ctx = Context(
+        title="broken",
+        resources=[Resource(app_id="a.desktop"), Resource(app_id="b.desktop")],
+        layout=Layout(slots=[Slot(0.0, 0.0, 0.0, 0.0)]),
+    )
+    result = launch_context(ctx, backend=backend)
+
+    assert result.layout_repaired
+    assert len(ctx.layout.slots) == 2
+    assert stub_adapters == ["a.desktop", "b.desktop"]
 
 
 def test_close_keeps_the_definition(ctx, backend, stub_adapters):

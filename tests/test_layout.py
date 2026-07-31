@@ -82,3 +82,47 @@ def test_slot_for_out_of_range_is_full_screen():
 )
 def test_snap_rounds_and_clamps(value, expected):
     assert snap(value) == pytest.approx(expected)
+
+
+# -- Self healing ------------------------------------------------------------
+
+
+def test_healed_leaves_a_good_layout_alone():
+    layout, problems = preset_for(2).healed(2)
+    assert len(layout.slots) == 2
+    assert problems == []
+
+
+def test_healed_rebuilds_when_the_slot_count_is_wrong():
+    """Adding an app without touching the layout leaves it short."""
+    layout, problems = preset_for(1).healed(3)
+    assert len(layout.slots) == 3
+    assert problems
+
+
+def test_healed_grows_a_zero_sized_slot():
+    """A slot dragged to nothing would launch a window with no area."""
+    broken = Layout(slots=[Slot(0.0, 0.0, 0.0, 1.0), Slot(0.5, 0.0, 0.5, 1.0)])
+    layout, problems = broken.healed(2)
+    assert all(s.width > 0 and s.height > 0 for s in layout.slots)
+    assert problems
+
+
+def test_healed_pulls_a_slot_back_on_screen():
+    off = Layout(slots=[Slot(0.9, 0.0, 0.5, 1.0), Slot(0.0, 0.0, 0.5, 1.0)])
+    layout, problems = off.healed(2)
+    assert all(s.x + s.width <= 1.0 + 1e-6 for s in layout.slots)
+    assert all(s.y + s.height <= 1.0 + 1e-6 for s in layout.slots)
+    assert problems
+
+
+def test_healed_with_no_apps_is_empty():
+    layout, problems = preset_for(3).healed(0)
+    assert layout.slots == []
+    assert problems == []
+
+
+def test_a_healed_layout_still_yields_directions():
+    """Healing has to produce something the tiling code can actually use."""
+    layout, _ = Layout(slots=[Slot(0.0, 0.0, 0.0, 0.0)]).healed(3)
+    assert len(split_directions(layout.slots)) == 2

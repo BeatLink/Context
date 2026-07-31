@@ -161,3 +161,61 @@ def test_exact_title_opens_rather_than_duplicating(gtk_app, window_factory):
     run_app(gtk_app, body)
     assert opened == ["alpha"]
     assert len(store.contexts) == 1
+
+
+def test_urls_are_editable_rows_not_a_text_box(gtk_app, isolated_store):
+    """Each URL is separately removable, rather than lines in one box."""
+    from context.apps import App
+    from context.resource_page import ResourcePage
+    from context.resources import Resource
+
+    resource = Resource(
+        app_id="firefox.desktop", urls=["https://a.com", "https://b.com"]
+    )
+    app_info = App(id="firefox.desktop", name="Firefox", description="", icon=None)
+    seen = {}
+
+    def body(app):
+        page = ResourcePage(app_info, resource, lambda r: None)
+        seen["rows"] = len(page.url_rows())
+        seen["urls"] = page.current_urls()
+
+        page._add_url("c.com")
+        seen["after_add"] = page.current_urls()
+
+        page._remove_url(page.url_rows()[0])
+        seen["after_remove"] = page.current_urls()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["rows"] == 2
+    assert seen["urls"] == ["https://a.com", "https://b.com"]
+    # A bare host is normalised on the way out.
+    assert seen["after_add"][-1] == "https://c.com"
+    assert seen["after_remove"] == ["https://b.com", "https://c.com"]
+
+
+def test_path_apps_get_a_picker_not_a_url_list(gtk_app, isolated_store):
+    from context.apps import App
+    from context.resource_page import ResourcePage
+    from context.resources import Resource
+
+    resource = Resource(app_id="codium.desktop")
+    app_info = App(id="codium.desktop", name="VSCodium", description="", icon=None)
+    seen = {}
+
+    def body(app):
+        page = ResourcePage(app_info, resource, lambda r: None)
+        seen["has_path_row"] = page.path_row is not None
+        seen["urls_hidden"] = not page.url_section.get_visible()
+        page._set_path("/tmp/project")
+        seen["subtitle"] = page.path_row.get_subtitle()
+        page._set_path(None)
+        seen["cleared"] = page.path_row.get_subtitle()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["has_path_row"]
+    assert seen["urls_hidden"]
+    assert seen["subtitle"] == "/tmp/project"
+    assert seen["cleared"] == "nothing chosen"

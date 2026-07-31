@@ -27,6 +27,7 @@ class LaunchResult:
     workspace: str | None = None
     reused_workspace: bool = False
     resized: int = 0
+    layout_repaired: bool = False
 
     @property
     def ok(self) -> bool:
@@ -151,12 +152,26 @@ def launch_context(
             result.reused_workspace = True
             return result
 
+    # Repair the layout before using it. A hand-edited contexts.json, or a
+    # context whose apps changed without its slots, would otherwise either tile
+    # into nonsense or launch nothing at all.
+    # Always take the healed layout, not only when something was wrong: a
+    # context with no layout at all gets one, so every launch lands in a known
+    # arrangement rather than wherever the compositor happens to put things.
+    healed, problems = ctx.layout.healed(len(ctx.resources))
+    ctx.layout = healed
+    if problems:
+        for problem in problems:
+            log.warning("layout for %s %s; repaired", ctx.title, problem)
+        result.layout_repaired = True
+
     handle = workspace.handle if workspace is not None else None
     result.launched, result.failed = _launch_resources(ctx, wm, handle)
 
     # preselect only chooses a side, so every split starts even. Correct the
     # proportions once all the windows are up.
-    if handle is not None and ctx.layout.slots:
+    # Nothing to proportion with a single window: it fills the workspace.
+    if handle is not None and len(ctx.layout.slots) > 1:
         ratios = getattr(wm, "apply_ratios", None)
         if ratios is not None:
             result.resized = ratios(handle, ctx.layout.slots)

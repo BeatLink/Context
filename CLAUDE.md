@@ -54,6 +54,10 @@ and registration in `__init__.py`.
 
 ## Working rules
 
+**Track the work in a todo list.** Requests arrive faster than they are finished
+and it is easy to lose one silently. Put every request on the list as it comes
+in, keep one item in progress, and mark items done as they land.
+
 Every change should land as a complete unit:
 
 1. **Add or update tests.** A fix without a test comes back. Bugs that reached
@@ -61,6 +65,29 @@ Every change should land as a complete unit:
 2. **Update the roadmap.** Mark what is done, add what the change revealed.
 3. **Commit with a message that explains the why**, not just the what. The
    interesting part is usually the constraint discovered, not the diff.
+
+## Documentation style
+
+The README describes what the software does, for someone meeting it for the
+first time. It is not a changelog and not a record of decisions.
+
+- Write features as they are, not as they became. No "rather than", "previously",
+  "this used to", or "the reason for this is".
+- Leave out the alternatives that were rejected and the bugs that shaped a
+  design. Those belong in commit messages, where the history is the point.
+- A reader has no memory of earlier versions and does not need one.
+
+Design rationale still belongs somewhere — this file for constraints worth
+remembering, ROADMAP.md for what is planned and why, commit messages for what
+changed and what forced it.
+
+## Theming
+
+Context draws its own app tiles and layout preview, so libadwaita has no styling
+for them. Colours live in `context/theme.py` and are read from
+`$XDG_CONFIG_HOME/context/theme.json`, falling back to the defaults. Never
+hard-code a colour in a widget or a Cairo call — add it to `Theme` instead, so
+both the stylesheet and the drawing code get it from the same place.
 
 ## Testing
 
