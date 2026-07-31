@@ -27,6 +27,10 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import GLib, GObject, Gtk
 
+from .logging_setup import get_logger
+
+log = get_logger("widgets")
+
 # How long a toast stays up when nothing says otherwise.
 DEFAULT_TOAST_SECONDS = 3
 
@@ -361,7 +365,14 @@ class AlertDialog(Gtk.Box):
         overlay = _find_overlay(window)
         if overlay is None:
             # Nothing to draw into. Better to act on the default than to block
-            # on a dialog that will never be seen.
+            # on a dialog that will never be seen — but loudly: this is how the
+            # forget button silently did nothing until its window grew an
+            # overlay, and a fallback that hides itself will hide the next one.
+            log.warning(
+                "no overlay to present a dialog in %s; answering %r",
+                type(window).__name__ if window is not None else "no window",
+                self._default,
+            )
             if self._default:
                 self._respond(self._default)
             return
