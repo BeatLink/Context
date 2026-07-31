@@ -14,6 +14,12 @@ PROFILE_DEDICATED = "dedicated"
 PROFILE_MAIN = "main"
 PROFILE_MODES = (PROFILE_DEDICATED, PROFILE_MAIN)
 
+# Browsers open in the profile the user already browses with. Adding Firefox to
+# a context and getting a browser with none of your addons, logins or bookmarks
+# is a surprise; keeping a context's tabs separate is a deliberate choice, so it
+# is the one that has to be asked for.
+PROFILE_DEFAULT = PROFILE_MAIN
+
 
 @dataclass
 class Resource:
@@ -21,7 +27,7 @@ class Resource:
     urls: list[str] = field(default_factory=list)
     path: str | None = None
     profile: str | None = None
-    profile_mode: str = PROFILE_DEDICATED
+    profile_mode: str = PROFILE_DEFAULT
     command: str | None = None
     # Compatibility switches. Apps differ in how they behave when already
     # running, and the right answer is per-app rather than something Context can
@@ -37,8 +43,10 @@ class Resource:
         if not isinstance(data.get("urls"), list):
             data["urls"] = []
         data["urls"] = [str(u) for u in data["urls"] if str(u).strip()]
+        # `to_dict` always writes profile_mode, so a stored resource carries its
+        # own choice and only a legacy or hand-edited one falls back here.
         if data.get("profile_mode") not in PROFILE_MODES:
-            data["profile_mode"] = PROFILE_DEDICATED
+            data["profile_mode"] = PROFILE_DEFAULT
         for flag in ("force_new_window", "single_instance"):
             if flag in data:
                 data[flag] = bool(data[flag])

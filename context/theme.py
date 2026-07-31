@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from .logging_setup import get_logger
@@ -71,6 +71,14 @@ class Theme:
     tile_hover: str = "#ffffff1f"
     tile_selected: str = "#5ac0c038"
 
+    # Collapsed sidebar. Saved contexts recede, open ones are lit, and the one
+    # you are in is ringed — three states that differ in more than shade.
+    rail_background: str = "#ffffff08"
+    rail_hover: str = "#ffffff24"
+    rail_open: str = "#5ac0c033"
+    rail_active: str = "#5ac0c059"
+    rail_divider: str = "#ffffff26"
+
     @classmethod
     def load(cls) -> "Theme":
         path = theme_path()
@@ -125,10 +133,118 @@ class Theme:
     background-color: {self.tile_selected};
     border-color: {self.accent};
 }}
+
+.ctx-rail-button {{
+    background-color: {self.rail_background};
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 6px;
+    min-width: 0;
+    min-height: 0;
+}}
+.ctx-rail-button:hover {{
+    background-color: {self.rail_hover};
+}}
+
+/* Saved: dimmed and unfilled, so the running contexts read first. */
+.ctx-rail-button.ctx-saved {{
+    opacity: 0.55;
+}}
+.ctx-rail-button.ctx-saved:hover {{
+    opacity: 1;
+}}
+
+/* Open: filled and at full strength. */
+.ctx-rail-button.ctx-open {{
+    background-color: {self.rail_open};
+    opacity: 1;
+}}
+
+/* Current: filled harder and ringed in the accent. */
+.ctx-rail-button.ctx-active {{
+    background-color: {self.rail_active};
+    border-color: {self.accent};
+    opacity: 1;
+}}
+
+.ctx-rail-divider {{
+    background-color: {self.rail_divider};
+    margin: 4px 10px;
+}}
 """.encode()
 
 
+# Light mode needs its own palette: the defaults are translucent white, which
+# vanishes on a light background. Only the values that depend on the background
+# are overridden — the accent is the same colour either way.
+LIGHT_OVERRIDES = {
+    "surface": "#fafafa",
+    "on_surface": "#1e1e1e",
+    "preview_background": "#00000014",
+    "tile_background": "#00000010",
+    "tile_hover": "#0000001f",
+    "rail_background": "#00000010",
+    "rail_hover": "#00000024",
+    "rail_divider": "#00000026",
+}
+
+
+def for_scheme(base: "Theme", dark: bool) -> "Theme":
+    """The theme as it should look against a light or dark background.
+
+    Anything the user set explicitly wins: a hand-written theme.json is a
+    deliberate choice and must not be recoloured underneath them.
+    """
+    if dark:
+        return base
+    explicit = _explicit_keys()
+    changes = {k: v for k, v in LIGHT_OVERRIDES.items() if k not in explicit}
+    return replace(base, **changes) if changes else base
+
+
+def _explicit_keys() -> set[str]:
+    try:
+        raw = json.loads(theme_path().read_text())
+    except (OSError, json.JSONDecodeError):
+        return set()
+    return set(raw) if isinstance(raw, dict) else set()
+
+
+def prefers_dark() -> bool:
+    """Whether the interface should be drawn dark, honouring the setting."""
+    from gi.repository import Adw
+
+    from . import settings
+
+    scheme = settings.current().color_scheme
+    if scheme == "dark":
+        return True
+    if scheme == "light":
+        return False
+    return bool(Adw.StyleManager.get_default().get_dark())
+
+
+def apply_color_scheme() -> None:
+    """Tell libadwaita which scheme to use, and restyle for it."""
+    from gi.repository import Adw
+
+    from . import settings
+
+    scheme = settings.current().color_scheme
+    manager = Adw.StyleManager.get_default()
+    manager.set_color_scheme(
+        {
+            "dark": Adw.ColorScheme.FORCE_DARK,
+            "light": Adw.ColorScheme.FORCE_LIGHT,
+            "system": Adw.ColorScheme.DEFAULT,
+        }.get(scheme, Adw.ColorScheme.DEFAULT)
+    )
+    reinstall()
+
+
 _current: Theme | None = None
+_installed = False
+_provider = None
 
 
 def current() -> Theme:
@@ -143,3 +259,36 @@ def reload() -> Theme:
     global _current
     _current = Theme.load()
     return _current
+
+
+def install() -> bool:
+    """Put the stylesheet on the display, once.
+
+    Anything using a `ctx-` style class has to call this — the launcher styles
+    its rail, the editor its tiles, and whichever appears first must not be the
+    unstyled one.
+    """
+    global _installed, _provider
+    if _installed:
+        return True
+
+    from gi.repository import Gdk, Gtk
+
+    display = Gdk.Display.get_default()
+    if display is None:
+        return False
+    _provider = Gtk.CssProvider()
+    _provider.load_from_data(for_scheme(current(), prefers_dark()).css())
+    Gtk.StyleContext.add_provider_for_display(
+        display, _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+    _installed = True
+    return True
+
+
+def reinstall() -> bool:
+    """Reload the stylesheet in place, for when the scheme or theme changes."""
+    if not _installed:
+        return install()
+    _provider.load_from_data(for_scheme(current(), prefers_dark()).css())
+    return True

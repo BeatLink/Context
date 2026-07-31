@@ -35,7 +35,18 @@ def log_path() -> Path:
 
 
 def _level() -> int:
-    raw = (os.environ.get(ENV_LEVEL) or "info").strip().lower()
+    raw = os.environ.get(ENV_LEVEL)
+    if not raw:
+        # `settings` logs through this module, so it is imported lazily and its
+        # own import is tolerated failing: during it, `current` does not exist
+        # yet and the default level is the right answer anyway.
+        try:
+            from . import settings
+
+            raw = settings.current().log_level
+        except (ImportError, AttributeError):
+            raw = "info"
+    raw = raw.strip().lower()
     return {
         "debug": logging.DEBUG,
         "info": logging.INFO,

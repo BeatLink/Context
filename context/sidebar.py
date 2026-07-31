@@ -14,6 +14,7 @@ import os
 
 import gi
 
+from . import settings
 from .logging_setup import get_logger
 
 gi.require_version("Gtk", "4.0")
@@ -87,9 +88,10 @@ def ensure_preloaded() -> None:
         log.error("could not re-exec with the layer-shell preload: %s", exc)
         return
 
-DEFAULT_WIDTH = 380
+# Defaults live in `settings`; these names remain for the environment overrides.
 ENV_EDGE = "CONTEXT_SIDEBAR_EDGE"
 ENV_WIDTH = "CONTEXT_SIDEBAR_WIDTH"
+ENV_RAIL_WIDTH = "CONTEXT_RAIL_WIDTH"
 
 
 def available() -> bool:
@@ -113,15 +115,45 @@ def available() -> bool:
 
 
 def configured_edge() -> str:
-    edge = (os.environ.get(ENV_EDGE) or "left").strip().casefold()
-    return edge if edge in EDGES else "left"
+    raw = os.environ.get(ENV_EDGE)
+    if raw:
+        edge = raw.strip().casefold()
+        return edge if edge in EDGES else "left"
+    return settings.current().sidebar_edge
 
 
 def configured_width() -> int:
     raw = os.environ.get(ENV_WIDTH)
     if raw and raw.strip().isdigit():
-        return max(200, int(raw.strip()))
-    return DEFAULT_WIDTH
+        return max(settings.MIN_SIDEBAR_WIDTH, int(raw.strip()))
+    return settings.current().sidebar_width
+
+
+def rail_width() -> int:
+    raw = os.environ.get(ENV_RAIL_WIDTH)
+    if raw and raw.strip().isdigit():
+        return max(settings.MIN_RAIL_WIDTH, int(raw.strip()))
+    return settings.current().rail_width
+
+
+def resize(window, width: int, edge: str | None = None) -> None:
+    """Change how much space a docked window takes.
+
+    The exclusive zone is on `auto`, so it follows the window's size and tiled
+    windows reflow to match without asking the compositor for anything.
+
+    Both the size request and the default size have to move. The request alone
+    is only a minimum, so the surface stayed at its original width and the
+    collapse reserved just as much space as before.
+    """
+    if not available():
+        return
+    if (edge or configured_edge()) in ("left", "right"):
+        window.set_size_request(width, -1)
+        window.set_default_size(width, -1)
+    else:
+        window.set_size_request(-1, width)
+        window.set_default_size(-1, width)
 
 
 def apply(window, edge: str | None = None, width: int | None = None) -> bool:
@@ -179,6 +211,32 @@ def apply_overlay(window) -> bool:
         LayerShell.set_anchor(window, getattr(LayerShell.Edge, attr), True)
     # No exclusive zone: an overlay covers the bars rather than reserving space.
     LayerShell.set_exclusive_zone(window, -1)
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.EXCLUSIVE)
+    window._context_overlay = True
+    return True
+
+
+def suspend_overlay(window) -> bool:
+    """Get an overlay out of the way of an ordinary window.
+
+    A layer-shell overlay is composited above every ordinary toplevel and holds
+    the keyboard exclusively. Anything that opens a real window — a portal file
+    chooser, say — is therefore drawn underneath it and cannot be typed into.
+    Hiding the overlay for the duration is the only way the two coexist.
+
+    Returns whether anything was suspended, so callers know to restore.
+    """
+    if not getattr(window, "_context_overlay", False):
+        return False
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.NONE)
+    window.set_visible(False)
+    return True
+
+
+def resume_overlay(window) -> bool:
+    if not getattr(window, "_context_overlay", False):
+        return False
+    window.set_visible(True)
     LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.EXCLUSIVE)
     return True
 

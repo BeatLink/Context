@@ -42,3 +42,32 @@ def test_only_one_file_handler_is_ever_attached(tmp_path, monkeypatch):
 
     files = [h for h in logger.handlers if isinstance(h, RotatingFileHandler)]
     assert len(files) == 1
+
+
+def test_ui_state_round_trips(tmp_path, monkeypatch):
+    from context import uistate
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert uistate.get("collapsed", False) is False
+    uistate.save(collapsed=True)
+    assert uistate.get("collapsed") is True
+
+
+def test_ui_state_merges_rather_than_replaces(tmp_path, monkeypatch):
+    from context import uistate
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    uistate.save(collapsed=True)
+    uistate.save(other="kept")
+    assert uistate.get("collapsed") is True
+    assert uistate.get("other") == "kept"
+
+
+def test_broken_ui_state_is_ignored(tmp_path, monkeypatch):
+    from context import uistate
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    path = uistate.state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json")
+    assert uistate.load() == {}

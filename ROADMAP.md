@@ -185,19 +185,19 @@ The state is already known: `context_is_open()` answers it per context, and the
 row already renders an `open` marker. What is missing is the grouping and moving
 delete out of the row.
 
-### 5. Collapse the sidebar to a rail
+### 5. Collapse the sidebar to a rail — *done*
 
-The sidebar reserves 380px permanently, which is a lot to give up for something
-mostly idle. A toggle should shrink it to taskbar width — an icon per context,
-no titles or search — and expand it back.
+A button in the header shrinks the sidebar to `CONTEXT_RAIL_WIDTH` (56px by
+default): one icon per context, open ones highlighted, the active one accented,
+click to switch. The exclusive zone follows the window size, so the space is
+handed back to tiled windows with no extra compositor work. The state is kept in
+`$XDG_STATE_HOME/context/ui.json` and restored on start.
 
-Collapsed it works like the bar's window list: one icon per context, open ones
-marked, click to switch. Expanded it is the current launcher.
+The rail lists every context rather than the current search results — there is
+no search bar at rail width to explain why some are missing.
 
-The width is already configurable (`CONTEXT_SIDEBAR_WIDTH`) and the exclusive zone
-follows the window size, so the compositor side needs no new work: the toggle
-changes the size request and swaps the content. Worth persisting the state so it
-survives a restart.
+Still to do: a keybind for the toggle, and hover-to-peek so a context can be
+identified without expanding.
 
 ### 6. Launch apps into the current context
 
@@ -305,23 +305,31 @@ Numbered workspaces are worth keeping even once contexts cover the same ground:
 they are the way back to a plain desktop when Context is not running, which
 matters while it is still the thing under development.
 
-### 9. Settings
+### 9. Settings — *page done, per-context visibility planned*
 
-There is no settings page: everything is an environment variable
-(`CONTEXT_SIDEBAR_EDGE`, `CONTEXT_SIDEBAR_WIDTH`, `CONTEXT_BACKEND`,
-`CONTEXT_LOG_LEVEL`), which is fine for development and wrong for a shell people
-use. A settings view should cover at least the sidebar's edge and width, whether
-it starts collapsed, and the log level.
+**Shipped.** A settings page reached from the launcher's header, covering the
+colour scheme, the sidebar edge, both widths, hover-to-expand and its delay, the
+backend, the refresh interval and the log level. Settings live in
+`$XDG_CONFIG_HOME/context/settings.json` and are hand-editable; environment
+variables still override them for a single run. The page also lists where every
+file lives and can write out the default theme.
 
-Per-context, the one that matters for the sidebar staying readable:
+Changes apply as they are made. The widths and the colour scheme take effect
+immediately; the edge, the backend and the log level say that they apply on
+restart rather than pretending otherwise.
 
-- **Show in the sidebar** — pinned contexts are always listed.
-- **Only show on search** — the context still exists and still opens by name, but
-  does not take up room in the list.
+**Still to do — per-context visibility.** With a handful of contexts everything
+can be listed; with fifty it cannot, and the alternative to this option is an
+arbitrary cutoff.
 
-With a handful of contexts everything can be listed; with fifty it cannot, and
-the alternative to this option is an arbitrary cutoff. It lives on the context's
-own editor page alongside the ephemeral toggle.
+- **Show in the sidebar** — listed in the saved group, as now.
+- **Only show on search** — hidden from the list, but otherwise unchanged.
+
+This hides nothing: **every context is always reachable by typing its name**,
+whether or not it is listed, and that is what makes the option safe to offer.
+It belongs on the context's own editor page beside the ephemeral toggle, and it
+applies to the rail as well as the expanded list — the rail has less room, not
+more.
 
 ### 10. Context timers
 

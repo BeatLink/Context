@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from context.layout import Layout, Slot
-from context.resources import PROFILE_MAIN, Resource
+from context.resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource
 from context.store import Context, ContextStore
 
 
@@ -44,15 +44,36 @@ def test_unknown_fields_are_ignored():
     assert ctx.title == "x"
 
 
-def test_profile_mode_defaults_and_validates():
-    assert Resource.from_dict({"app_id": "firefox.desktop"}).profile_mode == "dedicated"
+def test_profile_mode_defaults_to_the_main_profile():
+    """Adding a browser opens the browser you already use.
+
+    A dedicated profile arrives with no addons, logins or bookmarks, which is a
+    surprise when all you did was add Firefox to a context.
+    """
+    assert Resource(app_id="firefox.desktop").uses_main_profile
+    assert Resource.from_dict({"app_id": "firefox.desktop"}).uses_main_profile
     assert Resource.from_dict(
         {"app_id": "firefox.desktop", "profile_mode": "nonsense"}
-    ).profile_mode == "dedicated"
+    ).uses_main_profile
+
+
+def test_a_stored_dedicated_profile_is_not_migrated():
+    """Changing the default must not move existing contexts off their profiles.
+
+    `to_dict` always writes profile_mode, so every saved resource carries its
+    own choice; only a legacy file falls back to the default.
+    """
     resource = Resource.from_dict(
-        {"app_id": "firefox.desktop", "profile_mode": PROFILE_MAIN}
+        {"app_id": "firefox.desktop", "profile_mode": PROFILE_DEDICATED}
     )
-    assert resource.uses_main_profile
+    assert not resource.uses_main_profile
+    assert resource.to_dict()["profile_mode"] == PROFILE_DEDICATED
+
+
+def test_profile_mode_survives_a_round_trip():
+    for mode in (PROFILE_MAIN, PROFILE_DEDICATED):
+        original = Resource(app_id="firefox.desktop", profile_mode=mode)
+        assert Resource.from_dict(original.to_dict()).profile_mode == mode
 
 
 def test_search_is_case_insensitive(isolated_store):

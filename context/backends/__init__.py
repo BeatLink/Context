@@ -25,6 +25,11 @@ ENV_OVERRIDE = "CONTEXT_BACKEND"
 
 def detect(preferred: str | None = None) -> Backend:
     name = preferred or os.environ.get(ENV_OVERRIDE)
+    if not name:
+        from .. import settings
+
+        chosen = settings.current().backend
+        name = None if chosen == "auto" else chosen
     if name:
         factory = BACKENDS.get(name.strip().casefold())
         if factory is not None:

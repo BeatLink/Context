@@ -9,6 +9,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from . import sidebar
 from .adapters import supports_command, supports_paths, supports_profiles
 from .apps import App
 from .resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource, normalize_url
@@ -102,22 +103,24 @@ class ResourcePage(Adw.NavigationPage):
             command_list.append(self.command_row)
             content.append(command_list)
 
-        self.main_profile_switch: Gtk.Switch | None = None
+        # Phrased as the departure from the default rather than as the default,
+        # so the switch is off until the user asks for something.
+        self.dedicated_profile_switch: Gtk.Switch | None = None
         if supports_profiles(resource):
             options = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
             options.add_css_class("boxed-list")
 
             row = Adw.ActionRow(
-                title="Use my main profile",
+                title="Give this context its own profile",
                 subtitle=(
-                    "Opens in your existing browser, keeping addons, logins and "
-                    "history. Tabs are not kept separate between contexts."
+                    "Keeps its tabs, cookies and history separate and restores "
+                    "them on reopen. Your addons and logins are not carried over."
                 ),
             )
-            self.main_profile_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-            self.main_profile_switch.set_active(resource.uses_main_profile)
-            row.add_suffix(self.main_profile_switch)
-            row.set_activatable_widget(self.main_profile_switch)
+            self.dedicated_profile_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+            self.dedicated_profile_switch.set_active(not resource.uses_main_profile)
+            row.add_suffix(self.dedicated_profile_switch)
+            row.set_activatable_widget(self.dedicated_profile_switch)
             options.append(row)
             content.append(options)
 
@@ -235,6 +238,12 @@ class ResourcePage(Adw.NavigationPage):
             dialog.set_filters(filters)
             dialog.set_default_filter(workspace_filter)
 
+        root = self.get_root()
+        # The chooser is an ordinary toplevel and the editor is a layer-shell
+        # overlay, which the compositor draws above every ordinary window. Left
+        # up, the chooser is hidden behind it and cannot be answered.
+        suspended = sidebar.suspend_overlay(root) if root is not None else False
+
         def done(source, result):
             try:
                 chosen = (
@@ -243,15 +252,18 @@ class ResourcePage(Adw.NavigationPage):
                     else source.open_finish(result)
                 )
             except GLib.Error:
-                return  # Cancelled.
+                chosen = None  # Cancelled.
+            finally:
+                if suspended:
+                    sidebar.resume_overlay(root)
             if chosen is not None:
                 self._set_path(chosen.get_path())
 
-        root = self.get_root()
+        parent = None if suspended else root
         if mode == "folder":
-            dialog.select_folder(root, None, done)
+            dialog.select_folder(parent, None, done)
         else:
-            dialog.open(root, None, done)
+            dialog.open(parent, None, done)
 
     def _set_path(self, path: str | None) -> None:
         self.resource.path = path
@@ -264,8 +276,10 @@ class ResourcePage(Adw.NavigationPage):
         self.resource.single_instance = self.single_instance_switch.get_active()
         if self.command_row is not None:
             self.resource.command = self.command_row.get_text().strip() or None
-        if self.main_profile_switch is not None:
+        if self.dedicated_profile_switch is not None:
             self.resource.profile_mode = (
-                PROFILE_MAIN if self.main_profile_switch.get_active() else PROFILE_DEDICATED
+                PROFILE_DEDICATED
+                if self.dedicated_profile_switch.get_active()
+                else PROFILE_MAIN
             )
         self.on_done(self.resource)

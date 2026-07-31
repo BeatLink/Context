@@ -287,25 +287,6 @@ class LayoutPreview(Gtk.DrawingArea):
                 cr.stroke()
 
 
-_grid_css_loaded = False
-
-
-def _install_grid_css() -> None:
-    """Load the app-grid stylesheet once per display."""
-    global _grid_css_loaded
-    if _grid_css_loaded:
-        return
-    display = Gdk.Display.get_default()
-    if display is None:
-        return
-    provider = Gtk.CssProvider()
-    provider.load_from_data(theme.current().css())
-    Gtk.StyleContext.add_provider_for_display(
-        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-    )
-    _grid_css_loaded = True
-
-
 def _icon_texture(icon, size: int):
     """Render a Gio.Icon to a texture, or None if it cannot be looked up."""
     if icon is None:
@@ -395,7 +376,7 @@ class EditorPage(Adw.NavigationPage):
         self.on_cancel = on_cancel
         self.on_delete = on_delete
         self.is_new = is_new
-        _install_grid_css()
+        theme.install()
         self.apps = installed_apps()
         # An ordered list rather than a set: a context may hold two terminals, and
         # position in this list is what maps a resource to a layout slot.
@@ -649,23 +630,28 @@ class EditorPage(Adw.NavigationPage):
     # -- commit --------------------------------------------------------------
 
     def _confirm_delete(self) -> None:
-        dialog = Adw.MessageDialog(
+        """Confirm forgetting, inside the editor rather than above it.
+
+        `Adw.AlertDialog` draws within the window it is presented on.
+        `Adw.MessageDialog` is a toplevel of its own, which cannot work here:
+        the editor is a layer-shell overlay covering the output and holding the
+        keyboard exclusively, so the dialog was rendered underneath it and could
+        never be answered — the editor simply appeared to freeze.
+        """
+        dialog = Adw.AlertDialog(
             heading=f"Forget “{self.ctx.title}”?",
             body="The context definition is removed. Any windows it opened stay open.",
-            modal=True,
         )
-        root = self.get_root()
-        if root is not None:
-            dialog.set_transient_for(root)
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("delete", "Forget")
         dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
         dialog.connect(
             "response",
             lambda _d, response: self.on_delete(self.ctx) if response == "delete" else None,
         )
-        dialog.present()
+        dialog.present(self)
 
     def _commit_cancel(self) -> None:
         self.on_cancel()

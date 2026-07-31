@@ -1,0 +1,143 @@
+"""User settings.
+
+Settings are user-authored and hand-editable, so every value that reaches the
+interface has to survive a file containing nonsense.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from context import settings
+from context.settings import Settings
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    for name in ("CONTEXT_SIDEBAR_EDGE", "CONTEXT_SIDEBAR_WIDTH", "CONTEXT_RAIL_WIDTH"):
+        monkeypatch.delenv(name, raising=False)
+    yield tmp_path
+
+
+def test_defaults_are_usable():
+    live = Settings()
+    assert live.sidebar_width > live.rail_width
+    assert live.auto_expand is False
+    assert live.backend == "auto"
+
+
+def test_widths_are_clamped_to_what_can_be_rendered():
+    """A width below the minimum leaves a sidebar too narrow to show a list."""
+    tiny = Settings(sidebar_width=1, rail_width=1).validated()
+    assert tiny.sidebar_width == settings.MIN_SIDEBAR_WIDTH
+    assert tiny.rail_width == settings.MIN_RAIL_WIDTH
+
+    huge = Settings(sidebar_width=99999, rail_width=99999).validated()
+    assert huge.sidebar_width == settings.MAX_SIDEBAR_WIDTH
+    assert huge.rail_width == settings.MAX_RAIL_WIDTH
+
+
+def test_nonsense_values_fall_back():
+    live = Settings(
+        sidebar_edge="diagonal", log_level="shouty", backend="cinnamon"
+    ).validated()
+    assert live.sidebar_edge == "left"
+    assert live.log_level == "info"
+    assert live.backend == "auto"
+
+
+def test_a_broken_file_is_ignored(isolated_settings):
+    settings.settings_path().parent.mkdir(parents=True, exist_ok=True)
+    settings.settings_path().write_text("{not json")
+    assert Settings.load().sidebar_width == Settings().sidebar_width
+
+
+def test_a_non_object_file_is_ignored(isolated_settings):
+    settings.settings_path().parent.mkdir(parents=True, exist_ok=True)
+    settings.settings_path().write_text("[1, 2, 3]")
+    assert Settings.load().sidebar_width == Settings().sidebar_width
+
+
+def test_unknown_keys_are_dropped(isolated_settings):
+    settings.settings_path().parent.mkdir(parents=True, exist_ok=True)
+    settings.settings_path().write_text(json.dumps({"sidebar_width": 500, "nope": 1}))
+    assert Settings.load().sidebar_width == 500
+
+
+def test_update_persists_and_becomes_live(isolated_settings):
+    settings.update(sidebar_width=500, rail_width=72)
+    assert settings.current().sidebar_width == 500
+    stored = json.loads(settings.settings_path().read_text())
+    assert stored["sidebar_width"] == 500
+    assert stored["rail_width"] == 72
+
+
+def test_update_leaves_other_values_alone(isolated_settings):
+    settings.update(sidebar_width=500)
+    settings.update(rail_width=72)
+    assert settings.current().sidebar_width == 500
+    assert settings.current().rail_width == 72
+
+
+def test_the_sidebar_reads_both_widths_from_settings(isolated_settings):
+    from context import sidebar
+
+    settings.update(sidebar_width=500, rail_width=72)
+    assert sidebar.configured_width() == 500
+    assert sidebar.rail_width() == 72
+
+
+def test_the_environment_still_wins(isolated_settings, monkeypatch):
+    """A one-off override for a single run has to keep working."""
+    from context import sidebar
+
+    settings.update(sidebar_width=500, rail_width=72)
+    monkeypatch.setenv("CONTEXT_SIDEBAR_WIDTH", "640")
+    monkeypatch.setenv("CONTEXT_RAIL_WIDTH", "40")
+    assert sidebar.configured_width() == 640
+    assert sidebar.rail_width() == 40
+
+
+def test_the_colour_scheme_defaults_to_the_desktop():
+    assert Settings().color_scheme == "system"
+
+
+def test_an_unknown_colour_scheme_falls_back():
+    assert Settings(color_scheme="sepia").validated().color_scheme == "system"
+
+
+def test_light_mode_recolours_what_depends_on_the_background(isolated_settings):
+    """The defaults are translucent white, which vanishes on a light surface."""
+    from context import theme
+
+    base = theme.Theme()
+    light = theme.for_scheme(base, dark=False)
+    assert light.rail_background != base.rail_background
+    assert light.tile_background != base.tile_background
+    # The accent identifies Context either way, so it does not move.
+    assert light.accent == base.accent
+
+
+def test_dark_mode_leaves_the_theme_alone(isolated_settings):
+    from context import theme
+
+    base = theme.Theme()
+    assert theme.for_scheme(base, dark=True) is base
+
+
+def test_a_hand_written_colour_is_not_recoloured(isolated_settings, monkeypatch):
+    """An explicit theme.json is a deliberate choice, in either scheme."""
+    from context import theme
+
+    path = theme.theme_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"rail_background": "#ff00ff"}))
+
+    light = theme.for_scheme(theme.Theme.load(), dark=False)
+    assert light.rail_background == "#ff00ff"
+    # Untouched keys still get the light treatment.
+    assert light.tile_background == theme.LIGHT_OVERRIDES["tile_background"]

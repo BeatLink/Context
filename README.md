@@ -40,10 +40,11 @@ beside it rather than underneath.
 <kbd>Down</kbd> moves from the search bar into the list. <kbd>Esc</kbd> clears
 the search.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `CONTEXT_SIDEBAR_EDGE` | `left` | `left`, `right`, `top`, or `bottom` |
-| `CONTEXT_SIDEBAR_WIDTH` | `380` | Thickness in px, minimum 200 |
+**Collapsing.** The button in the top corner shrinks the sidebar to a rail: one
+icon per context, open ones highlighted, click to switch. The space it was
+reserving goes back to your windows. The arrow at the top expands it again, and
+it reopens the way you left it.
+
 
 ## The editor
 
@@ -75,10 +76,10 @@ Each app in a context can be pointed at something.
 | Terminals | A directory, optionally running a command |
 | Anything else | Just launches |
 
-**Firefox** can use either a profile of its own or the one you already browse
-with. A dedicated profile keeps the context's tabs, cookies and history separate
-and restores them when you come back. Your main profile brings your addons,
-logins and history, at the cost of tabs not being separated per context.
+**Firefox** opens in the profile you already browse with, so your addons,
+logins and history are there. Turning on **Give this context its own profile**
+keeps its tabs, cookies and history separate instead, and restores them when
+you come back — at the cost of not carrying your addons and logins over.
 
 **Compatibility.** Two switches per app, for when it does not behave:
 
@@ -96,6 +97,34 @@ in the editor, behind a confirmation.
 
 If Context is restarted while contexts are open, it reconnects to them.
 
+## Settings
+
+The gear in the launcher's header. Changes apply as you make them; the few that
+need a restart say so.
+
+| Setting | Meaning |
+| --- | --- |
+| Colour scheme | Light, dark, or whatever the desktop is set to |
+| Edge | Which side the launcher docks to |
+| Expanded width | Pixels reserved when the launcher is open |
+| Collapsed width | Pixels reserved by the rail |
+| Expand on hover | Open the launcher while the pointer is over the rail |
+| Hover delay | How long to wait first, so passing over does not open it |
+| Window manager | Which backend drives workspaces |
+| Refresh interval | How often the open list is re-checked |
+| Log level | How much detail is written to the log |
+
+Settings are stored in `$XDG_CONFIG_HOME/context/settings.json` and can be
+edited by hand. Environment variables override them for a single run:
+
+| Variable | Meaning |
+| --- | --- |
+| `CONTEXT_SIDEBAR_EDGE` | `left`, `right`, `top`, or `bottom` |
+| `CONTEXT_SIDEBAR_WIDTH` | Expanded thickness in px |
+| `CONTEXT_RAIL_WIDTH` | Collapsed thickness in px |
+| `CONTEXT_BACKEND` | `hyprland` or `none` |
+| `CONTEXT_LOG_LEVEL` | `debug`, `info`, `warning`, `error` or `critical` |
+
 ## Theming
 
 Colours come from `$XDG_CONFIG_HOME/context/theme.json`. Anything it does not
@@ -110,7 +139,10 @@ set keeps the default:
 }
 ```
 
-Set `CONTEXT_THEME` to load a theme from elsewhere.
+Light and dark have separate palettes, so a colour that works on one does not
+disappear on the other. Anything you set explicitly is used in both. **Write the
+default theme** in settings creates the file for you. Set `CONTEXT_THEME` to
+load one from elsewhere.
 
 ## Where things are kept
 
@@ -119,9 +151,9 @@ Set `CONTEXT_THEME` to load a theme from elsewhere.
 | `$XDG_DATA_HOME/context/contexts.json` | Context definitions |
 | `$XDG_DATA_HOME/context/firefox-profiles/` | Per-context browser profiles |
 | `$XDG_STATE_HOME/context/context.log` | Log, rotated |
+| `$XDG_STATE_HOME/context/ui.json` | Whether the sidebar is collapsed |
+| `$XDG_CONFIG_HOME/context/settings.json` | Settings |
 | `$XDG_CONFIG_HOME/context/theme.json` | Theme |
-
-`CONTEXT_LOG_LEVEL` takes `debug`, `info`, `warning`, `error` or `critical`.
 
 ## Window managers
 
@@ -149,8 +181,9 @@ python3 -m pytest tests/ -q            # logic
 xvfb-run -a python3 -m pytest tests/   # including the interface
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the working notes and [ROADMAP.md](ROADMAP.md)
-for what is planned.
+See [CLAUDE.md](CLAUDE.md) for the working notes, [ROADMAP.md](ROADMAP.md) for
+what is planned, and [FEATURES.md](FEATURES.md) for what an application needs to
+do to work well inside a context.
 
 ## Layout
 
@@ -168,5 +201,8 @@ for what is planned.
 | `context/theme.py` | Colours |
 | `context/logging_setup.py` | Logging |
 | `context/sidebar.py` | Docking the launcher to a screen edge |
+| `context/settings.py` | User settings |
+| `context/settings_page.py` | The settings page |
+| `context/uistate.py` | Interface state that survives a restart |
 | `context/adapters/` | How each app opens what it is given |
 | `context/backends/` | How each window manager is driven |

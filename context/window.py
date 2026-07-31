@@ -9,9 +9,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from . import sidebar
+from . import settings, sidebar, theme, uistate
 from .editor_window import EditorWindow
 from .launcher import open_state
 from .layout import Layout
@@ -20,6 +20,9 @@ from .resources import Resource
 from .store import Context, ContextStore
 
 log = get_logger("window")
+
+# Large enough to identify a context at a glance, since the rail has no labels.
+RAIL_ICON_SIZE = 32
 
 
 def relative_time(stamp: float) -> str:
@@ -94,21 +97,43 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._open_ids: set[str] = set()
         self._active_id: str | None = None
         self._open_signature: tuple | None = None
+        self._auto_expanded = False
+        self._auto_expand_source: int | None = None
 
         self.set_default_size(560, 620)
+        # The rail's buttons are styled by the theme, so the stylesheet has to
+        # be on the display before one is built.
+        theme.install()
+        theme.apply_color_scheme()
         # Docks the window to a screen edge where the compositor supports it.
         self.is_sidebar = sidebar.apply(self)
 
         self.nav = Adw.NavigationView()
 
-        toolbar = Adw.ToolbarView()
-        header = Adw.HeaderBar()
-        header.add_css_class("flat")
+        self.toolbar = Adw.ToolbarView()
+        self.header = Adw.HeaderBar()
+        self.header.add_css_class("flat")
         if self.is_sidebar:
             # Nothing to minimise or close when docked.
-            header.set_show_start_title_buttons(False)
-            header.set_show_end_title_buttons(False)
-        toolbar.add_top_bar(header)
+            self.header.set_show_start_title_buttons(False)
+            self.header.set_show_end_title_buttons(False)
+
+        self.settings_button = Gtk.Button(icon_name="preferences-system-symbolic")
+        self.settings_button.add_css_class("flat")
+        self.settings_button.set_tooltip_text("Settings")
+        self.settings_button.connect("clicked", lambda _b: self.open_settings())
+        self.header.pack_start(self.settings_button)
+
+        # Collapsing is only meaningful for a docked sidebar; as an ordinary
+        # window there is no reserved space to give back.
+        self.collapse_button: Gtk.Button | None = None
+        if self.is_sidebar:
+            self.collapse_button = Gtk.Button(icon_name="go-previous-symbolic")
+            self.collapse_button.add_css_class("flat")
+            self.collapse_button.set_tooltip_text("Collapse to a rail")
+            self.collapse_button.connect("clicked", lambda _b: self.toggle_collapsed())
+            self.header.pack_end(self.collapse_button)
+        self.toolbar.add_top_bar(self.header)
 
         self.toasts = Adw.ToastOverlay()
 
@@ -183,9 +208,36 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.stack.add_named(self.empty_state, "empty")
         content.append(self.stack)
 
-        toolbar.set_content(content)
+        # Collapsed, the sidebar is a strip of icons — one per context, the way
+        # the bar shows windows. The full launcher is swapped out rather than
+        # squeezed, because search and titles have nowhere to go at rail width.
+        self.rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.rail.set_margin_top(8)
+        self.rail.set_margin_bottom(8)
 
-        self.home_page = Adw.NavigationPage(child=toolbar, title="Context", tag="home")
+        self.expand_button = Gtk.Button(icon_name="go-next-symbolic")
+        self.expand_button.add_css_class("flat")
+        self.expand_button.set_tooltip_text("Expand the launcher")
+        self.expand_button.connect("clicked", lambda _b: self.toggle_collapsed())
+
+        rail_scroller = Gtk.ScrolledWindow(vexpand=True)
+        rail_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        rail_scroller.set_child(self.rail)
+
+        rail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        rail_box.append(self.expand_button)
+        rail_box.append(rail_scroller)
+
+        self.mode_stack = Gtk.Stack()
+        # A homogeneous stack requests the largest child's size, so the full
+        # launcher would hold the window at 380px however narrow the rail is.
+        self.mode_stack.set_hhomogeneous(False)
+        self.mode_stack.set_vhomogeneous(False)
+        self.mode_stack.add_named(content, "full")
+        self.mode_stack.add_named(rail_box, "rail")
+        self.toolbar.set_content(self.mode_stack)
+
+        self.home_page = Adw.NavigationPage(child=self.toolbar, title="Context", tag="home")
         self.nav.add(self.home_page)
         self.toasts.set_child(self.nav)
         self.set_content(self.toasts)
@@ -226,18 +278,21 @@ class LauncherWindow(Adw.ApplicationWindow):
         # click on another window take focus back, which GTK focus-leave never
         # reports while the layer holds the keyboard.
         pointer = Gtk.EventControllerMotion()
-        pointer.connect("enter", lambda *_a: self._take_keyboard(focus=False))
-        pointer.connect("leave", lambda *_a: self._release_keyboard())
+        pointer.connect("enter", lambda *_a: self._on_pointer_enter())
+        pointer.connect("leave", lambda *_a: self._on_pointer_leave())
         self.add_controller(pointer)
 
         self._read_open_state()
+        self.collapsed = bool(self.is_sidebar and uistate.get("collapsed", False))
+        self._apply_collapsed()
         self.refresh()
 
         # Which contexts are open changes outside this window — a context is
         # launched, its last window closes, you switch workspaces by keyboard.
         # Nothing notifies the launcher, so the open list is re-checked on a
         # timer; without it the list only updated when the user acted here.
-        GLib.timeout_add_seconds(2, self._poll_open_state)
+        self._poll_source: int | None = None
+        self._restart_poll()
 
     def _read_open_state(self) -> bool:
         """Ask the backend what is open. Returns whether anything changed."""
@@ -262,6 +317,149 @@ class LauncherWindow(Adw.ApplicationWindow):
             log.debug("open contexts changed: %d open", len(self._open_ids))
             self.refresh()
         return True
+
+    def open_settings(self) -> None:
+        from .settings_page import SettingsPage
+
+        if self.nav.find_page("settings") is None:
+            self.nav.push(SettingsPage(self))
+        else:
+            self.nav.pop_to_tag("settings")
+
+    def settings_changed(self, needs_restart: bool = False, changed=None) -> None:
+        """Honour what can be applied now; say so for what cannot."""
+        self._apply_collapsed()
+        self._restart_poll()
+        if needs_restart:
+            names = ", ".join(sorted(changed or {}))
+            self.toasts.add_toast(
+                Adw.Toast(title=f"{names} applies when Context restarts", timeout=4)
+            )
+
+    def _restart_poll(self) -> None:
+        if self._poll_source is not None:
+            GLib.source_remove(self._poll_source)
+        self._poll_source = GLib.timeout_add_seconds(
+            settings.current().poll_seconds, self._poll_open_state
+        )
+
+    def _on_pointer_enter(self) -> None:
+        self._take_keyboard(focus=False)
+        if not (self.collapsed and settings.current().auto_expand):
+            return
+        # Peek, without changing what the sidebar goes back to on leave.
+        delay = settings.current().auto_expand_delay_ms
+        self._auto_expand_source = GLib.timeout_add(delay, self._auto_expand)
+
+    def _auto_expand(self) -> bool:
+        self._auto_expand_source = None
+        if not self.collapsed:
+            return False
+        self._auto_expanded = True
+        self.collapsed = False
+        self._apply_collapsed()
+        self.refresh()
+        return False
+
+    def _on_pointer_leave(self) -> None:
+        self._release_keyboard()
+        if self._auto_expand_source is not None:
+            GLib.source_remove(self._auto_expand_source)
+            self._auto_expand_source = None
+        if not self._auto_expanded:
+            return
+        self._auto_expanded = False
+        self.collapsed = True
+        self._apply_collapsed()
+        self.refresh()
+
+    def toggle_collapsed(self) -> None:
+        # A deliberate toggle ends any hover peek, so the state that gets saved
+        # is the one the user chose rather than the one hovering produced.
+        self._auto_expanded = False
+        self.collapsed = not self.collapsed
+        uistate.save(collapsed=self.collapsed)
+        log.info("sidebar %s", "collapsed" if self.collapsed else "expanded")
+        self._apply_collapsed()
+        self.refresh()
+
+    def _apply_collapsed(self) -> None:
+        """Swap the content and give the reserved space back."""
+        self.mode_stack.set_visible_child_name("rail" if self.collapsed else "full")
+        # The header carries the title and collapse button, neither of which
+        # fits at rail width; the rail has an expand button of its own.
+        self.header.set_visible(not self.collapsed)
+        if not self.is_sidebar:
+            return
+        width = sidebar.rail_width() if self.collapsed else sidebar.configured_width()
+        sidebar.resize(self, width)
+        log.debug(
+            "sidebar %s at %dpx", "collapsed" if self.collapsed else "expanded", width
+        )
+
+    def _build_rail(self, opened, saved) -> None:
+        """Open contexts, a divider, then saved ones.
+
+        The same two groups the expanded list shows. There is no room for their
+        headings, so the split is drawn the way a browser separates pinned tabs
+        from the rest when its tab strip is collapsed: a rule between them.
+        """
+        child = self.rail.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            self.rail.remove(child)
+            child = following
+
+        for ctx in opened:
+            self.rail.append(self._rail_button(ctx, is_open=True))
+
+        if opened and saved:
+            divider = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            divider.add_css_class("ctx-rail-divider")
+            self.rail.append(divider)
+
+        for ctx in saved:
+            self.rail.append(self._rail_button(ctx, is_open=False))
+
+    def _rail_button(self, ctx: Context, is_open: bool) -> Gtk.Button:
+        button = Gtk.Button(halign=Gtk.Align.CENTER)
+        button.add_css_class("flat")
+        button.add_css_class("ctx-rail-button")
+        button.set_child(self._rail_icon(ctx))
+
+        is_active = self._active_id is not None and ctx.id == self._active_id
+        if is_active:
+            button.add_css_class("ctx-active")
+            state = "here now"
+        elif is_open:
+            button.add_css_class("ctx-open")
+            state = "open"
+        else:
+            button.add_css_class("ctx-saved")
+            state = "saved"
+
+        button.set_tooltip_text(f"{ctx.title} · {state}")
+        button.connect("clicked", lambda _b, c=ctx: self._open(c))
+        return button
+
+    def _rail_icon(self, ctx: Context) -> Gtk.Image:
+        """The first app's icon, so a context is recognisable without its name."""
+        image = None
+        for resource in ctx.resources:
+            try:
+                info = Gio.DesktopAppInfo.new(resource.app_id)
+            except TypeError:
+                info = None
+            icon = info.get_icon() if info is not None else None
+            if icon is not None:
+                image = Gtk.Image.new_from_gicon(icon)
+                break
+        if image is None:
+            image = Gtk.Image.new_from_icon_name("view-grid-symbolic")
+        # The icon is the only thing identifying a context on the rail, so it
+        # gets the room the label would otherwise have taken.
+        image.set_pixel_size(RAIL_ICON_SIZE)
+        return image
 
     def refresh_open_state(self) -> None:
         """Re-read the open list now, rather than waiting for the next poll.
@@ -296,6 +494,16 @@ class LauncherWindow(Adw.ApplicationWindow):
         active = self._active_context()
         opened = [c for c in matches if self._is_open(c)]
         saved = [c for c in matches if c not in opened]
+
+        # The rail shows every context, never a search result: there is no
+        # search bar at rail width to explain why some are missing.
+        if self.collapsed:
+            all_contexts = self.store.contexts
+            self._build_rail(
+                [c for c in all_contexts if self._is_open(c)],
+                [c for c in all_contexts if not self._is_open(c)],
+            )
+            return
 
         self.open_listbox.remove_all()
         for ctx in opened:

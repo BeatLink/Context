@@ -11,7 +11,7 @@ import pytest
 from context.adapters import adapter_for, configurable, describe, supports_profiles
 from context.adapters.base import GenericAdapter, child_env
 from context.adapters.firefox import FirefoxAdapter, profiles_root
-from context.resources import PROFILE_MAIN, Resource
+from context.resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource
 
 
 def test_firefox_resources_route_to_the_firefox_adapter():
@@ -44,11 +44,16 @@ def test_describe_summarises_urls(urls, expected):
     assert describe(Resource(app_id="firefox.desktop", urls=urls)) == expected
 
 
-def test_describe_marks_the_main_profile():
-    resource = Resource(
+def test_describe_marks_only_a_dedicated_profile():
+    """The main profile is the default, so it is the other one worth naming."""
+    main = Resource(
         app_id="firefox.desktop", urls=["https://x.com"], profile_mode=PROFILE_MAIN
     )
-    assert "main profile" in describe(resource)
+    own = Resource(
+        app_id="firefox.desktop", urls=["https://x.com"], profile_mode=PROFILE_DEDICATED
+    )
+    assert "profile" not in describe(main)
+    assert "own profile" in describe(own)
 
 
 def test_child_env_strips_the_layer_shell_preload(monkeypatch):
@@ -87,7 +92,11 @@ def test_new_profile_is_seeded_with_urls(tmp_path, monkeypatch):
         "subprocess.Popen", lambda cmd, **kw: commands.append(cmd) or FakeProcess()
     )
 
-    resource = Resource(app_id="firefox.desktop", urls=["https://a.com"])
+    resource = Resource(
+        app_id="firefox.desktop",
+        urls=["https://a.com"],
+        profile_mode=PROFILE_DEDICATED,
+    )
     adapter.launch(resource, "ctx-1")
     assert "https://a.com" in commands[0]
 
@@ -114,7 +123,10 @@ def test_busy_profile_is_reported_not_swallowed(tmp_path, monkeypatch):
     monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: ExitsImmediately())
 
     with pytest.raises(LookupError, match="profile may still be in use"):
-        adapter.launch(Resource(app_id="firefox.desktop"), "ctx-1")
+        adapter.launch(
+            Resource(app_id="firefox.desktop", profile_mode=PROFILE_DEDICATED),
+            "ctx-1",
+        )
 
 
 def test_teardown_never_leaves_the_profiles_root(isolated_store, monkeypatch):
@@ -144,7 +156,9 @@ def test_teardown_removes_a_dedicated_profile(isolated_store):
     target = profiles_root() / "ctx-1"
     target.mkdir(parents=True)
 
-    adapter.teardown(Resource(app_id="firefox.desktop"), "ctx-1")
+    adapter.teardown(
+        Resource(app_id="firefox.desktop", profile_mode=PROFILE_DEDICATED), "ctx-1"
+    )
     assert not target.exists()
 
 

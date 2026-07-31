@@ -204,8 +204,9 @@ class FirefoxAdapter:
             summary = _pretty(resource.urls[0])
         else:
             summary = f"{_pretty(resource.urls[0])} +{len(resource.urls) - 1} more"
-        if resource.uses_main_profile:
-            summary += " · main profile"
+        # The default needs no label; the departure from it does.
+        if not resource.uses_main_profile:
+            summary += " · own profile"
         return summary
 
     @traced(log)
