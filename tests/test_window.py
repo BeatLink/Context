@@ -581,55 +581,6 @@ def test_hover_expansion_does_not_change_the_saved_state(
     assert seen["collapsed_again"] is True
 
 
-def test_forgetting_uses_an_in_window_dialog(gtk_app, isolated_store):
-    """The confirmation must draw inside the editor, not above it.
-
-    The editor is a layer-shell overlay covering the output and holding the
-    keyboard exclusively. A separate-toplevel dialog is composited underneath
-    it and can never be answered — the editor just appears to freeze.
-    """
-    from context.editor import EditorPage
-    from context.store import ContextStore
-
-    store = ContextStore()
-    ctx = store.create("doomed")
-    seen = {}
-
-    def body(app):
-        page = EditorPage(ctx, lambda *a: None, lambda: None,
-                          on_delete=lambda c: seen.setdefault("deleted", c),
-                          is_new=False)
-        window = Gtk.Window(application=app)
-        # An overlay, because that is what the dialog draws itself into — the
-        # launcher's toast overlay in the running application.
-        overlay = Gtk.Overlay()
-        overlay.set_child(page)
-        window.set_child(overlay)
-        page._confirm_delete()
-        # A dialog that is its own toplevel renders under the layer-shell
-        # editor and can never be answered, so it must not be a window.
-        seen["is_window"] = isinstance(_last_dialog(window), Gtk.Window)
-        seen["shown"] = _last_dialog(window) is not None
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["shown"], "the dialog was never drawn"
-    assert seen["is_window"] is False
-
-
-def _last_dialog(window):
-    """The dialog presented on `window`, wherever it landed in the tree."""
-    stack = [window.get_first_child()] if window.get_first_child() else []
-    while stack:
-        widget = stack.pop()
-        if isinstance(widget, widgets.AlertDialog):
-            return widget
-        for nxt in (widget.get_next_sibling(), widget.get_first_child()):
-            if nxt is not None:
-                stack.append(nxt)
-    return None
-
-
 def test_forgetting_removes_the_context(gtk_app, isolated_store):
     from context.store import ContextStore
     from context.window import LauncherWindow
@@ -1366,6 +1317,42 @@ def test_hovering_no_longer_touches_the_keyboard(gtk_app, isolated_store, monkey
     store.create("alpha")
     run_app(gtk_app, body)
     assert seen["released"] == []
+
+
+def test_clicking_a_row_opens_its_context(gtk_app, isolated_store):
+    """A context row activates on click.
+
+    Pinned because it shipped broken: ActionRow only armed its click gesture
+    when `activatable` was passed to the constructor, and ContextRow calls
+    `set_activatable(True)` afterwards — which set the GTK property and armed
+    nothing, so clicking a context silently did nothing while the row's
+    buttons kept working.
+    """
+    from context.window import ContextRow
+    from context.store import Context
+
+    opened = []
+    seen = {}
+
+    def body(app):
+        row = ContextRow(
+            Context(title="clickable"),
+            lambda c: opened.append(c),
+            lambda c: None,
+            lambda c: None,
+        )
+        gestures = [
+            c for c in row.observe_controllers() if isinstance(c, Gtk.GestureClick)
+        ]
+        seen["armed"] = bool(gestures)
+        for gesture in gestures:
+            gesture.emit("released", 1, 0.0, 0.0)
+        seen["opened"] = list(opened)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["armed"] is True
+    assert [c.title for c in seen["opened"]] == ["clickable"]
 
 
 # -- handing the keyboard back -----------------------------------------------

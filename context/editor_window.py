@@ -51,12 +51,7 @@ class EditorWindow(Gtk.Window):
             is_new=is_new,
         )
         self.nav.add(self.page)
-        # Dialogs draw into the nearest overlay. Without one the editor could
-        # not ask anything: the forget confirmation answered itself with its
-        # default response, so the button appeared to do nothing.
-        self.overlay = Gtk.Overlay()
-        self.overlay.set_child(self.nav)
-        self.set_child(self.overlay)
+        self.set_child(self.nav)
 
         # Escape backs out of a pushed page, or closes the editor from the top.
         escape = Gtk.ShortcutController()

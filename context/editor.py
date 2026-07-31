@@ -530,16 +530,35 @@ class EditorPage(widgets.NavigationPage):
         details.append(isolated_row)
 
         # Forgetting a context lives here rather than beside its launch button,
-        # so it takes opening the editor and a confirmation to lose one.
+        # so it takes opening the editor and a confirmation to lose one. The
+        # confirmation is the same row changing its buttons rather than a
+        # dialog: there is nowhere sensible for a popup on a full-screen
+        # overlay, and the answer buttons appearing where the click just
+        # landed cannot be missed.
         if on_delete is not None and not is_new:
             delete_row = widgets.ActionRow(
                 title="Forget this context",
                 subtitle="Removes the definition. Windows it opened are left alone.",
             )
-            delete_button = Gtk.Button(label="Forget", valign=Gtk.Align.CENTER)
-            delete_button.add_css_class("destructive-action")
-            delete_button.connect("clicked", lambda _b: self._confirm_delete())
-            delete_row.add_suffix(delete_button)
+            self.delete_button = Gtk.Button(label="Forget", valign=Gtk.Align.CENTER)
+            self.delete_button.add_css_class("destructive-action")
+            self.delete_button.connect("clicked", lambda _b: self._ask_to_forget(True))
+            delete_row.add_suffix(self.delete_button)
+
+            self.keep_button = Gtk.Button(label="Keep", valign=Gtk.Align.CENTER)
+            self.keep_button.set_visible(False)
+            self.keep_button.connect("clicked", lambda _b: self._ask_to_forget(False))
+            delete_row.add_suffix(self.keep_button)
+
+            self.forget_button = Gtk.Button(
+                label="Really forget", valign=Gtk.Align.CENTER
+            )
+            self.forget_button.add_css_class("destructive-action")
+            self.forget_button.set_visible(False)
+            self.forget_button.connect(
+                "clicked", lambda _b: self.on_delete(self.ctx)
+            )
+            delete_row.add_suffix(self.forget_button)
             details.append(delete_row)
 
         content.append(details)
@@ -880,29 +899,10 @@ class EditorPage(widgets.NavigationPage):
 
     # -- commit --------------------------------------------------------------
 
-    def _confirm_delete(self) -> None:
-        """Confirm forgetting, inside the editor rather than above it.
-
-        `Adw.AlertDialog` draws within the window it is presented on.
-        `Adw.MessageDialog` is a toplevel of its own, which cannot work here:
-        the editor is a layer-shell overlay covering the output and holding the
-        keyboard exclusively, so the dialog was rendered underneath it and could
-        never be answered — the editor simply appeared to freeze.
-        """
-        dialog = widgets.AlertDialog(
-            heading=f"Forget “{self.ctx.title}”?",
-            body="The context definition is removed. Any windows it opened stay open.",
-        )
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("delete", "Forget")
-        dialog.set_response_appearance("delete", "destructive-action")
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
-        dialog.connect(
-            "response",
-            lambda _d, response: self.on_delete(self.ctx) if response == "delete" else None,
-        )
-        dialog.present(self)
+    def _ask_to_forget(self, asking: bool) -> None:
+        self.delete_button.set_visible(not asking)
+        self.keep_button.set_visible(asking)
+        self.forget_button.set_visible(asking)
 
     def _commit_cancel(self) -> None:
         self.on_cancel()

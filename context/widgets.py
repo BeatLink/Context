@@ -173,13 +173,29 @@ class ActionRow(Row):
 
         self._activatable_widget: Gtk.Widget | None = None
         self._forwarding = False
+        self._click: Gtk.GestureClick | None = None
 
         Row.set_child(self, self._box)
 
         if activatable:
-            click = Gtk.GestureClick()
-            click.connect("released", lambda *_a: self.emit("activated"))
-            self.add_controller(click)
+            self.set_activatable(True)
+
+    def set_activatable(self, activatable: bool) -> None:
+        """Arm or disarm the click that emits `activated`.
+
+        Overridden because the GTK property alone changes nothing here: rows
+        built plain and made activatable afterwards — the context list, the
+        switcher — otherwise looked activatable and never emitted, so clicking
+        a context silently did nothing while the row's buttons kept working.
+        """
+        self.set_property("activatable", activatable)
+        if activatable and self._click is None:
+            self._click = Gtk.GestureClick()
+            self._click.connect("released", lambda *_a: self.emit("activated"))
+            self.add_controller(self._click)
+        elif not activatable and self._click is not None:
+            self.remove_controller(self._click)
+            self._click = None
 
     def set_title(self, title: str) -> None:
         self._title.set_label(title)
@@ -197,9 +213,6 @@ class ActionRow(Row):
 
     def set_use_markup(self, use: bool) -> None:
         self._title.set_use_markup(use)
-
-    def set_activatable(self, activatable: bool) -> None:
-        self.set_property("activatable", activatable)
 
     def add_prefix(self, widget: Gtk.Widget) -> None:
         self._prefixes.append(widget)
@@ -289,139 +302,6 @@ class EntryRow(Row):
         if signal in ("changed", "activate"):
             return GObject.Object.connect(self.entry, signal, handler, *args)
         return super().connect(signal, handler, *args)
-
-
-class AlertDialog(Gtk.Box):
-    """A confirmation drawn inside the window rather than above it.
-
-    Replaces `Adw.AlertDialog`, and for the same reason it was chosen over
-    `Adw.MessageDialog`: the editor is a layer-shell overlay holding the
-    keyboard exclusively, so a dialog that is its own toplevel renders
-    underneath and can never be answered — the editor just appears to freeze.
-
-    `present(parent)` walks up to the window and overlays it, so the call site
-    is unchanged.
-    """
-
-    def __init__(self, heading: str = "", body: str = "") -> None:
-        super().__init__(
-            orientation=Gtk.Orientation.VERTICAL,
-            spacing=12,
-            halign=Gtk.Align.CENTER,
-            valign=Gtk.Align.CENTER,
-        )
-        self.add_css_class("ctx-dialog")
-        self.set_margin_start(24)
-        self.set_margin_end(24)
-
-        if heading:
-            label = Gtk.Label(label=heading, wrap=True, xalign=0.5)
-            label.add_css_class("ctx-dialog-heading")
-            self.append(label)
-        if body:
-            text = Gtk.Label(
-                label=body, wrap=True, xalign=0.5, justify=Gtk.Justification.CENTER
-            )
-            text.add_css_class("ctx-dialog-body")
-            self.append(text)
-
-        self._buttons = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
-        self.append(self._buttons)
-
-        self._responses: list[str] = []
-        self._default: str | None = None
-        self._close_response: str | None = None
-        self._handlers: list = []
-        self._holder: Gtk.Widget | None = None
-        self._overlay: Gtk.Overlay | None = None
-
-    def add_response(self, response: str, label: str) -> None:
-        button = Gtk.Button(label=label)
-        button.connect("clicked", lambda _b, r=response: self._respond(r))
-        self._buttons.append(button)
-        self._responses.append(response)
-        setattr(self, f"_button_{response}", button)
-
-    def set_response_appearance(self, response: str, appearance: str) -> None:
-        button = getattr(self, f"_button_{response}", None)
-        if button is not None and appearance:
-            button.add_css_class(appearance)
-
-    def set_default_response(self, response: str) -> None:
-        self._default = response
-
-    def set_close_response(self, response: str) -> None:
-        self._close_response = response
-
-    def connect(self, signal: str, handler):
-        """Only `response` is used, and it is not a real GObject signal here."""
-        if signal == "response":
-            self._handlers.append(handler)
-            return 0
-        return super().connect(signal, handler)
-
-    def present(self, parent: Gtk.Widget) -> None:
-        window = parent.get_root() if hasattr(parent, "get_root") else None
-        overlay = _find_overlay(window)
-        if overlay is None:
-            # Nothing to draw into. Better to act on the default than to block
-            # on a dialog that will never be seen — but loudly: this is how the
-            # forget button silently did nothing until its window grew an
-            # overlay, and a fallback that hides itself will hide the next one.
-            log.warning(
-                "no overlay to present a dialog in %s; answering %r",
-                type(window).__name__ if window is not None else "no window",
-                self._default,
-            )
-            if self._default:
-                self._respond(self._default)
-            return
-
-        # A scrim, so the dialog reads as blocking and a click outside answers
-        # it the way pressing the close response would.
-        self._holder = Gtk.Box(halign=Gtk.Align.FILL, valign=Gtk.Align.FILL)
-        self._holder.add_css_class("ctx-dialog-scrim")
-        self._holder.append(self)
-        self.set_hexpand(True)
-        self.set_vexpand(True)
-
-        click = Gtk.GestureClick()
-        click.connect("released", lambda *_a: self._respond(self._close_response))
-        self._holder.add_controller(click)
-
-        self._overlay = overlay
-        overlay.add_overlay(self._holder)
-
-    def _respond(self, response: str | None) -> None:
-        if self._overlay is not None and self._holder is not None:
-            self._overlay.remove_overlay(self._holder)
-            self._overlay = None
-        if response is None:
-            return
-        for handler in list(self._handlers):
-            handler(self, response)
-
-
-def _find_overlay(widget) -> Gtk.Overlay | None:
-    """The nearest overlay a dialog can be drawn into.
-
-    Breadth-first from the window down, so the outermost overlay wins — the
-    launcher's toast overlay wraps everything, which is the one that covers the
-    whole surface rather than a corner of it.
-    """
-    if widget is None:
-        return None
-
-    queue = [widget]
-    while queue:
-        node = queue.pop(0)
-        if isinstance(node, Gtk.Overlay):
-            return node
-        child = node.get_first_child()
-        while child is not None:
-            queue.append(child)
-            child = child.get_next_sibling()
-    return None
 
 
 class ToolbarView(Gtk.Box):
