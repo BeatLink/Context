@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from context import logging_setup  # noqa: E402
-from context.backends.base import WindowInfo, Workspace  # noqa: E402
+from context.backends.base import MonitorInfo, WindowInfo, Workspace  # noqa: E402
 from context.layout import Slot  # noqa: E402
 
 
@@ -62,6 +62,10 @@ class FakeBackend:
         # Most recently focused first, the order a switcher lists them in.
         self.open_windows: list[WindowInfo] = []
         self.focused: str | None = None
+        # One 16:9 output unless a test says otherwise.
+        self.outputs: list[MonitorInfo] = [
+            MonitorInfo(name="FAKE-1", width=1920, height=1080, focused=True)
+        ]
 
     # -- interface ----------------------------------------------------------
 
@@ -105,6 +109,10 @@ class FakeBackend:
         self.calls.append(("focus", window_id))
         self.focused = window_id
         return True
+
+    def monitors(self) -> list[MonitorInfo]:
+        self.calls.append(("monitors",))
+        return list(self.outputs)
 
     def close_workspace(self, handle: str) -> int:
         count = self.workspaces.get(handle, 0)

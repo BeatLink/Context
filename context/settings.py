@@ -53,6 +53,10 @@ def settings_path() -> Path:
 @dataclass(frozen=True)
 class Settings:
     sidebar_edge: str = "left"
+    # Which output the launcher docks to, by compositor name (eDP-1, HDMI-A-1).
+    # Empty means wherever the compositor would put it, which is the only
+    # sensible answer on a single-monitor session.
+    monitor: str = ""
     sidebar_width: int = 380
     rail_width: int = 56
     collapse_mode: str = "rail"
@@ -111,6 +115,9 @@ class Settings:
             sidebar_edge=(
                 self.sidebar_edge if self.sidebar_edge in EDGES else "left"
             ),
+            # Not validated against the connected outputs: a monitor that is
+            # unplugged today is still the right choice for tomorrow.
+            monitor=self.monitor.strip(),
             sidebar_width=_clamp(
                 self.sidebar_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, 380
             ),

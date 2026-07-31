@@ -162,6 +162,49 @@ def resize(window, width: int, edge: str | None = None) -> None:
         window.set_default_size(-1, width)
 
 
+def gdk_monitor(name: str | None):
+    """The `Gdk.Monitor` the compositor calls `name`, if it is connected.
+
+    Layer-shell takes a GDK monitor, while everything else in Context names an
+    output the way the compositor does, so the two have to be matched up. GDK
+    exposes the connector name, which is the same string Hyprland reports.
+    """
+    if not name:
+        return None
+    from gi.repository import Gdk
+
+    display = Gdk.Display.get_default()
+    if display is None:
+        return None
+    found = display.get_monitors()
+    for index in range(found.get_n_items()):
+        monitor = found.get_item(index)
+        if monitor.get_connector() == name:
+            return monitor
+    log.info("monitor %s is not connected; leaving the placement to the compositor", name)
+    return None
+
+
+def place(window, name: str | None = None) -> str | None:
+    """Pin a layer-shell surface to one output.
+
+    Without this the compositor chooses, which on a multi-monitor session means
+    the launcher appears whereever focus happened to be — different on each
+    start. Must run before the window is realized.
+
+    Returns the monitor actually used, or None when the choice was left to the
+    compositor.
+    """
+    if LayerShell is None or not available():
+        return None
+    wanted = name if name is not None else settings.current().monitor
+    monitor = gdk_monitor(wanted)
+    if monitor is None:
+        return None
+    LayerShell.set_monitor(window, monitor)
+    return wanted
+
+
 def apply(window, edge: str | None = None, width: int | None = None) -> bool:
     """Turn `window` into an anchored sidebar. Must run before it is realized."""
     if not available():
@@ -172,6 +215,7 @@ def apply(window, edge: str | None = None, width: int | None = None) -> bool:
     vertical = edge in ("left", "right")
 
     LayerShell.init_for_window(window)
+    place(window)
     LayerShell.set_namespace(window, "context-sidebar")
     LayerShell.set_layer(window, LayerShell.Layer.TOP)
 
@@ -211,6 +255,9 @@ def apply_overlay(window) -> bool:
         return False
 
     LayerShell.init_for_window(window)
+    # The same output the launcher is on: an editor that opens on the other
+    # screen from the sidebar that summoned it is disorienting.
+    place(window)
     LayerShell.set_namespace(window, "context-editor")
     LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
     for attr in EDGES.values():

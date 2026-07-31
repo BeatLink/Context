@@ -14,7 +14,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gtk
 
-from . import settings, theme
+from . import monitors, settings, theme
 from .logging_setup import get_logger
 
 log = get_logger("settings_page")
@@ -119,6 +119,21 @@ class SettingsPage(Adw.NavigationPage):
         group = Adw.PreferencesGroup(
             title="Appearance",
             description="How the launcher looks and where it sits.",
+        )
+        # Named rather than chosen from a list of connected outputs: a monitor
+        # that is unplugged today is still the right choice for tomorrow, and a
+        # dropdown of what happens to be attached cannot express that.
+        found = monitors.names()
+        group.add(
+            _row_combo(
+                "Monitor",
+                "Which screen the launcher docks to. Applies on restart."
+                + (f" Connected: {', '.join(found)}." if found else ""),
+                ("Wherever the compositor puts it", *found),
+                ("", *found),
+                live.monitor,
+                lambda v: self._apply(monitor=v, restart=True),
+            )
         )
         group.add(
             _row_combo(

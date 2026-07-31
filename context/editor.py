@@ -11,8 +11,7 @@ from gi.repository import Adw, Gdk, Gtk
 
 from .adapters import configurable, describe
 from .apps import App, installed_apps, search_apps
-from . import theme
-from . import isolation
+from . import isolation, monitors, theme
 from .logging_setup import get_logger
 from .layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
 from .resource_page import ResourcePage
@@ -45,6 +44,9 @@ class LayoutPreview(Gtk.DrawingArea):
         self._textures: dict[int, object] = {}
         self.active: int | None = None
         self._drag: tuple[str, int, float, float, Slot] | None = None
+        # The shape the preview is drawn at. Read once rather than per frame,
+        # since it costs a compositor query and does not change mid-edit.
+        self.aspect = monitors.preview_aspect()
 
         self.set_hexpand(True)
         self.set_vexpand(True)
@@ -68,13 +70,18 @@ class LayoutPreview(Gtk.DrawingArea):
         self.queue_draw()
 
     def _screen(self) -> tuple[float, float, float, float]:
-        """The monitor rectangle inside the widget, keeping 16:9."""
+        """The monitor rectangle inside the widget, at the monitor's own shape.
+
+        Not a fixed 16:9. A layout is fractions of whatever it opens on, so a
+        preview drawn at the wrong aspect lies about where the windows land —
+        badly on a 16:10 panel, absurdly on an ultrawide or a rotated one.
+        """
         width = self.get_width()
         height = self.get_height()
         margin = 12.0
         avail_w = max(1.0, width - margin * 2)
         avail_h = max(1.0, height - margin * 2)
-        ratio = 16 / 9
+        ratio = self.aspect
         if avail_w / avail_h > ratio:
             h = avail_h
             w = h * ratio

@@ -186,6 +186,35 @@ no search bar at rail width to explain why some are missing.
 Still to do: a keybind for the toggle, and hover-to-peek so a context can be
 identified without expanding.
 
+### 5b. Multiple monitors — *partly done*
+
+**Done.** Backends report their outputs, so the two places that were guessing
+no longer do. The layout preview draws at the real monitor's aspect rather than
+a hard-coded 16:9 — which was wrong on any 16:10 panel and absurd on an
+ultrawide or a rotated one. The launcher can be pinned to a named output rather
+than appearing wherever focus happened to be, and falls back to the focused
+monitor when that output is not connected, so a laptop configured for its dock
+still has a launcher away from the dock.
+
+The setting names a monitor rather than picking from a list of what is attached:
+a monitor unplugged today is still the right choice for tomorrow.
+
+**Still to do — per-context placement.** A context has no say in which output
+it opens on; Hyprland binds the workspace to whichever monitor was focused when
+it was first created, and that is where it returns. "Work" should be able to say
+it belongs on the external display.
+
+The backend pieces exist — `hyprctl dispatch moveworkspacetomonitor` — so this
+is mostly a matter of storing the choice beside the workspace handle, applying
+it on launch, and deciding what happens when the named output is absent
+(open on the focused one, presumably, without forgetting the preference).
+
+**Still to do — layouts that span outputs.** A layout is fractions of one
+screen, and a workspace lives on one monitor, so "editor on the laptop, docs on
+the external" cannot be expressed at all. That is a bigger change than
+placement: it makes a context own several containers rather than one, which
+touches the handle model, reconnect and closing.
+
 ### 6. Launch apps into the current context
 
 Launching an app outside Context puts it wherever the compositor decides, which

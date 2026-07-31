@@ -25,6 +25,29 @@ class Workspace:
 
 
 @dataclass(frozen=True)
+class MonitorInfo:
+    """One output, as much as a backend can say about it.
+
+    `width` and `height` are in the compositor's logical pixels, already
+    accounting for rotation — a portrait monitor reports the tall figures, not
+    the panel's native landscape ones.
+    """
+
+    name: str
+    width: int
+    height: int
+    x: int = 0
+    y: int = 0
+    scale: float = 1.0
+    focused: bool = False
+
+    @property
+    def aspect(self) -> float:
+        """Width over height, which is what a scale model needs."""
+        return self.width / self.height if self.height else 16 / 9
+
+
+@dataclass(frozen=True)
 class WindowInfo:
     """One open window, as much as a backend can say about it.
 
@@ -86,6 +109,9 @@ class Backend(Protocol):
     def focus_window(self, window_id: str) -> bool:
         """Focus one window by its backend-specific id."""
 
+    def monitors(self) -> list["MonitorInfo"]:
+        """Every connected output. Empty when the backend cannot say."""
+
     def close_workspace(self, handle: str) -> int:
         """Ask every window on the workspace to close. Returns how many were
         asked. Must never touch windows outside this workspace."""
@@ -129,6 +155,9 @@ class NullBackend:
 
     def focus_window(self, window_id: str) -> bool:
         return False
+
+    def monitors(self) -> list[MonitorInfo]:
+        return []
 
     def close_workspace(self, handle: str) -> int:
         return 0

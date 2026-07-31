@@ -93,6 +93,16 @@ layout; add one twice to give it two windows.
 Forget button.
 
 Layouts are stored as fractions of the monitor, so they carry between displays.
+The preview is drawn at the shape of the screen the launcher is on.
+
+## Multiple monitors
+
+The launcher docks to one screen, chosen in settings. Naming a monitor that is
+not currently connected is fine — it is used when you plug it back in, and until
+then the launcher appears on whichever screen has focus.
+
+Contexts themselves open on whichever screen the compositor puts them, which is
+where they were first created.
 
 ## What apps open
 
@@ -151,6 +161,7 @@ need a restart say so.
 
 | Setting | Meaning |
 | --- | --- |
+| Monitor | Which screen the launcher docks to |
 | Edge | Which side the launcher docks to |
 | Width | Pixels the launcher reserves |
 | Collapse mode | A rail of icons, hidden entirely, or never |
@@ -253,6 +264,7 @@ do to work well inside a context.
 | `context/theme.py` | Colours |
 | `context/logging_setup.py` | Logging |
 | `context/sidebar.py` | Docking the launcher to a screen edge |
+| `context/monitors.py` | Which output things happen on |
 | `context/switcher.py` | Context and window pickers |
 | `context/settings.py` | User settings |
 | `context/settings_page.py` | The settings page |

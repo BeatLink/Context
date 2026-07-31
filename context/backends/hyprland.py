@@ -17,7 +17,7 @@ import shutil
 import subprocess
 
 from ..logging_setup import get_logger, traced
-from .base import WindowInfo, Workspace
+from .base import MonitorInfo, WindowInfo, Workspace
 
 log = get_logger("backend.hyprland")
 
@@ -169,6 +169,36 @@ class HyprlandBackend:
                 )
             )
         return [window for _, window in sorted(found, key=lambda pair: pair[0])]
+
+    def monitors(self) -> list[MonitorInfo]:
+        """Connected outputs, in the compositor's own logical coordinates.
+
+        `width`/`height` already account for rotation, so a monitor turned on
+        its side reports the tall figures — which is what a layout preview
+        needs, and why the transform itself is not carried through.
+        """
+        data = self._query("monitors")
+        if not isinstance(data, list):
+            return []
+        found = []
+        for entry in data:
+            if not isinstance(entry, dict) or not entry.get("name"):
+                continue
+            try:
+                found.append(
+                    MonitorInfo(
+                        name=str(entry["name"]),
+                        width=int(entry.get("width", 0)),
+                        height=int(entry.get("height", 0)),
+                        x=int(entry.get("x", 0)),
+                        y=int(entry.get("y", 0)),
+                        scale=float(entry.get("scale", 1.0) or 1.0),
+                        focused=bool(entry.get("focused", False)),
+                    )
+                )
+            except (TypeError, ValueError):
+                log.warning("skipping unreadable monitor %r", entry.get("name"))
+        return found
 
     @traced(log)
     def focus_window(self, window_id: str) -> bool:
