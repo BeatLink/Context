@@ -129,6 +129,12 @@ def configured_width() -> int:
     return settings.current().sidebar_width
 
 
+# Hidden is a sliver rather than nothing. A window with no surface receives no
+# pointer events, so hover-to-reveal would be impossible and the only way back
+# would be a keybind — a one-way door for anyone who collapses it by accident.
+HIDDEN_WIDTH = 2
+
+
 def rail_width() -> int:
     raw = os.environ.get(ENV_RAIL_WIDTH)
     if raw and raw.strip().isdigit():

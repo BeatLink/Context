@@ -170,21 +170,6 @@ needed.
 Then: layout within a context (the "VS Code docked left, docs right" case), which
 needs Hyprland IPC and is a reason to treat Hyprland as the real target.
 
-### 4. Separate open contexts from saved ones — *next*
-
-The list mixes two different things: contexts that are running right now, and
-definitions sitting on disk. They want different actions.
-
-- **Open contexts** — shown as a distinct group, with a close button. Closing is
-  the common action; it is not something you do to a definition.
-- **Saved contexts** — no destructive action in the list. Deleting moves into the
-  editor, so forgetting a context is a deliberate act on its settings page rather
-  than a stray click next to launch.
-
-The state is already known: `context_is_open()` answers it per context, and the
-row already renders an `open` marker. What is missing is the grouping and moving
-delete out of the row.
-
 ### 5. Collapse the sidebar to a rail — *done*
 
 A button in the header shrinks the sidebar to `CONTEXT_RAIL_WIDTH` (56px by
@@ -214,18 +199,33 @@ way apps are launched:
 
 This is what makes Context replace rofi rather than sit next to it.
 
-### 7. Switch contexts and windows
+### 7b. A thumbnail switcher
 
-Two related pickers, both of which the desktop currently answers separately:
+The switcher is a list: icon, title, and which context a window belongs to.
+Live previews would make picking between four windows of the same application
+much faster, and Cinnamon's alt-tab had them.
 
-- **Context switching** — jump to a context by name. The sidebar list does this
-  by clicking, but there is no keyboard path, and no equivalent of alt-tab
-  between the last two.
-- **Window switching** — every window in the current context, and optionally
-  across all of them. `hyprctl clients` already reports enough to build this;
-  the bar's taskbar covers the current workspace only.
+**It is possible, and it is real work.** Hyprland implements
+`hyprland-toplevel-export-v1`, which captures a *named toplevel* rather than the
+whole output — this is what the desktop portal uses for single-window sharing.
+So the frames are obtainable even for windows on another workspace, which
+`wlr-screencopy` cannot do because it only captures outputs and an unfocused
+workspace is not being rendered.
 
-Together these replace the bar's window list and rofi's window mode.
+The cost is a Wayland protocol client. `hyprctl` does not expose capture, so
+this means talking the protocol directly — pywayland, a buffer pool, and a
+format conversion per frame — none of which the project has today. There is no
+shortcut: cropping a screenshot only works for windows currently on screen,
+which is exactly the case where a switcher is least needed.
+
+Worth doing behind a setting rather than as a replacement, since a list is
+faster to read for windows with distinct titles and costs nothing to render:
+
+- **List** — icon, title, context. The default.
+- **Thumbnails** — a grid of live previews.
+
+Do it after window identity (item 3), which needs the same protocol-level work
+and matters more.
 
 ### 8. Move windows between contexts
 
@@ -317,6 +317,21 @@ file lives and can write out the default theme.
 Changes apply as they are made. The widths and the colour scheme take effect
 immediately; the edge, the backend and the log level say that they apply on
 restart rather than pretending otherwise.
+
+**Still to do — a flag for every setting.** Three ways to set a value exist
+already: the settings page, `settings.json`, and a handful of environment
+variables. The environment variables are the odd one out — they cover only what
+happened to need overriding during development, and their names do not follow
+the settings they map to.
+
+Replace them with a flag per setting, generated from the `Settings` dataclass so
+the three can never drift: `--sidebar-width 420`, `--collapse-mode hidden`,
+`--color-scheme dark`. A flag applies to the run it is given to, the same way
+the environment variables do now, and `--help` becomes the list of what is
+configurable. Keep the environment variables working, since they are documented.
+
+This also gives the keybind commands somewhere to grow: `switch-window
+--scope all` rather than a separate `switch-window-all`.
 
 **Still to do — per-context visibility.** With a handful of contexts everything
 can be listed; with fifty it cannot, and the alternative to this option is an

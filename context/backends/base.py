@@ -24,6 +24,21 @@ class Workspace:
     created: bool = False
 
 
+@dataclass(frozen=True)
+class WindowInfo:
+    """One open window, as much as a backend can say about it.
+
+    `app_id` is the compositor's class, which usually matches a desktop entry's
+    basename and is how the window's icon is found. `handle` is the container
+    it is on, so a switcher can say which context a window belongs to.
+    """
+
+    id: str
+    title: str
+    app_id: str
+    handle: str | None = None
+
+
 @runtime_checkable
 class Backend(Protocol):
     name: str
@@ -60,6 +75,16 @@ class Backend(Protocol):
         The launcher re-checks which contexts are open on a timer. Asking per
         context costs two queries each; this answers for all of them at once.
         """
+
+    def windows(self, handle: str | None = None) -> list["WindowInfo"]:
+        """Open windows, most recently focused first.
+
+        `handle` limits the answer to one container; None means every window
+        the backend can see.
+        """
+
+    def focus_window(self, window_id: str) -> bool:
+        """Focus one window by its backend-specific id."""
 
     def close_workspace(self, handle: str) -> int:
         """Ask every window on the workspace to close. Returns how many were
@@ -98,6 +123,12 @@ class NullBackend:
 
     def live_handles(self) -> set[str]:
         return set()
+
+    def windows(self, handle: str | None = None) -> list[WindowInfo]:
+        return []
+
+    def focus_window(self, window_id: str) -> bool:
+        return False
 
     def close_workspace(self, handle: str) -> int:
         return 0

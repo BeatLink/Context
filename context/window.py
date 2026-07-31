@@ -186,7 +186,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.saved_expander.set_child(self.listbox)
         self.saved_expander.connect("notify::expanded", self._on_saved_toggled)
         # Remembers a deliberate expansion, so a refresh does not undo it.
-        self._saved_pinned_open = False
+        # None until the user says either way, so the group can decide for
+        # itself; once they have chosen, the choice holds in both modes.
+        self._saved_pinned_open: bool | None = None
 
         groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         groups.append(self.open_label)
@@ -235,6 +237,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.mode_stack.set_vhomogeneous(False)
         self.mode_stack.add_named(content, "full")
         self.mode_stack.add_named(rail_box, "rail")
+        # Hidden: an empty page behind the hover sliver.
+        self.mode_stack.add_named(Gtk.Box(), "hidden")
         self.toolbar.set_content(self.mode_stack)
 
         self.home_page = Adw.NavigationPage(child=self.toolbar, title="Context", tag="home")
@@ -345,7 +349,13 @@ class LauncherWindow(Adw.ApplicationWindow):
 
     def _on_pointer_enter(self) -> None:
         self._take_keyboard(focus=False)
-        if not (self.collapsed and settings.current().auto_expand):
+        if not self.collapsed:
+            return
+        # Hiding always reveals on hover, whatever the setting says: with
+        # nothing on screen but a two-pixel sliver, hover is the only way back
+        # short of a keybind, and a setting that can strand the launcher is a
+        # trap rather than a preference.
+        if not (settings.current().auto_expand or self.hides_when_collapsed):
             return
         # Peek, without changing what the sidebar goes back to on leave.
         delay = settings.current().auto_expand_delay_ms
@@ -383,6 +393,10 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._apply_collapsed()
         self.refresh()
 
+    @property
+    def hides_when_collapsed(self) -> bool:
+        return settings.current().collapse_mode == "hidden"
+
     def _apply_collapsed(self) -> None:
         """Swap the content and give the reserved space back."""
         self.mode_stack.set_visible_child_name("rail" if self.collapsed else "full")
@@ -391,18 +405,26 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.header.set_visible(not self.collapsed)
         if not self.is_sidebar:
             return
+
+        if self.collapsed and self.hides_when_collapsed:
+            self.mode_stack.set_visible_child_name("hidden")
+            sidebar.resize(self, sidebar.HIDDEN_WIDTH)
+            log.debug("sidebar hidden at %dpx", sidebar.HIDDEN_WIDTH)
+            return
+
         width = sidebar.rail_width() if self.collapsed else sidebar.configured_width()
         sidebar.resize(self, width)
         log.debug(
             "sidebar %s at %dpx", "collapsed" if self.collapsed else "expanded", width
         )
 
-    def _build_rail(self, opened, saved) -> None:
-        """Open contexts, a divider, then saved ones.
+    def _build_rail(self, opened, saved, shown: bool = True) -> None:
+        """Open contexts, a divider, then saved ones if the group is showing.
 
-        The same two groups the expanded list shows. There is no room for their
-        headings, so the split is drawn the way a browser separates pinned tabs
-        from the rest when its tab strip is collapsed: a rule between them.
+        The same two groups the expanded list shows, folding the same way. There
+        is no room for their headings, so the split is drawn the way a browser
+        separates pinned tabs from the rest when its tab strip is collapsed: a
+        rule, and a control to fold the group away.
         """
         child = self.rail.get_first_child()
         while child is not None:
@@ -413,13 +435,37 @@ class LauncherWindow(Adw.ApplicationWindow):
         for ctx in opened:
             self.rail.append(self._rail_button(ctx, is_open=True))
 
-        if opened and saved:
+        if not saved:
+            return
+
+        if opened:
             divider = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
             divider.add_css_class("ctx-rail-divider")
             self.rail.append(divider)
 
-        for ctx in saved:
-            self.rail.append(self._rail_button(ctx, is_open=False))
+        # Only when the group could actually fold. With nothing open the saved
+        # list is the whole rail, and a control that empties it is a trap.
+        if opened:
+            self.rail.append(self._saved_toggle(len(saved), shown))
+
+        if shown:
+            for ctx in saved:
+                self.rail.append(self._rail_button(ctx, is_open=False))
+
+    def _saved_toggle(self, count: int, shown: bool) -> Gtk.Button:
+        button = Gtk.Button(
+            halign=Gtk.Align.CENTER,
+            icon_name="go-up-symbolic" if shown else "go-down-symbolic",
+        )
+        button.add_css_class("flat")
+        button.add_css_class("ctx-rail-toggle")
+        button.set_tooltip_text(
+            "Hide saved contexts"
+            if shown
+            else f"Show {count} saved context{'s' if count != 1 else ''}"
+        )
+        button.connect("clicked", lambda _b: self._toggle_saved(not shown))
+        return button
 
     def _rail_button(self, ctx: Context, is_open: bool) -> Gtk.Button:
         button = Gtk.Button(halign=Gtk.Align.CENTER)
@@ -499,9 +545,13 @@ class LauncherWindow(Adw.ApplicationWindow):
         # search bar at rail width to explain why some are missing.
         if self.collapsed:
             all_contexts = self.store.contexts
+            rail_open = [c for c in all_contexts if self._is_open(c)]
+            rail_saved = [c for c in all_contexts if not self._is_open(c)]
             self._build_rail(
-                [c for c in all_contexts if self._is_open(c)],
-                [c for c in all_contexts if not self._is_open(c)],
+                rail_open,
+                rail_saved,
+                # Searching is not a thing at rail width, so it plays no part.
+                shown=self._saved_group_shown(rail_open, rail_saved, searching=False),
             )
             return
 
@@ -532,11 +582,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.list_label.set_visible(bool(saved))
         self.list_label.set_label(f"Saved · {len(saved)}")
 
-        # Expanded when there is nothing else to look at, or while searching, or
-        # because the user opened it themselves.
-        should_expand = bool(saved) and (
-            not opened or searching or self._saved_pinned_open
-        )
+        should_expand = self._saved_group_shown(opened, saved, searching)
         if self.saved_expander.get_expanded() != should_expand:
             self._suppress_toggle = True
             self.saved_expander.set_expanded(should_expand)
@@ -556,11 +602,42 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.empty_state.set_title("No contexts yet")
             self.empty_state.set_description("Type a name above to create your first one.")
 
+    def _saved_group_shown(self, opened, saved, searching: bool) -> bool:
+        """Whether the saved group is on show.
+
+        The rail asks this too, so collapsing the sidebar never changes which
+        contexts are listed — only how much room they take.
+
+        With nothing pinned either way it answers itself: the saved list is all
+        there is when nothing is running, and gets out of the way once something
+        is. A search always shows it, since results are the point of searching.
+        """
+        if not saved:
+            return False
+        if searching:
+            return True
+        if self._saved_pinned_open is not None:
+            return self._saved_pinned_open
+        return not opened
+
     def _on_saved_toggled(self, expander, _param) -> None:
         """Remember a deliberate expand, so the next refresh does not undo it."""
         if getattr(self, "_suppress_toggle", False):
             return
         self._saved_pinned_open = expander.get_expanded()
+
+    def _toggle_saved(self, show: bool) -> None:
+        """The rail's equivalent of clicking the expander.
+
+        Takes the wanted state rather than inverting the expander's: refresh
+        leaves early in rail mode, so the expander holds whatever it was last
+        set to while expanded, which is not necessarily what the rail shows.
+        """
+        self._saved_pinned_open = show
+        self._suppress_toggle = True
+        self.saved_expander.set_expanded(show)
+        self._suppress_toggle = False
+        self.refresh()
 
     def _on_entry_changed(self, entry: Gtk.Entry) -> None:
         text = entry.get_text().strip()
@@ -678,6 +755,9 @@ class LauncherWindow(Adw.ApplicationWindow):
     def _open(self, ctx: Context) -> None:
         log.info("opening context %s", ctx.title)
         self.store.touch(ctx)
+        # Feeds the alt-tab between the last two contexts, which is the order
+        # they were visited rather than the order they were edited.
+        uistate.note_visit(ctx.id)
         self.entry.set_text("")
         self.refresh()
         # Hand focus to the context being opened rather than keeping it here.

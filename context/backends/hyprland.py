@@ -17,7 +17,7 @@ import shutil
 import subprocess
 
 from ..logging_setup import get_logger, traced
-from .base import Workspace
+from .base import WindowInfo, Workspace
 
 log = get_logger("backend.hyprland")
 
@@ -134,6 +134,46 @@ class HyprlandBackend:
             if name:
                 handles.add(name)
         return handles
+
+    def windows(self, handle: str | None = None) -> list[WindowInfo]:
+        """Open windows, most recently focused first.
+
+        Hyprland gives each client a `focusHistoryID`, 0 being the focused
+        window, so the switcher's ordering comes straight from the compositor
+        rather than being tracked here.
+        """
+        data = self._query("clients")
+        if not isinstance(data, list):
+            return []
+
+        found = []
+        for client in data:
+            if not isinstance(client, dict) or not client.get("address"):
+                continue
+            name = str((client.get("workspace") or {}).get("name", "")) or None
+            if handle is not None and name != handle:
+                continue
+            try:
+                order = int(client.get("focusHistoryID", 1 << 30))
+            except (TypeError, ValueError):
+                order = 1 << 30
+            found.append(
+                (
+                    order,
+                    WindowInfo(
+                        id=str(client["address"]),
+                        title=str(client.get("title") or ""),
+                        app_id=str(client.get("class") or ""),
+                        handle=name,
+                    ),
+                )
+            )
+        return [window for _, window in sorted(found, key=lambda pair: pair[0])]
+
+    @traced(log)
+    def focus_window(self, window_id: str) -> bool:
+        result = self._run("dispatch", "focuswindow", f"address:{window_id}")
+        return result is not None and result.returncode == 0
 
     @traced(log)
     def close_workspace(self, handle: str) -> int:

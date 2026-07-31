@@ -53,3 +53,29 @@ def save(**values) -> None:
 
 def get(key: str, default=None):
     return load().get(key, default)
+
+
+RECENT_KEY = "recent_contexts"
+RECENT_LIMIT = 16
+
+
+def note_visit(context_id: str) -> list[str]:
+    """Record that a context was switched to, most recent first.
+
+    Kept here rather than on the contexts themselves: it is the order the user
+    moved through them, not a property of any one of them, and it should not
+    rewrite `contexts.json` on every switch.
+    """
+    recent = [i for i in get(RECENT_KEY, []) if isinstance(i, str) and i != context_id]
+    recent.insert(0, context_id)
+    del recent[RECENT_LIMIT:]
+    save(**{RECENT_KEY: recent})
+    return recent
+
+
+def previous_context(current_id: str | None) -> str | None:
+    """The context to alt-tab back to: the last one that is not this one."""
+    for context_id in get(RECENT_KEY, []):
+        if isinstance(context_id, str) and context_id != current_id:
+            return context_id
+    return None

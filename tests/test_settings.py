@@ -141,3 +141,11 @@ def test_a_hand_written_colour_is_not_recoloured(isolated_settings, monkeypatch)
     assert light.rail_background == "#ff00ff"
     # Untouched keys still get the light treatment.
     assert light.tile_background == theme.LIGHT_OVERRIDES["tile_background"]
+
+
+def test_the_collapse_mode_defaults_to_a_rail():
+    assert Settings().collapse_mode == "rail"
+
+
+def test_an_unknown_collapse_mode_falls_back():
+    assert Settings(collapse_mode="vanish").validated().collapse_mode == "rail"

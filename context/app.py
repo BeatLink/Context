@@ -12,14 +12,28 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib
 
-from . import backends
+from . import backends, switcher, uistate
 from .backends import Workspace
+from .launcher import active_context
 from .launcher import close_context as close_ctx
 from .launcher import launch_context as launch_ctx
 from .launcher import reconnect
 from .store import Context, ContextStore
 from .logging_setup import configure, get_logger
 from .window import LauncherWindow
+
+
+# Commands a keybind can send to the running instance. `python3 -m context
+# switch-window` hands its command line over D-Bus rather than starting a
+# second copy, so these cost nothing to bind.
+COMMANDS = {
+    "switch": lambda app: app.switch_context(),
+    "switch-window": lambda app: app.switch_window(),
+    "switch-window-all": lambda app: app.switch_window_all(),
+    "previous": lambda app: app.previous_context(),
+    "settings": lambda app: app.ensure_window().open_settings(),
+    "toggle-rail": lambda app: app.ensure_window().toggle_collapsed(),
+}
 
 
 class ContextApplication(Adw.Application):
@@ -35,6 +49,7 @@ class ContextApplication(Adw.Application):
         self.log.info("backend: %s", self.backend.name)
         self.window: LauncherWindow | None = None
         self.launching: set[str] = set()
+        self.switcher: switcher.SwitcherWindow | None = None
 
     def do_command_line(self, command_line) -> int:
         """Entry point for every launch, first or subsequent.
@@ -44,12 +59,89 @@ class ContextApplication(Adw.Application):
         silent, which made a stale instance look like a broken build: relaunches
         appeared to do nothing. Now the running instance says so and focuses the
         context in view, and the launcher is presented rather than duplicated.
+
+        The hand-off is also how keybinds reach a running Context: a bind runs
+        `python3 -m context switch-window`, whose command line arrives here.
         """
+        argv = command_line.get_arguments()[1:]
+        command = argv[0] if argv else ""
+
+        if command in COMMANDS:
+            self.log.info("command: %s", command)
+            # A command needs the window built, but must not raise the launcher
+            # over the picker it is about to open.
+            self.ensure_window()
+            try:
+                COMMANDS[command](self)
+            except Exception:
+                # A failing command must not take the launcher down with it.
+                self.log.exception("command %s failed", command)
+            return 0
+
+        if command:
+            self.log.warning("unknown command %r; opening the launcher", command)
         if self.window is not None:
             self.log.info("already running; focusing the existing launcher")
             self._focus_active_context()
         self.activate()
         return 0
+
+    # -- commands ------------------------------------------------------------
+
+    def ensure_window(self) -> LauncherWindow:
+        if self.window is None:
+            self.do_activate()
+        return self.window
+
+    def switch_context(self) -> None:
+        self._open_switcher(switcher.CONTEXTS)
+
+    def switch_window(self) -> None:
+        self._open_switcher(switcher.WINDOWS)
+
+    def switch_window_all(self) -> None:
+        self._open_switcher(switcher.WINDOWS, scope_all=True)
+
+    def _open_switcher(self, mode: str, scope_all: bool = False) -> None:
+        """Open a picker, replacing any already up.
+
+        Without this a keybind pressed twice stacks a second full-screen
+        overlay on the first — and since each one takes the keyboard
+        exclusively, the pile has to be dismissed one layer at a time.
+        """
+        existing = self.switcher
+        if existing is not None:
+            existing.close()
+            self.switcher = None
+            # The same bind again means "put it away", not "open another".
+            if existing.mode == mode and existing.scope_all == scope_all:
+                return
+
+        picker = switcher.SwitcherWindow(self, self.store, mode, scope_all)
+        picker.on_context = self.go_to_context
+        picker.connect("close-request", self._on_switcher_closed)
+        self.switcher = picker
+        picker.present()
+
+    def _on_switcher_closed(self, _window) -> bool:
+        self.switcher = None
+        return False
+
+    def previous_context(self) -> None:
+        """Alt-tab between the last two contexts."""
+        current = active_context(self.store.contexts, backend=self.backend)
+        wanted = uistate.previous_context(current.id if current else None)
+        target = next((c for c in self.store.contexts if c.id == wanted), None)
+        if target is None:
+            self.log.info("no previous context to return to")
+            self.activate()
+            return
+        self.go_to_context(target)
+
+    def go_to_context(self, ctx: Context) -> None:
+        """Switch to a context, launching it if its windows are gone."""
+        uistate.note_visit(ctx.id)
+        self.launch_context(ctx)
 
     def _focus_active_context(self) -> None:
         """Switch to whichever context is open, so a relaunch lands somewhere."""

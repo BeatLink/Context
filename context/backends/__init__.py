@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 from ..logging_setup import get_logger
-from .base import Backend, NullBackend, Workspace
+from .base import Backend, NullBackend, WindowInfo, Workspace
 from .hyprland import HyprlandBackend
 
 log = get_logger("backends")
@@ -51,6 +51,7 @@ __all__ = [
     "BACKENDS",
     "HyprlandBackend",
     "NullBackend",
+    "WindowInfo",
     "Workspace",
     "detect",
 ]

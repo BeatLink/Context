@@ -25,6 +25,10 @@ EDGES = ("left", "right", "top", "bottom")
 LOG_LEVELS = ("debug", "info", "warning", "error", "critical")
 BACKENDS = ("auto", "hyprland", "none")
 COLOR_SCHEMES = ("system", "light", "dark")
+# What collapsing does. A rail keeps a strip of icons and keeps reserving that
+# much space; hiding gives the space back entirely and leaves nothing on screen,
+# so it is only usable with hover-to-expand or a keybind to bring it back.
+COLLAPSE_MODES = ("rail", "hidden")
 
 # Below this the sidebar cannot show a list, and above it stops being a rail.
 MIN_SIDEBAR_WIDTH = 200
@@ -50,6 +54,7 @@ class Settings:
     rail_width: int = 56
     # "system" follows the desktop's own light/dark preference.
     color_scheme: str = "system"
+    collapse_mode: str = "rail"
     # Expand on hover and collapse again on leave, without changing the saved
     # collapsed state — the rail stays the resting shape.
     auto_expand: bool = False
@@ -113,6 +118,11 @@ class Settings:
                 self.color_scheme.strip().lower()
                 if self.color_scheme.strip().lower() in COLOR_SCHEMES
                 else "system"
+            ),
+            collapse_mode=(
+                self.collapse_mode.strip().lower()
+                if self.collapse_mode.strip().lower() in COLLAPSE_MODES
+                else "rail"
             ),
             auto_expand=bool(self.auto_expand),
             auto_expand_delay_ms=_clamp(self.auto_expand_delay_ms, 0, 2000, 120),

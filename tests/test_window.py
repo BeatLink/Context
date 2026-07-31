@@ -431,15 +431,19 @@ def test_the_rail_keeps_the_open_and_saved_grouping(gtk_app, isolated_store):
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
         window._open_ids = {running.id}
         window.toggle_collapsed()
+        # Unfold, so both groups are on the rail at once.
+        _rail_toggle(window).emit("clicked")
         children = _rail_children(window)
         seen["kinds"] = [type(c).__name__ for c in children]
         seen["classes"] = [_classes(c) for c in children if isinstance(c, Gtk.Button)]
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["kinds"] == ["Button", "Separator", "Button"]
+    # Open, a rule, the fold control, then saved.
+    assert seen["kinds"] == ["Button", "Separator", "Button", "Button"]
     assert "ctx-open" in seen["classes"][0]
-    assert "ctx-saved" in seen["classes"][1]
+    assert "ctx-rail-toggle" in seen["classes"][1]
+    assert "ctx-saved" in seen["classes"][2]
 
 
 def test_the_rail_has_no_divider_without_both_groups(gtk_app, isolated_store):
@@ -624,3 +628,148 @@ def test_forgetting_removes_the_context(gtk_app, isolated_store):
     run_app(gtk_app, body)
     assert seen["titles"] == ["kept"]
     assert seen["rows"] == 1
+
+
+def test_the_rail_folds_saved_the_same_way_the_list_does(gtk_app, isolated_store):
+    """Collapsing the sidebar must not change which contexts are listed.
+
+    The saved group is behind an accordion when expanded; the rail obeys the
+    same answer rather than always showing everything.
+    """
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    store = ContextStore()
+    running = store.create("running")
+    store.create("idle")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window._open_ids = {running.id}
+        window.refresh()
+        seen["expanded_shows_saved"] = window.saved_expander.get_expanded()
+
+        window.toggle_collapsed()
+        seen["rail_saved"] = _rail_saved_count(window)
+
+        # Fold it from the rail, then check the expanded list agrees.
+        _rail_toggle(window).emit("clicked")
+        seen["rail_saved_after"] = _rail_saved_count(window)
+        window.toggle_collapsed()
+        seen["expanded_after"] = window.saved_expander.get_expanded()
+        app.quit()
+
+    run_app(gtk_app, body)
+    # Something is open, so the saved group starts folded in both modes.
+    assert seen["expanded_shows_saved"] is False
+    assert seen["rail_saved"] == 0
+    # Unfolding on the rail carries back to the expanded list.
+    assert seen["rail_saved_after"] == 1
+    assert seen["expanded_after"] is True
+
+
+def test_the_rail_shows_saved_when_nothing_is_open(gtk_app, isolated_store):
+    """With nothing running the saved list is the whole rail."""
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    store = ContextStore()
+    store.create("idle")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.toggle_collapsed()
+        seen["saved"] = _rail_saved_count(window)
+        seen["toggle"] = _rail_toggle(window)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["saved"] == 1
+    # No fold control: a control that empties the whole rail is a trap.
+    assert seen["toggle"] is None
+
+
+def _rail_saved_count(window) -> int:
+    return sum(
+        1
+        for c in _rail_children(window)
+        if isinstance(c, Gtk.Button) and "ctx-saved" in c.get_css_classes()
+    )
+
+
+def _rail_toggle(window):
+    for child in _rail_children(window):
+        if isinstance(child, Gtk.Button) and "ctx-rail-toggle" in child.get_css_classes():
+            return child
+    return None
+
+
+def test_hiding_gives_back_all_the_space(gtk_app, isolated_store, monkeypatch):
+    """Hidden collapses to a sliver, not to the rail width."""
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    widths = []
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(
+            sidebar, "resize", lambda w, width, edge=None: widths.append(width)
+        )
+        settings.update(collapse_mode="hidden")
+        window.toggle_collapsed()
+        seen["page"] = window.mode_stack.get_visible_child_name()
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert widths[-1] == sidebar.HIDDEN_WIDTH
+    assert seen["page"] == "hidden"
+
+
+def test_hiding_always_reveals_on_hover(gtk_app, isolated_store, monkeypatch):
+    """A setting that can strand the launcher is a trap, not a preference.
+
+    With nothing on screen but a sliver, hover is the only way back short of a
+    keybind — so it works whether or not expand-on-hover is switched on.
+    """
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+
+        settings.update(collapse_mode="hidden", auto_expand=False)
+        window.toggle_collapsed()
+        window._on_pointer_enter()
+        seen["scheduled_when_hidden"] = window._auto_expand_source is not None
+
+        # A rail is visible on its own, so hover only expands when asked to.
+        settings.update(collapse_mode="rail", auto_expand=False)
+        window._auto_expand_source = None
+        window._on_pointer_enter()
+        seen["scheduled_when_rail"] = window._auto_expand_source is not None
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["scheduled_when_hidden"] is True
+    assert seen["scheduled_when_rail"] is False

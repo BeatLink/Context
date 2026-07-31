@@ -40,11 +40,31 @@ beside it rather than underneath.
 <kbd>Down</kbd> moves from the search bar into the list. <kbd>Esc</kbd> clears
 the search.
 
-**Collapsing.** The button in the top corner shrinks the sidebar to a rail: one
-icon per context, open ones highlighted, click to switch. The space it was
-reserving goes back to your windows. The arrow at the top expands it again, and
-it reopens the way you left it.
+**Collapsing.** The button in the top corner shrinks the sidebar. Collapsed to a
+**rail** it keeps one icon per context, open ones highlighted, click to switch;
+collapsed to **hidden** it gives back all the space and leaves a sliver at the
+screen edge to hover over. Either way it reopens the way you left it, and the
+saved group stays folded or unfolded as you had it.
 
+
+## Switching
+
+| Command | Does |
+| --- | --- |
+| `switch` | Pick a context by name |
+| `switch-window` | Pick a window in the context you are in |
+| `switch-window-all` | Pick a window across every context |
+| `previous` | Return to the last context |
+| `settings` | Open the settings page |
+| `toggle-rail` | Collapse or expand the sidebar |
+
+Run them as `python3 -m context <command>`. Context is single-instance, so each
+one is handed to the running copy rather than starting another — which makes
+them cheap to bind to a key.
+
+Windows are listed most recently focused first, each labelled with the context
+it belongs to. The window picker starts scoped to the context you are in and
+switches to all of them from its header.
 
 ## The editor
 
@@ -108,6 +128,7 @@ need a restart say so.
 | Edge | Which side the launcher docks to |
 | Expanded width | Pixels reserved when the launcher is open |
 | Collapsed width | Pixels reserved by the rail |
+| Collapse to | A rail of icons, or hidden entirely |
 | Expand on hover | Open the launcher while the pointer is over the rail |
 | Hover delay | How long to wait first, so passing over does not open it |
 | Window manager | Which backend drives workspaces |
@@ -201,6 +222,7 @@ do to work well inside a context.
 | `context/theme.py` | Colours |
 | `context/logging_setup.py` | Logging |
 | `context/sidebar.py` | Docking the launcher to a screen edge |
+| `context/switcher.py` | Context and window pickers |
 | `context/settings.py` | User settings |
 | `context/settings_page.py` | The settings page |
 | `context/uistate.py` | Interface state that survives a restart |

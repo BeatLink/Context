@@ -23,6 +23,7 @@ EDGE_LABELS = ("Left", "Right", "Top", "Bottom")
 LEVEL_LABELS = ("Debug", "Info", "Warning", "Error", "Critical")
 BACKEND_LABELS = ("Detect automatically", "Hyprland", "None")
 SCHEME_LABELS = ("Match the desktop", "Light", "Dark")
+COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely")
 
 
 def _row_spin(title, subtitle, value, low, high, step, on_change) -> Adw.SpinRow:
@@ -132,13 +133,24 @@ class SettingsPage(Adw.NavigationPage):
         live = settings.current()
         group = Adw.PreferencesGroup(
             title="Collapsing",
-            description="The rail shows one icon per context.",
+            description="What the collapse button does.",
+        )
+        group.add(
+            _row_combo(
+                "Collapse to",
+                "A rail keeps one icon per context. Hidden gives back all the "
+                "space and leaves a sliver to hover over.",
+                COLLAPSE_LABELS,
+                settings.COLLAPSE_MODES,
+                live.collapse_mode,
+                lambda v: self._apply(collapse_mode=v),
+            )
         )
         group.add(
             _row_switch(
                 "Expand on hover",
-                "Open the full launcher while the pointer is over the rail, and "
-                "collapse it again on leaving.",
+                "Open the full launcher while the pointer is over it, and "
+                "collapse it again on leaving. Always on when hidden.",
                 live.auto_expand,
                 lambda v: self._apply(auto_expand=v),
             )

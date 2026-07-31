@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from context import logging_setup  # noqa: E402
-from context.backends.base import Workspace  # noqa: E402
+from context.backends.base import WindowInfo, Workspace  # noqa: E402
 from context.layout import Slot  # noqa: E402
 
 
@@ -59,6 +59,9 @@ class FakeBackend:
         self.calls: list[tuple] = []
         self.current: str | None = None
         self.fail_switch = False
+        # Most recently focused first, the order a switcher lists them in.
+        self.open_windows: list[WindowInfo] = []
+        self.focused: str | None = None
 
     # -- interface ----------------------------------------------------------
 
@@ -94,6 +97,15 @@ class FakeBackend:
         self.calls.append(("live",))
         return {h for h, count in self.workspaces.items() if count > 0}
 
+    def windows(self, handle: str | None = None) -> list[WindowInfo]:
+        self.calls.append(("windows", handle))
+        return [w for w in self.open_windows if handle is None or w.handle == handle]
+
+    def focus_window(self, window_id: str) -> bool:
+        self.calls.append(("focus", window_id))
+        self.focused = window_id
+        return True
+
     def close_workspace(self, handle: str) -> int:
         count = self.workspaces.get(handle, 0)
         self.calls.append(("close", handle, count))
@@ -119,6 +131,15 @@ class FakeBackend:
 
     def add_window(self, handle: str, count: int = 1) -> None:
         self.workspaces[handle] = self.workspaces.get(handle, 0) + count
+        for index in range(count):
+            self.open_windows.append(
+                WindowInfo(
+                    id=f"{handle}-{len(self.open_windows)}",
+                    title=f"window {index} on {handle}",
+                    app_id="fake.desktop",
+                    handle=handle,
+                )
+            )
 
     def sequence(self, *kinds: str) -> list[tuple]:
         """Only the calls of the given kinds, in order."""
