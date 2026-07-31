@@ -485,3 +485,60 @@ def test_the_rest_of_a_resource_waits_for_its_window(backend, monkeypatch):
     launch_context(ctx, backend=backend)
 
     assert order == ["launch", ("finish", 1)]
+
+
+def test_a_raised_window_is_adopted_into_the_context(backend, monkeypatch):
+    """A single-instance app answers a launch by focusing the window it
+    already has, somewhere else. Launching used to report success while the
+    context stayed empty; the window the app raised is the answer, so it is
+    moved in."""
+    from context import adapters
+    from context.backends.base import WindowInfo
+
+    monkeypatch.setattr(launcher, "WINDOW_TIMEOUT", 0.3)
+
+    class RaisesInstead:
+        def launch(self, resource, context_id):
+            return None  # reports success, opens nothing
+
+    monkeypatch.setattr(adapters, "adapter_for", lambda _r: RaisesInstead())
+    backend.open_windows = [
+        WindowInfo(id="0xchat", title="Chat", app_id="whatsapp-for-linux", handle="3")
+    ]
+    backend.workspaces["3"] = 1
+    ctx = Context(
+        title="chat",
+        resources=[Resource(app_id="whatsapp.desktop")],
+        layout=preset_for(1),
+    )
+
+    result = launch_context(ctx, backend=backend)
+
+    assert ("move_window", "0xchat", "ctx-chat") in backend.calls
+    assert result.launched == ["whatsapp.desktop"]
+
+
+def test_an_unrelated_window_is_not_stolen(backend, monkeypatch):
+    """Adoption is for the app that was launched, never for whatever exists."""
+    from context import adapters
+    from context.backends.base import WindowInfo
+
+    monkeypatch.setattr(launcher, "WINDOW_TIMEOUT", 0.3)
+
+    class OpensNothing:
+        def launch(self, resource, context_id):
+            return None
+
+    monkeypatch.setattr(adapters, "adapter_for", lambda _r: OpensNothing())
+    backend.open_windows = [
+        WindowInfo(id="0xother", title="Editor", app_id="codium", handle="3")
+    ]
+    ctx = Context(
+        title="chat",
+        resources=[Resource(app_id="whatsapp.desktop")],
+        layout=preset_for(1),
+    )
+
+    launch_context(ctx, backend=backend)
+
+    assert not any(c[0] == "move_window" for c in backend.calls)

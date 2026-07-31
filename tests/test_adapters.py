@@ -551,3 +551,26 @@ def test_the_launch_context_unsets_rather_than_only_setting(monkeypatch):
 
     base.launch_desktop_entry("anything.desktop")
     assert "ELECTRON_RUN_AS_NODE" in unset
+
+
+def test_codium_resolves_to_the_vscode_adapter():
+    from context.adapters import adapter_for
+    from context.adapters.vscode import VSCodeAdapter
+
+    assert isinstance(adapter_for(Resource(app_id="codium.desktop")), VSCodeAdapter)
+
+
+def test_vscode_always_asks_for_a_new_window(monkeypatch):
+    """With or without a path — otherwise a running instance answers with a
+    tab in whichever window happened to be focused."""
+    from context.adapters.vscode import VSCodeAdapter
+
+    adapter = VSCodeAdapter()
+    monkeypatch.setattr(adapter, "executable", lambda: "/bin/codium")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda cmd, **kw: ran.append(cmd) or object()
+    )
+
+    adapter.launch(Resource(app_id="codium.desktop"), "ctx-1")
+    assert "--new-window" in ran[0]

@@ -396,6 +396,8 @@ def _launch_resources(
         if wm is not None and handle is not None:
             if _await_window(wm, handle, before + 1):
                 _finish_launch(ctx, resource)
+            elif _adopt_raised_window(wm, handle, resource):
+                _finish_launch(ctx, resource)
             else:
                 # Without the window there is nothing safe to finish into:
                 # Firefox's remaining tabs would land in whatever is focused.
@@ -407,6 +409,37 @@ def _launch_resources(
             _finish_launch(ctx, resource)
 
     return launched, failed
+
+
+def _adopt_raised_window(wm: Backend, handle: str, resource) -> bool:
+    """Bring in the window a launch raised instead of opening.
+
+    A single-instance app answers a launch by focusing the window it already
+    has, wherever that is — the launch reports success and the context gets
+    nothing. The app has declared that window its answer, so the context takes
+    it: the most recently focused window of the same app, moved in. Matching
+    is by window class against the desktop id, which is as precise as Wayland
+    allows — see ROADMAP §3 for why pids cannot do better.
+    """
+    for window in wm.windows():
+        if window.handle == handle:
+            continue
+        if _same_app(window, resource):
+            wm.move_window(window.id, handle)
+            log.info(
+                "%s raised an existing window; moved it into %s",
+                resource.app_id, handle,
+            )
+            return True
+    return False
+
+
+def _same_app(window, resource) -> bool:
+    base = resource.app_id.strip().casefold().removesuffix(".desktop")
+    cls = (window.app_id or "").strip().casefold()
+    if not base or not cls:
+        return False
+    return base == cls or base in cls or cls in base
 
 
 def _finish_launch(ctx: Context, resource) -> None:
