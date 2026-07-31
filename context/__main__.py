@@ -1,6 +1,7 @@
-from . import sidebar
+from . import sidebar, theme
 
-# Must happen before GTK and libwayland are loaded, so it precedes importing app.
+# Both must happen before GTK loads, so they precede importing app.
+theme.pin_gtk_theme()
 sidebar.ensure_preloaded()
 
 from .app import main  # noqa: E402

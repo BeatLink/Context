@@ -103,18 +103,30 @@ for them. Colours live in `context/theme.py` and are read from
 hard-code a colour in a widget or a Cairo call — add it to `Theme` instead, so
 both the stylesheet and the drawing code get it from the same place.
 
-### A desktop GTK theme outranks the application
+### A desktop GTK theme beats anything the application can do
 
 `~/.config/gtk-4.0/gtk.css` loads at `STYLE_PROVIDER_PRIORITY_USER` (800),
 above `APPLICATION` (600) *and* above libadwaita's own. home-manager's
-`gtk.theme` writes that file importing a theme, so on this system Mint-Y-Dark
-was hard-coding 45 colours and light mode had no visible effect however
-correctly it was computed.
+`gtk.theme` writes that file importing a theme, so on this system
+Mint-Y-Dark-Aqua was dictating every colour and light mode had no visible
+effect however correctly it was computed.
 
-`theme.PRIORITY` is 900 for that reason, and `_scheme_overrides` restates the
-named colours libadwaita builds widgets from. Only the colours — the theme
-keeps its metrics and rounding. Check this before concluding a styling change
-"did not work": the logic can be right and still lose on priority.
+Two fixes that look right and are not, both measured before landing the third:
+
+1. **Redefining the named colours** (`window_bg_color` and friends) at a
+   higher priority. Sass-built themes inline their colours as literals —
+   Mint has 126 hard-coded `background-color` rules — so the names are never
+   consulted.
+2. **Outranking the provider.** Works for colour *definitions*, but there is
+   no competing rule for the theme's own widget selectors, so they still win.
+
+What works is `GTK_THEME`, which skips theme loading for the process entirely.
+`theme.pin_gtk_theme()` sets it from the colour scheme and must run before GTK
+loads, so it lives at the top of `__main__.py` beside the layer-shell re-exec.
+Measured: the sidebar goes from rgb(51,51,57) to 94% light pixels.
+
+Consequence: the colour scheme now needs a restart, because `GTK_THEME` is only
+read at display open. The settings row says so and the toast offers one.
 
 ## Testing
 

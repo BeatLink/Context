@@ -124,11 +124,12 @@ class SettingsPage(Adw.NavigationPage):
         group.add(
             _row_combo(
                 "Colour scheme",
-                "Light, dark, or whatever the desktop is set to.",
+                "Light, dark, or whatever the desktop is set to. Applies on "
+                "restart, since the desktop's own theme is chosen at startup.",
                 SCHEME_LABELS,
                 settings.COLOR_SCHEMES,
                 live.color_scheme,
-                lambda v: self._apply(color_scheme=v, restyle=True),
+                lambda v: self._apply(color_scheme=v, restyle=True, restart=True),
             )
         )
         group.add(

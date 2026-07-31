@@ -7,6 +7,7 @@ interface has to survive a file containing nonsense.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -190,31 +191,42 @@ def test_the_spin_control_is_left_to_the_theme(isolated_settings):
     assert "min-height" not in block.split("}")[0]
 
 
-def test_light_mode_outranks_a_desktop_theme(isolated_settings):
-    """A GTK theme installed as user CSS would otherwise dictate the colours.
+def test_a_desktop_theme_is_kept_out_of_context(monkeypatch, isolated_settings):
+    """A themed desktop otherwise dictates the colours, whatever the scheme.
 
     home-manager's `gtk.theme` writes ~/.config/gtk-4.0/gtk.css importing a
-    theme, which loads at USER priority — above the application priority a
-    stylesheet normally uses, and above libadwaita's own. A dark theme there
-    beat the colour scheme entirely, so light mode had no visible effect.
+    theme, which loads at USER priority — above libadwaita's stylesheet and
+    above anything an application installs. Sass-built themes inline their
+    colours as literals too, so redefining named colours does not reach them
+    either. GTK_THEME skips theme loading for this process, which does.
     """
-    from gi.repository import Gtk
-
     from context import settings, theme
 
-    assert theme.PRIORITY > Gtk.STYLE_PROVIDER_PRIORITY_USER
-
+    monkeypatch.delenv("GTK_THEME", raising=False)
     settings.update(color_scheme="light")
-    css = theme._stylesheet().decode()
-    # The named colours libadwaita builds its widgets from have to be restated,
-    # or the theme's versions stand.
-    for name in ("window_bg_color", "view_bg_color", "headerbar_bg_color"):
-        assert f"@define-color {name}" in css
+    assert theme.pin_gtk_theme() == "Adwaita:light"
+    assert os.environ["GTK_THEME"] == "Adwaita:light"
+
+    monkeypatch.delenv("GTK_THEME", raising=False)
+    settings.update(color_scheme="dark")
+    assert theme.pin_gtk_theme() == "Adwaita:dark"
 
 
-def test_dark_mode_leaves_the_desktop_theme_alone(isolated_settings):
-    """Dark is what an unthemed libadwaita and a dark desktop already do."""
+def test_matching_the_desktop_leaves_its_theme_in_place(monkeypatch, isolated_settings):
+    """"System" means the desktop decides, theme included."""
     from context import settings, theme
 
-    settings.update(color_scheme="dark")
-    assert "@define-color window_bg_color" not in theme._stylesheet().decode()
+    monkeypatch.delenv("GTK_THEME", raising=False)
+    settings.update(color_scheme="system")
+    assert theme.pin_gtk_theme() is None
+    assert "GTK_THEME" not in os.environ
+
+
+def test_an_explicit_gtk_theme_is_not_overridden(monkeypatch, isolated_settings):
+    """Someone setting it by hand is choosing deliberately."""
+    from context import settings, theme
+
+    monkeypatch.setenv("GTK_THEME", "Yaru:dark")
+    settings.update(color_scheme="light")
+    assert theme.pin_gtk_theme() is None
+    assert os.environ["GTK_THEME"] == "Yaru:dark"

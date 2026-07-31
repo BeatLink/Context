@@ -275,10 +275,11 @@ def apply_color_scheme() -> None:
     reinstall()
 
 
-# Above USER (800), which is where a desktop GTK theme installed as
-# ~/.config/gtk-4.0/gtk.css lands. Application priority (600) is below it, so a
-# themed desktop would otherwise dictate colours the colour scheme cannot
-# override — see `_scheme_overrides`.
+# Above USER (800), where a desktop GTK theme installed as
+# ~/.config/gtk-4.0/gtk.css lands. `pin_gtk_theme` keeps such a theme out
+# entirely, so this rarely matters — but a hand-written user stylesheet is not
+# a theme and is not skipped, and Context's own `ctx-` classes should still win
+# over one.
 PRIORITY = 900
 
 _current: Theme | None = None
@@ -343,47 +344,43 @@ def reinstall() -> bool:
 
 
 def _stylesheet() -> bytes:
-    palette = for_scheme(current(), prefers_dark())
-    return palette.css() + _scheme_overrides(palette)
+    return for_scheme(current(), prefers_dark()).css()
 
 
-def _scheme_overrides(palette: "Theme") -> bytes:
-    """Re-state the colours a desktop GTK theme would otherwise dictate.
+ENV_GTK_THEME = "GTK_THEME"
 
-    A GTK theme installed as user CSS — home-manager's `gtk.theme` writes
-    `~/.config/gtk-4.0/gtk.css`, which imports one — loads at USER priority.
-    That is *above* the application priority this stylesheet uses, and above
-    libadwaita's own, so a theme that hard-codes dark colours wins over the
-    colour scheme and light mode has no visible effect.
 
-    Nothing can outrank USER except another USER provider, so that is what this
-    is: the handful of named colours libadwaita builds its widgets from, set to
-    match the chosen scheme. It is deliberately only the colours — the theme
-    keeps its metrics, its rounding and everything else it draws.
+def pin_gtk_theme() -> str | None:
+    """Keep the desktop's GTK theme out of Context, so the colour scheme wins.
+
+    Must run before GTK loads — the theme is chosen at display open, and
+    `GTK_THEME` is only read then.
+
+    A desktop GTK4 theme arrives as user CSS: home-manager's `gtk.theme` writes
+    `~/.config/gtk-4.0/gtk.css` importing one, which loads at
+    `STYLE_PROVIDER_PRIORITY_USER`. That outranks both libadwaita's stylesheet
+    and anything an application installs, and Sass-built themes inline their
+    colours as literals rather than named ones — Mint-Y-Dark-Aqua has 126
+    hard-coded `background-color` rules — so neither redefining colours nor
+    outranking the provider helps. Measured both ways before this.
+
+    `GTK_THEME` skips theme loading for this process only, which does work:
+    measured, the sidebar goes from rgb(51,51,57) to rgb(241,245,249).
+
+    An explicit `GTK_THEME` in the environment is left alone, since that is
+    someone deliberately choosing.
     """
-    if prefers_dark():
-        # The dark scheme is what an unthemed libadwaita already does, and what
-        # a dark desktop theme is doing anyway. Leave both alone.
-        return b""
-    return f"""
-@define-color window_bg_color {palette.surface};
-@define-color window_fg_color {palette.on_surface};
-@define-color view_bg_color {palette.surface};
-@define-color view_fg_color {palette.on_surface};
-@define-color headerbar_bg_color {palette.surface};
-@define-color headerbar_fg_color {palette.on_surface};
-@define-color popover_bg_color {palette.surface};
-@define-color popover_fg_color {palette.on_surface};
-@define-color card_bg_color #ffffff;
-@define-color card_fg_color {palette.on_surface};
-@define-color dialog_bg_color {palette.surface};
-@define-color dialog_fg_color {palette.on_surface};
-@define-color sidebar_bg_color {palette.surface};
-@define-color sidebar_fg_color {palette.on_surface};
-@define-color accent_color {palette.accent};
-@define-color accent_bg_color {palette.accent};
-@define-color theme_bg_color {palette.surface};
-@define-color theme_fg_color {palette.on_surface};
-@define-color theme_base_color {palette.surface};
-@define-color theme_text_color {palette.on_surface};
-""".encode()
+    if os.environ.get(ENV_GTK_THEME):
+        return None
+
+    from . import settings
+
+    scheme = settings.current().color_scheme
+    if scheme == "system":
+        # Nothing to force: the desktop's own theme is the right answer.
+        return None
+
+    value = "Adwaita:dark" if scheme == "dark" else "Adwaita:light"
+    os.environ[ENV_GTK_THEME] = value
+    log.debug("pinned %s=%s", ENV_GTK_THEME, value)
+    return value
