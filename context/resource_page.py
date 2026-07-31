@@ -105,6 +105,7 @@ class ResourcePage(widgets.NavigationPage):
         # Phrased as the departure from the default rather than as the default,
         # so the switch is off until the user asks for something.
         self.dedicated_profile_switch: Gtk.Switch | None = None
+        self.kiosk_switch: Gtk.Switch | None = None
         if supports_profiles(resource):
             options = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
             options.add_css_class("boxed-list")
@@ -121,6 +122,19 @@ class ResourcePage(widgets.NavigationPage):
             row.add_suffix(self.dedicated_profile_switch)
             row.set_activatable_widget(self.dedicated_profile_switch)
             options.append(row)
+
+            kiosk_row = widgets.ActionRow(
+                title="Kiosk windows",
+                subtitle=(
+                    "Chromeless and fullscreen — the page is the window, one "
+                    "window per URL. Suits a dashboard pinned in a layout."
+                ),
+            )
+            self.kiosk_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+            self.kiosk_switch.set_active(resource.kiosk)
+            kiosk_row.add_suffix(self.kiosk_switch)
+            kiosk_row.set_activatable_widget(self.kiosk_switch)
+            options.append(kiosk_row)
             content.append(options)
 
         # Compatibility. Apps differ in how they behave when already running, and
@@ -289,6 +303,8 @@ class ResourcePage(widgets.NavigationPage):
         self.resource.isolate = self.isolate_switch.get_active()
         if self.command_row is not None:
             self.resource.command = self.command_row.get_text().strip() or None
+        if self.kiosk_switch is not None:
+            self.resource.kiosk = self.kiosk_switch.get_active()
         if self.dedicated_profile_switch is not None:
             self.resource.profile_mode = (
                 PROFILE_DEDICATED

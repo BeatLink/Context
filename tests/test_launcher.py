@@ -455,3 +455,33 @@ def test_closing_a_picker_hands_the_keyboard_back(backend):
     app._on_switcher_closed(None)
 
     assert backend.focused == "0xrecent"
+
+
+def test_the_rest_of_a_resource_waits_for_its_window(backend, monkeypatch):
+    """finish_launch runs only after the launched window has mapped.
+
+    Firefox's remaining tabs land in whatever window is focused, so delivering
+    them before the new window exists sends them to the wrong one.
+    """
+    from context import adapters
+
+    order = []
+
+    class Recorder:
+        def launch(self, resource, context_id):
+            order.append("launch")
+            backend.add_window("ctx-work")
+
+        def finish_launch(self, resource, context_id):
+            order.append(("finish", backend.window_count("ctx-work")))
+
+    monkeypatch.setattr(adapters, "adapter_for", lambda _r: Recorder())
+    ctx = Context(
+        title="work",
+        resources=[Resource(app_id="x.desktop")],
+        layout=preset_for(1),
+    )
+
+    launch_context(ctx, backend=backend)
+
+    assert order == ["launch", ("finish", 1)]

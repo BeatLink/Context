@@ -394,13 +394,36 @@ def _launch_resources(
             continue
 
         if wm is not None and handle is not None:
-            if not _await_window(wm, handle, before + 1):
+            if _await_window(wm, handle, before + 1):
+                _finish_launch(ctx, resource)
+            else:
+                # Without the window there is nothing safe to finish into:
+                # Firefox's remaining tabs would land in whatever is focused.
                 log.warning(
                     "%s did not map within %.0fs; later windows may tile oddly",
                     resource.app_id, WINDOW_TIMEOUT,
                 )
+        else:
+            _finish_launch(ctx, resource)
 
     return launched, failed
+
+
+def _finish_launch(ctx: Context, resource) -> None:
+    """The adapter's second act, once the launched window is up.
+
+    Firefox's main-profile mode is why this exists: `--new-tab` lands in the
+    focused window, so the rest of a resource's URLs must wait until the
+    window `launch` opened is the one with the focus.
+    """
+    finish = getattr(adapters.adapter_for(resource), "finish_launch", None)
+    if finish is None:
+        return
+    try:
+        with adapters.isolating(_isolation_for(ctx, resource)):
+            finish(resource, ctx.id)
+    except (GLib.Error, LookupError, OSError) as exc:
+        log.warning("finishing %s: %s", resource.app_id, exc)
 
 
 def _await_window(wm: Backend, handle: str, expected: int) -> bool:

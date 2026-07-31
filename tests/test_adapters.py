@@ -44,22 +44,62 @@ def test_describe_summarises_urls(urls, expected):
     assert describe(Resource(app_id="firefox.desktop", urls=urls)) == expected
 
 
-def test_describe_marks_only_the_main_profile():
-    """A dedicated profile is the default, so it is the other one worth naming."""
+def test_describe_marks_only_a_dedicated_profile():
+    """The main profile is the default, so it is the other one worth naming."""
     main = Resource(
         app_id="firefox.desktop", urls=["https://x.com"], profile_mode=PROFILE_MAIN
     )
     own = Resource(
         app_id="firefox.desktop", urls=["https://x.com"], profile_mode=PROFILE_DEDICATED
     )
-    assert "main profile" in describe(main)
-    assert "profile" not in describe(own)
+    assert "profile" not in describe(main)
+    assert "own profile" in describe(own)
 
 
-def test_new_resources_default_to_a_dedicated_profile():
-    """The default is what guarantees a context its own window: the main
-    profile hands extra URLs to whatever window was last focused."""
-    assert Resource(app_id="firefox.desktop").profile_mode == PROFILE_DEDICATED
+def _spawn_recorder(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        FirefoxAdapter, "_spawn", lambda self, binary, args: calls.append(args)
+    )
+    monkeypatch.setattr(FirefoxAdapter, "executable", lambda self: "/bin/firefox")
+    return calls
+
+
+def test_main_profile_launch_opens_only_the_window(monkeypatch, isolated_store):
+    """The rest of the URLs wait for the window: --new-tab lands in whatever
+    window is focused, and the new window is not focused until it maps.
+    Measured live: spawning them together split the URLs between the new
+    window and an old one."""
+    calls = _spawn_recorder(monkeypatch)
+    adapter = FirefoxAdapter()
+    resource = Resource(
+        app_id="firefox.desktop",
+        urls=["https://a.com", "https://b.com", "https://c.com"],
+        profile_mode=PROFILE_MAIN,
+    )
+
+    adapter.launch(resource, "ctx-1")
+    assert calls == [["--new-window", "https://a.com"]]
+
+    adapter.finish_launch(resource, "ctx-1")
+    assert calls[1:] == [["--new-tab", "https://b.com"], ["--new-tab", "https://c.com"]]
+
+
+def test_kiosk_opens_a_chromeless_window_per_url(monkeypatch, isolated_store):
+    calls = _spawn_recorder(monkeypatch)
+    adapter = FirefoxAdapter()
+    resource = Resource(
+        app_id="firefox.desktop",
+        urls=["https://a.com", "https://b.com"],
+        profile_mode=PROFILE_MAIN,
+        kiosk=True,
+    )
+
+    adapter.launch(resource, "ctx-1")
+    assert calls == [["--kiosk", "https://a.com"], ["--kiosk", "https://b.com"]]
+
+    adapter.finish_launch(resource, "ctx-1")
+    assert len(calls) == 2  # nothing more to deliver
 
 
 def test_child_env_strips_the_layer_shell_preload(monkeypatch):
@@ -420,7 +460,8 @@ def test_main_profile_launch_is_detached(monkeypatch):
 
 
 def test_main_profile_opens_a_window_then_tabs(monkeypatch):
-    """The first URL makes the window; the rest join it."""
+    """The first URL makes the window; the rest join it in `finish_launch`,
+    which the launcher calls once the window has mapped."""
     adapter = FirefoxAdapter()
     monkeypatch.setattr(adapter, "executable", lambda: "/bin/firefox")
     ran: list[list[str]] = []
@@ -433,14 +474,15 @@ def test_main_profile_opens_a_window_then_tabs(monkeypatch):
         "subprocess.Popen", lambda cmd, **kw: ran.append(cmd) or HandsOff()
     )
 
-    adapter.launch(
-        Resource(
-            app_id="firefox.desktop",
-            urls=["https://a.com", "https://b.com", "https://c.com"],
-            profile_mode=PROFILE_MAIN,
-        ),
-        "ctx-1",
+    resource = Resource(
+        app_id="firefox.desktop",
+        urls=["https://a.com", "https://b.com", "https://c.com"],
+        profile_mode=PROFILE_MAIN,
     )
+    adapter.launch(resource, "ctx-1")
+    assert [c[1] for c in ran] == ["--new-window"]
+
+    adapter.finish_launch(resource, "ctx-1")
     assert [c[1] for c in ran] == ["--new-window", "--new-tab", "--new-tab"]
 
 

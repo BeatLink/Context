@@ -134,17 +134,30 @@ class FirefoxAdapter:
         raise LookupError(f"firefox exited with status {code}; {hint}")
 
     def _launch_in_main_profile(self, binary: str, resource: Resource) -> None:
-        """Open the context's URLs in the user's own Firefox.
+        """Open the first URL in a new window of the user's own Firefox.
 
-        A profile can only be held by one process, so the context cannot have an
-        instance of its own. Each URL is handed to Firefox instead: the first
-        opens a new window and the rest become tabs beside it.
+        Only the first. `--new-tab` lands in whatever window is focused, and
+        the window this opens is not focused until the compositor maps it —
+        measured: one invocation carrying several URLs split them between the
+        new window and an old one. The rest follow in `finish_launch`, once
+        the launcher has seen the window map.
         """
+        if resource.kiosk:
+            # A kiosk window per URL: chromeless, and always its own window.
+            for url in resource.urls or ["about:blank"]:
+                self._spawn(binary, ["--kiosk", url])
+            return
         urls = resource.urls or ["about:blank"]
-        first, rest = urls[0], urls[1:]
+        self._spawn(binary, ["--new-window", urls[0]])
 
-        self._spawn(binary, ["--new-window", first])
-        for url in rest:
+    def finish_launch(self, resource: Resource, context_id: str) -> None:
+        """Deliver the remaining URLs, now that the new window has the focus."""
+        if resource.kiosk or not resource.uses_main_profile:
+            return
+        binary = self.executable()
+        if binary is None:
+            return
+        for url in (resource.urls or [])[1:]:
             self._spawn(binary, ["--new-tab", url])
 
     @traced(log)
@@ -161,6 +174,8 @@ class FirefoxAdapter:
         is_new = self._prepare_profile(path)
 
         command = [binary, "--profile", str(path), "--new-instance"]
+        if resource.kiosk:
+            command.append("--kiosk")
         if is_new:
             # Only seed URLs on first run; afterwards session restore wins.
             command.extend(resource.urls)
@@ -204,9 +219,11 @@ class FirefoxAdapter:
             summary = _pretty(resource.urls[0])
         else:
             summary = f"{_pretty(resource.urls[0])} +{len(resource.urls) - 1} more"
-        # The default needs no label; the departure from it does.
-        if resource.uses_main_profile:
-            summary += " · main profile"
+        # The default needs no label; the departures from it do.
+        if not resource.uses_main_profile:
+            summary += " · own profile"
+        if resource.kiosk:
+            summary += " · kiosk"
         return summary
 
     @traced(log)

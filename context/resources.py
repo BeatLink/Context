@@ -14,15 +14,14 @@ PROFILE_DEDICATED = "dedicated"
 PROFILE_MAIN = "main"
 PROFILE_MODES = (PROFILE_DEDICATED, PROFILE_MAIN)
 
-# Browsers open in a profile of the context's own. The main profile cannot
-# guarantee a window: `--new-tab` lands in whatever window was last focused,
-# so a context's URLs interleave into windows belonging to other work — and a
-# context that does not own its window is not much of a context. A dedicated
-# profile is a separate instance, so the window, session restore, and a
-# distinct pid all come with it. The cost is a browser without the main
-# profile's addons and logins, which is the per-resource switch to flip for
-# the contexts where that matters more.
-PROFILE_DEFAULT = PROFILE_DEDICATED
+# Browsers open in the profile the user already browses with. Adding Firefox
+# to a context and getting a browser with none of your addons, logins or
+# bookmarks is a surprise; keeping a context's tabs separate is a deliberate
+# choice, so it is the one that has to be asked for. The main profile still
+# owes the context a window of its own — the launcher opens the window first
+# and hands the remaining URLs over only after it has mapped, since `--new-tab`
+# lands in whatever window is focused at that moment.
+PROFILE_DEFAULT = PROFILE_MAIN
 
 
 @dataclass
@@ -38,6 +37,9 @@ class Resource:
     # infer, so each is exposed rather than guessed.
     force_new_window: bool = True
     single_instance: bool = False
+    # Firefox only: a chromeless kiosk window per URL — the page is the window.
+    # Always a window of its own, which suits dashboards pinned in a layout.
+    kiosk: bool = False
     # Whether this app follows the context's isolation setting. Off for anything
     # that keeps a shared database: a second copy writing it without knowing
     # about the first is how data gets corrupted, and isolation is precisely
@@ -56,7 +58,7 @@ class Resource:
         # own choice and only a legacy or hand-edited one falls back here.
         if data.get("profile_mode") not in PROFILE_MODES:
             data["profile_mode"] = PROFILE_DEFAULT
-        for flag in ("force_new_window", "single_instance", "isolate"):
+        for flag in ("force_new_window", "single_instance", "isolate", "kiosk"):
             if flag in data:
                 data[flag] = bool(data[flag])
         return cls(**data)
@@ -77,7 +79,7 @@ class Resource:
 
     # Booleans are written even when False: dropping falsy values would lose a
     # deliberately disabled switch, which would then come back on next load.
-    ALWAYS_WRITE = ("force_new_window", "single_instance", "isolate")
+    ALWAYS_WRITE = ("force_new_window", "single_instance", "isolate", "kiosk")
 
     def to_dict(self) -> dict:
         return {

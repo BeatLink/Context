@@ -44,17 +44,17 @@ def test_unknown_fields_are_ignored():
     assert ctx.title == "x"
 
 
-def test_profile_mode_defaults_to_a_dedicated_profile():
-    """Adding a browser gives the context a window of its own.
+def test_profile_mode_defaults_to_the_main_profile():
+    """Adding a browser opens the browser you already use.
 
-    The main profile cannot: extra URLs land as tabs in whatever window was
-    last focused, so a context's pages interleave into other work. The cost —
-    no addons or logins in the dedicated profile — is opted into per resource
-    where it matters more.
+    A dedicated profile arrives with no addons, logins or bookmarks, which is
+    a surprise when all you did was add Firefox to a context. The window the
+    context is owed comes from the launch order instead: the window opens
+    first and the remaining URLs wait for it (see the firefox adapter).
     """
-    assert not Resource(app_id="firefox.desktop").uses_main_profile
-    assert not Resource.from_dict({"app_id": "firefox.desktop"}).uses_main_profile
-    assert not Resource.from_dict(
+    assert Resource(app_id="firefox.desktop").uses_main_profile
+    assert Resource.from_dict({"app_id": "firefox.desktop"}).uses_main_profile
+    assert Resource.from_dict(
         {"app_id": "firefox.desktop", "profile_mode": "nonsense"}
     ).uses_main_profile
 
