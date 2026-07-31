@@ -111,15 +111,35 @@ def test_an_unknown_colour_scheme_falls_back():
 
 
 def test_light_mode_recolours_what_depends_on_the_background(isolated_settings):
-    """The defaults are translucent white, which vanishes on a light surface."""
+    """Two ways a dark palette disappears on a light one, both fixed here.
+
+    The neutrals are translucent white, which does nothing over white. The
+    accent-derived fills are a pale aqua at low alpha, which washes out — so
+    the accent is deepened for light mode rather than kept.
+    """
     from context import theme
 
     base = theme.Theme()
     light = theme.for_scheme(base, dark=False)
     assert light.rail_background != base.rail_background
     assert light.tile_background != base.tile_background
-    # The accent identifies Context either way, so it does not move.
-    assert light.accent == base.accent
+    assert light.accent != base.accent
+    assert light.slot_fill != base.slot_fill
+
+
+def test_the_drawn_parts_follow_the_scheme(isolated_settings, monkeypatch):
+    """The stylesheet followed the scheme; the layout preview did not.
+
+    Anything painting with Cairo has to ask for the adjusted palette, or it
+    draws dark colours onto a light interface.
+    """
+    from context import settings, theme
+
+    settings.update(color_scheme="light")
+    assert theme.active().accent == theme.LIGHT_OVERRIDES["accent"]
+
+    settings.update(color_scheme="dark")
+    assert theme.active().accent == theme.Theme().accent
 
 
 def test_dark_mode_leaves_the_theme_alone(isolated_settings):
@@ -154,3 +174,17 @@ def test_an_unknown_collapse_mode_falls_back():
 def test_never_collapse_is_a_mode():
     assert "none" in settings.COLLAPSE_MODES
     assert Settings(collapse_mode="none").validated().collapse_mode == "none"
+
+
+def test_the_spin_control_is_left_to_the_theme(isolated_settings):
+    """Setting a min-height creates the mismatch it looks like it fixes.
+
+    A standalone GtkSpinButton already sizes its entry and its two buttons
+    alike. The rule reaches the entry but not the buttons, so the entry grows
+    and the buttons do not.
+    """
+    from context import theme
+
+    css = theme.Theme().css().decode()
+    block = css[css.index(".ctx-spin"):]
+    assert "min-height" not in block.split("}")[0]

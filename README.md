@@ -64,6 +64,7 @@ the saved group stays folded or unfolded as you had it.
 | `previous` | Return to the last context |
 | `settings` | Open the settings page |
 | `toggle-rail` | Collapse or expand the sidebar |
+| `restart` | Restart Context, keeping open contexts open |
 
 Run them as `python3 -m context <command>`. Context is single-instance, so each
 one is handed to the running copy rather than starting another — which makes
@@ -191,7 +192,8 @@ set keeps the default:
 ```
 
 Light and dark have separate palettes, so a colour that works on one does not
-disappear on the other. Anything you set explicitly is used in both. **Write the
+disappear on the other — light mode uses a deeper accent, since a pale one
+washes out on a light background. Anything you set explicitly is used in both. **Write the
 default theme** in settings creates the file for you. Set `CONTEXT_THEME` to
 load one from elsewhere.
 

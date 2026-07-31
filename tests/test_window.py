@@ -976,3 +976,63 @@ def _row_titles(page) -> list[str]:
             stack.append(child)
             child = child.get_next_sibling()
     return titles
+
+
+def test_a_restart_setting_offers_the_restart(gtk_app, isolated_store, monkeypatch):
+    """Saying "applies on restart" is only useful with a way to do it."""
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        added = []
+        monkeypatch.setattr(
+            window.toasts, "add_toast", lambda t: added.append(t)
+        )
+        window.settings_changed(needs_restart=True, changed={"sidebar_edge": "right"})
+        seen["label"] = added[0].get_button_label() if added else None
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["label"] == "Restart"
+
+
+def test_restart_replaces_the_process(gtk_app, isolated_store, monkeypatch):
+    """execv, so watchers see a restart rather than a disappearance."""
+    from context.app import ContextApplication
+
+    calls = []
+    monkeypatch.setattr(
+        "context.app.os.execv", lambda path, argv: calls.append((path, argv))
+    )
+    seen = {}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = __import__("logging").getLogger("test.restart")
+        holder.get_windows = lambda: []
+        ContextApplication.restart(holder)
+        # Queued on idle so the windows close first; run it.
+        from gi.repository import GLib
+
+        context = GLib.MainContext.default()
+        while context.pending():
+            context.iteration(False)
+        seen["calls"] = list(calls)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert len(seen["calls"]) == 1
+    path, argv = seen["calls"][0]
+    assert argv[1:3] == ["-m", "context"]
+
+
+def test_restart_is_a_command(gtk_app, isolated_store):
+    from context.app import COMMANDS
+
+    assert "restart" in COMMANDS

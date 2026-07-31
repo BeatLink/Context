@@ -171,20 +171,53 @@ class Theme:
     background-color: {self.rail_divider};
     margin: 4px 10px;
 }}
+
+/* Settings rows stack their control under the description, so the text gets
+   the full width and the control does too. */
+.ctx-setting-title {{
+    font-weight: bold;
+}}
+.ctx-setting-subtitle {{
+    font-size: 0.9em;
+    opacity: 0.65;
+}}
+
+/* A standalone GtkSpinButton already sizes its entry and its two buttons to
+   match — measured at 34px each. Setting a min-height here does not: the rule
+   reaches the entry but not the buttons, so it *creates* the mismatch it looks
+   like it would fix. Leave the geometry to the theme and only give the control
+   room to breathe. */
+.ctx-spin {{
+    margin-top: 2px;
+}}
 """.encode()
 
 
-# Light mode needs its own palette: the defaults are translucent white, which
-# vanishes on a light background. Only the values that depend on the background
-# are overridden — the accent is the same colour either way.
+# Light mode needs its own palette. Two separate problems, both of which make
+# things invisible rather than merely off:
+#
+# The neutrals are translucent *white*, which does nothing over a white
+# background — tiles, the rail and the preview backdrop all disappear.
+#
+# The accent-derived fills are a pale aqua at low alpha. That reads on a dark
+# background and washes out completely on a light one, so the light palette
+# uses a deeper accent and carries more alpha. The accent itself is darkened
+# too: #5ac0c0 on white fails contrast for anything it is asked to mark.
 LIGHT_OVERRIDES = {
+    "accent": "#1a8f8f",
     "surface": "#fafafa",
     "on_surface": "#1e1e1e",
     "preview_background": "#00000014",
+    "slot_fill": "#1a8f8f3d",
+    "slot_fill_active": "#1a8f8f6b",
+    "slot_border": "#1a8f8fcc",
     "tile_background": "#00000010",
     "tile_hover": "#0000001f",
+    "tile_selected": "#1a8f8f38",
     "rail_background": "#00000010",
     "rail_hover": "#00000024",
+    "rail_open": "#1a8f8f38",
+    "rail_active": "#1a8f8f66",
     "rail_divider": "#00000026",
 }
 
@@ -259,6 +292,17 @@ def reload() -> Theme:
     global _current
     _current = Theme.load()
     return _current
+
+
+def active() -> Theme:
+    """The palette as it should be drawn right now.
+
+    What anything that *paints* should use. `current()` is the palette as
+    written, before the light/dark adjustment — the stylesheet gets the adjusted
+    one via `install()`, so a caller using `current()` directly ends up drawing
+    dark colours onto a light interface.
+    """
+    return for_scheme(current(), prefers_dark())
 
 
 def install() -> bool:

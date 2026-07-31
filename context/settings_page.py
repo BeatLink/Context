@@ -26,36 +26,66 @@ SCHEME_LABELS = ("Match the desktop", "Light", "Dark")
 COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely", "Never collapse")
 
 
-def _row_spin(title, subtitle, value, low, high, step, on_change) -> Adw.SpinRow:
-    row = Adw.SpinRow(
-        title=title,
-        subtitle=subtitle,
+def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> Adw.PreferencesRow:
+    """A row with its control under the description rather than beside it.
+
+    `Adw.ActionRow` and its subclasses put the control in a suffix, which is
+    cramped once the description is a sentence: the text wraps to three lines
+    in a 360px sidebar while the control keeps a fixed share of the width.
+    Those rows cannot be re-oriented, so the row is built from a plain
+    `PreferencesRow` instead.
+
+    The title is set on the row as well as drawn, so it still reaches
+    accessibility tooling and anything that looks rows up by name.
+    """
+    row = Adw.PreferencesRow(title=title, activatable=False)
+    row.add_css_class("ctx-setting")
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    box.set_margin_top(12)
+    box.set_margin_bottom(12)
+    box.set_margin_start(14)
+    box.set_margin_end(14)
+
+    heading = Gtk.Label(label=title, xalign=0.0, wrap=True)
+    heading.add_css_class("ctx-setting-title")
+    box.append(heading)
+
+    if subtitle:
+        description = Gtk.Label(label=subtitle, xalign=0.0, wrap=True)
+        description.add_css_class("ctx-setting-subtitle")
+        description.set_margin_bottom(2)
+        box.append(description)
+
+    box.append(control)
+    row.set_child(box)
+    return row
+
+
+def _row_spin(title, subtitle, value, low, high, step, on_change) -> Adw.PreferencesRow:
+    spin = Gtk.SpinButton(
         adjustment=Gtk.Adjustment(
             value=value, lower=low, upper=high, step_increment=step, page_increment=step
         ),
+        numeric=True,
+        hexpand=True,
     )
-    row.connect("notify::value", lambda r, _p: on_change(int(r.get_value())))
-    return row
+    spin.add_css_class("ctx-spin")
+    spin.connect("value-changed", lambda s: on_change(int(s.get_value())))
+    return _stacked(title, subtitle, spin)
 
 
-def _row_combo(title, subtitle, labels, values, current_value, on_change) -> Adw.ComboRow:
-    row = Adw.ComboRow(
-        title=title, subtitle=subtitle, model=Gtk.StringList.new(list(labels))
-    )
-    row.set_selected(values.index(current_value) if current_value in values else 0)
-    row.connect(
-        "notify::selected", lambda r, _p: on_change(values[r.get_selected()])
-    )
-    return row
+def _row_combo(title, subtitle, labels, values, current_value, on_change):
+    drop = Gtk.DropDown(model=Gtk.StringList.new(list(labels)), hexpand=True)
+    drop.set_selected(values.index(current_value) if current_value in values else 0)
+    drop.connect("notify::selected", lambda d, _p: on_change(values[d.get_selected()]))
+    return _stacked(title, subtitle, drop)
 
 
-def _row_switch(title, subtitle, active, on_change) -> Adw.ActionRow:
-    row = Adw.ActionRow(title=title, subtitle=subtitle)
-    switch = Gtk.Switch(valign=Gtk.Align.CENTER, active=active)
+def _row_switch(title, subtitle, active, on_change) -> Adw.PreferencesRow:
+    switch = Gtk.Switch(active=active, halign=Gtk.Align.START)
     switch.connect("notify::active", lambda s, _p: on_change(s.get_active()))
-    row.add_suffix(switch)
-    row.set_activatable_widget(switch)
-    return row
+    return _stacked(title, subtitle, switch)
 
 
 class SettingsPage(Adw.NavigationPage):
@@ -256,14 +286,27 @@ class SettingsPage(Adw.NavigationPage):
             row.add_css_class("property")
             group.add(row)
 
-        write_theme = Adw.ActionRow(
-            title="Write the default theme",
-            subtitle="Creates the theme file with the current colours, ready to edit.",
+        write = Gtk.Button(label="Write the theme file", halign=Gtk.Align.START)
+        write.connect("clicked", lambda _b: self._write_theme())
+        group.add(
+            _stacked(
+                "Write the default theme",
+                "Creates the theme file with the current colours, ready to edit.",
+                write,
+            )
         )
-        button = Gtk.Button(label="Write", valign=Gtk.Align.CENTER)
-        button.connect("clicked", lambda _b: self._write_theme())
-        write_theme.add_suffix(button)
-        group.add(write_theme)
+
+        restart = Gtk.Button(label="Restart now", halign=Gtk.Align.START)
+        restart.add_css_class("destructive-action")
+        restart.connect("clicked", lambda _b: self._restart())
+        group.add(
+            _stacked(
+                "Restart Context",
+                "Applies the settings that are only read at startup. Contexts "
+                "that are open stay open.",
+                restart,
+            )
+        )
         return group
 
     # -- applying ------------------------------------------------------------
@@ -281,6 +324,11 @@ class SettingsPage(Adw.NavigationPage):
         if resync:
             self._sync_rows()
         self.window.settings_changed(needs_restart=restart, changed=changes)
+
+    def _restart(self) -> None:
+        app = self.window.get_application()
+        if app is not None:
+            app.restart()
 
     def _write_theme(self) -> None:
         path = theme.current().write_default()

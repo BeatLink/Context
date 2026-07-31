@@ -348,9 +348,20 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._restart_poll()
         if needs_restart:
             names = ", ".join(sorted(changed or {}))
-            self.toasts.add_toast(
-                Adw.Toast(title=f"{names} applies when Context restarts", timeout=4)
+            # The toast carries the restart rather than only mentioning it,
+            # since the setting is otherwise stuck until Context is found and
+            # relaunched by hand.
+            toast = Adw.Toast(
+                title=f"{names} applies when Context restarts", timeout=8
             )
+            toast.set_button_label("Restart")
+            toast.connect("button-clicked", lambda _t: self._restart_app())
+            self.toasts.add_toast(toast)
+
+    def _restart_app(self) -> None:
+        app = self.get_application()
+        if app is not None:
+            app.restart()
 
     def _restart_poll(self) -> None:
         if self._poll_source is not None:

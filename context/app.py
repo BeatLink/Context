@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 
@@ -33,6 +34,7 @@ COMMANDS = {
     "previous": lambda app: app.previous_context(),
     "settings": lambda app: app.ensure_window().open_settings(),
     "toggle-rail": lambda app: app.ensure_window().toggle_collapsed(),
+    "restart": lambda app: app.restart(),
 }
 
 
@@ -126,6 +128,36 @@ class ContextApplication(Adw.Application):
     def _on_switcher_closed(self, _window) -> bool:
         self.switcher = None
         return False
+
+    def restart(self) -> None:
+        """Replace this process with a fresh one.
+
+        Several settings — the edge, the backend, the log level — are read once
+        at startup, and the page says so rather than pretending otherwise. This
+        is what acts on that, so changing one does not mean finding the terminal
+        it was launched from.
+
+        `execv` rather than spawn-and-quit: the new process inherits the same
+        pid, so anything watching Context (a systemd unit, a shell job) sees a
+        restart rather than a disappearance. Contexts that are open stay open
+        and are picked up again by `reconnect` on the way back.
+        """
+        argv = [sys.executable, "-m", "context", *sys.argv[1:]]
+        self.log.info("restarting: %s", " ".join(argv))
+        # Windows first: an execv leaves surfaces behind if the compositor is
+        # not told, and the launcher would come back beside its own ghost.
+        for window in list(self.get_windows()):
+            window.close()
+
+        def replace() -> bool:
+            try:
+                os.execv(sys.executable, argv)
+            except OSError as exc:
+                self.log.error("could not restart: %s", exc)
+            return False
+
+        # After the current dispatch, so the windows are actually gone first.
+        GLib.idle_add(replace)
 
     def previous_context(self) -> None:
         """Alt-tab between the last two contexts."""
