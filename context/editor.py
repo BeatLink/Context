@@ -414,6 +414,12 @@ class AppTile(Gtk.FlowBoxChild):
         )
         image.set_pixel_size(40)
         image.set_margin_top(8)
+        # The card is taller than its content so that two-line names fit, and a
+        # box stacks from the top — which left the icon riding high over dead
+        # space. The icon and the badge soak up the slack from either end, so
+        # the cluster sits centred whatever the name's line count.
+        image.set_vexpand(True)
+        image.set_valign(Gtk.Align.END)
         box.append(image)
 
         name = Gtk.Label(label=app.name, wrap=True, lines=2, justify=Gtk.Justification.CENTER)
@@ -432,6 +438,8 @@ class AppTile(Gtk.FlowBoxChild):
         self.badge = Gtk.Label()
         self.badge.add_css_class("caption")
         self.badge.add_css_class("dim-label")
+        self.badge.set_vexpand(True)
+        self.badge.set_valign(Gtk.Align.START)
         box.append(self.badge)
 
         self.set_child(box)
