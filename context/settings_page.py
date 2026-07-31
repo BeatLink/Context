@@ -96,7 +96,13 @@ class SettingsPage(Adw.NavigationPage):
         self.window = window
 
         toolbar = Adw.ToolbarView()
-        toolbar.add_top_bar(Adw.HeaderBar())
+        header = Adw.HeaderBar()
+        # Nothing to minimise, maximise or close: this is a page inside the
+        # docked launcher, and its own back button is the way out. Every other
+        # header in Context suppresses them for the same reason.
+        header.set_show_start_title_buttons(False)
+        header.set_show_end_title_buttons(False)
+        toolbar.add_top_bar(header)
 
         page = Adw.PreferencesPage()
         page.add(self._appearance())

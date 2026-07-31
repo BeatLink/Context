@@ -275,6 +275,12 @@ def apply_color_scheme() -> None:
     reinstall()
 
 
+# Above USER (800), which is where a desktop GTK theme installed as
+# ~/.config/gtk-4.0/gtk.css lands. Application priority (600) is below it, so a
+# themed desktop would otherwise dictate colours the colour scheme cannot
+# override — see `_scheme_overrides`.
+PRIORITY = 900
+
 _current: Theme | None = None
 _installed = False
 _provider = None
@@ -322,10 +328,8 @@ def install() -> bool:
     if display is None:
         return False
     _provider = Gtk.CssProvider()
-    _provider.load_from_data(for_scheme(current(), prefers_dark()).css())
-    Gtk.StyleContext.add_provider_for_display(
-        display, _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-    )
+    _provider.load_from_data(_stylesheet())
+    Gtk.StyleContext.add_provider_for_display(display, _provider, PRIORITY)
     _installed = True
     return True
 
@@ -334,5 +338,52 @@ def reinstall() -> bool:
     """Reload the stylesheet in place, for when the scheme or theme changes."""
     if not _installed:
         return install()
-    _provider.load_from_data(for_scheme(current(), prefers_dark()).css())
+    _provider.load_from_data(_stylesheet())
     return True
+
+
+def _stylesheet() -> bytes:
+    palette = for_scheme(current(), prefers_dark())
+    return palette.css() + _scheme_overrides(palette)
+
+
+def _scheme_overrides(palette: "Theme") -> bytes:
+    """Re-state the colours a desktop GTK theme would otherwise dictate.
+
+    A GTK theme installed as user CSS — home-manager's `gtk.theme` writes
+    `~/.config/gtk-4.0/gtk.css`, which imports one — loads at USER priority.
+    That is *above* the application priority this stylesheet uses, and above
+    libadwaita's own, so a theme that hard-codes dark colours wins over the
+    colour scheme and light mode has no visible effect.
+
+    Nothing can outrank USER except another USER provider, so that is what this
+    is: the handful of named colours libadwaita builds its widgets from, set to
+    match the chosen scheme. It is deliberately only the colours — the theme
+    keeps its metrics, its rounding and everything else it draws.
+    """
+    if prefers_dark():
+        # The dark scheme is what an unthemed libadwaita already does, and what
+        # a dark desktop theme is doing anyway. Leave both alone.
+        return b""
+    return f"""
+@define-color window_bg_color {palette.surface};
+@define-color window_fg_color {palette.on_surface};
+@define-color view_bg_color {palette.surface};
+@define-color view_fg_color {palette.on_surface};
+@define-color headerbar_bg_color {palette.surface};
+@define-color headerbar_fg_color {palette.on_surface};
+@define-color popover_bg_color {palette.surface};
+@define-color popover_fg_color {palette.on_surface};
+@define-color card_bg_color #ffffff;
+@define-color card_fg_color {palette.on_surface};
+@define-color dialog_bg_color {palette.surface};
+@define-color dialog_fg_color {palette.on_surface};
+@define-color sidebar_bg_color {palette.surface};
+@define-color sidebar_fg_color {palette.on_surface};
+@define-color accent_color {palette.accent};
+@define-color accent_bg_color {palette.accent};
+@define-color theme_bg_color {palette.surface};
+@define-color theme_fg_color {palette.on_surface};
+@define-color theme_base_color {palette.surface};
+@define-color theme_text_color {palette.on_surface};
+""".encode()

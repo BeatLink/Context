@@ -103,6 +103,19 @@ for them. Colours live in `context/theme.py` and are read from
 hard-code a colour in a widget or a Cairo call — add it to `Theme` instead, so
 both the stylesheet and the drawing code get it from the same place.
 
+### A desktop GTK theme outranks the application
+
+`~/.config/gtk-4.0/gtk.css` loads at `STYLE_PROVIDER_PRIORITY_USER` (800),
+above `APPLICATION` (600) *and* above libadwaita's own. home-manager's
+`gtk.theme` writes that file importing a theme, so on this system Mint-Y-Dark
+was hard-coding 45 colours and light mode had no visible effect however
+correctly it was computed.
+
+`theme.PRIORITY` is 900 for that reason, and `_scheme_overrides` restates the
+named colours libadwaita builds widgets from. Only the colours — the theme
+keeps its metrics and rounding. Check this before concluding a styling change
+"did not work": the logic can be right and still lose on priority.
+
 ## Testing
 
 ```sh

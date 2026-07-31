@@ -1036,3 +1036,38 @@ def test_restart_is_a_command(gtk_app, isolated_store):
     from context.app import COMMANDS
 
     assert "restart" in COMMANDS
+
+
+def test_the_settings_page_has_no_window_controls(gtk_app, isolated_store):
+    """It is a page inside the docked launcher, not a window of its own."""
+    from context.settings_page import SettingsPage
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        page = SettingsPage(window)
+        header = _find(page, Adw.HeaderBar)
+        seen["start"] = header.get_show_start_title_buttons()
+        seen["end"] = header.get_show_end_title_buttons()
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["start"] is False
+    assert seen["end"] is False
+
+
+def _find(root, kind):
+    stack = [root]
+    while stack:
+        widget = stack.pop()
+        if isinstance(widget, kind):
+            return widget
+        child = widget.get_first_child()
+        while child is not None:
+            stack.append(child)
+            child = child.get_next_sibling()
+    return None
