@@ -21,8 +21,15 @@ from .store import Context, ContextStore
 
 log = get_logger("window")
 
-# Large enough to identify a context at a glance, since the rail has no labels.
-RAIL_ICON_SIZE = 32
+# The icon fills the rail minus its button's padding and border. Derived rather
+# than fixed: a 32px icon in a 32px rail cannot fit, so the rail silently came
+# out wider than it was set to.
+RAIL_ICON_PADDING = 16
+MIN_RAIL_ICON = 16
+
+
+def rail_icon_size() -> int:
+    return max(MIN_RAIL_ICON, sidebar.rail_width() - RAIL_ICON_PADDING)
 
 
 def relative_time(stamp: float) -> str:
@@ -109,6 +116,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._open_signature: tuple | None = None
         self._auto_expanded = False
         self._auto_expand_source: int | None = None
+        # Set when collapsing deliberately, cleared when the pointer leaves.
+        self._suppress_hover = False
 
         self.set_default_size(560, 620)
         # The rail's buttons are styled by the theme, so the stylesheet has to
@@ -229,6 +238,9 @@ class LauncherWindow(Adw.ApplicationWindow):
 
         self.expand_button = Gtk.Button(icon_name="go-next-symbolic")
         self.expand_button.add_css_class("flat")
+        # Or Adwaita's default button width becomes the rail's floor, and a
+        # narrow rail comes out wider than it was set to.
+        self.expand_button.add_css_class("ctx-rail-toggle")
         self.expand_button.set_tooltip_text("Expand the launcher")
         self.expand_button.connect("clicked", lambda _b: self.toggle_collapsed())
 
@@ -341,8 +353,14 @@ class LauncherWindow(Adw.ApplicationWindow):
         # Switching collapsing off while collapsed would leave the sidebar
         # shrunk with no way to grow it, since the button has just gone.
         if self.collapsed and not self.collapses:
-            self.collapsed = False
-            uistate.save(collapsed=False)
+            # Through the application, so every launcher expands and the stored
+            # state is written once rather than once per window.
+            app = self.get_application()
+            if app is not None and hasattr(app, "set_collapsed"):
+                app.set_collapsed(False)
+            else:
+                self.collapsed = False
+                uistate.save(collapsed=False)
         if self.collapse_button is not None:
             self.collapse_button.set_visible(self.collapses)
         self._apply_collapsed()
@@ -372,7 +390,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         )
 
     def _on_pointer_enter(self) -> None:
-        if not (self.collapsed and self.collapses):
+        if self._suppress_hover or not (self.collapsed and self.collapses):
             return
         # Hiding always reveals on hover, whatever the setting says: with
         # nothing on screen but a two-pixel sliver, hover is the only way back
@@ -395,6 +413,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         return False
 
     def _on_pointer_leave(self) -> None:
+        # Leaving is what makes a later hover meaningful again.
+        self._suppress_hover = False
         if self._auto_expand_source is not None:
             GLib.source_remove(self._auto_expand_source)
             self._auto_expand_source = None
@@ -409,12 +429,32 @@ class LauncherWindow(Adw.ApplicationWindow):
         if not self.collapses:
             log.info("collapsing is switched off")
             return
+        wanted = not self.collapsed
+        # Whether the launcher is collapsed is one thing, not one per screen:
+        # the state is stored once, so letting each window decide separately
+        # meant the two disagreed and whichever restarted last won. The
+        # application applies it to all of them.
+        app = self.get_application()
+        if app is not None and hasattr(app, "set_collapsed"):
+            app.set_collapsed(wanted)
+        else:
+            self.set_collapsed(wanted)
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Collapse or expand this launcher, without touching the others."""
         # A deliberate toggle ends any hover peek, so the state that gets saved
         # is the one the user chose rather than the one hovering produced.
         self._auto_expanded = False
-        self.collapsed = not self.collapsed
-        uistate.save(collapsed=self.collapsed)
-        log.info("sidebar %s", "collapsed" if self.collapsed else "expanded")
+        if self._auto_expand_source is not None:
+            GLib.source_remove(self._auto_expand_source)
+            self._auto_expand_source = None
+        # Collapsing happens with the pointer on the button, which is inside
+        # the sidebar — so hover would expand it again a moment later and the
+        # button would appear to do nothing. Hovering is suppressed until the
+        # pointer has actually left.
+        self._suppress_hover = collapsed
+        self.collapsed = collapsed
+        log.info("sidebar %s", "collapsed" if collapsed else "expanded")
         self._apply_collapsed()
         self.refresh()
 
@@ -540,7 +580,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             image = Gtk.Image.new_from_icon_name("view-grid-symbolic")
         # The icon is the only thing identifying a context on the rail, so it
         # gets the room the label would otherwise have taken.
-        image.set_pixel_size(RAIL_ICON_SIZE)
+        image.set_pixel_size(rail_icon_size())
         return image
 
     def refresh_open_state(self) -> None:

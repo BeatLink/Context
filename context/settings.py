@@ -48,7 +48,11 @@ SAVE_PROMPTS = ("never", "change", "switch", "close")
 # Below this the sidebar cannot show a list, and above it stops being a rail.
 MIN_SIDEBAR_WIDTH = 200
 MAX_SIDEBAR_WIDTH = 1200
-MIN_RAIL_WIDTH = 32
+# An icon button will not render below this in the Adwaita stylesheet, and a
+# `min-width: 0` from an application provider does not reach it — the same
+# behaviour that made a spin button's parts mismatch. Offering less would be
+# the setting lying: the rail came out at 44 when asked for 32.
+MIN_RAIL_WIDTH = 36
 MAX_RAIL_WIDTH = 160
 
 # How many screen modes a context can hold a layout for. More than this and the

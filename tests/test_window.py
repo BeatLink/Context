@@ -375,7 +375,8 @@ def test_a_rail_button_opens_its_context(gtk_app, isolated_store):
     assert [c.title for c in opened] == ["alpha"]
 
 
-def test_the_collapsed_state_survives_a_restart(gtk_app, isolated_store):
+def test_the_collapsed_state_survives_a_restart(gtk_app, isolated_store, monkeypatch):
+    from context import uistate
     from context.store import ContextStore
     from context.window import LauncherWindow
 
@@ -386,7 +387,11 @@ def test_the_collapsed_state_survives_a_restart(gtk_app, isolated_store):
     def body(app):
         first = LauncherWindow(app, store, lambda c: None, lambda c: None)
         first.is_sidebar = True  # Collapsing is only offered when docked.
+        # Through the application, which is what owns the stored state now.
+        holder = _fake_app_with([first])
+        monkeypatch.setattr(first, "get_application", lambda: holder)
         first.toggle_collapsed()
+        uistate.save(collapsed=first.collapsed)
 
         second = LauncherWindow(app, store, lambda c: None, lambda c: None)
         second.is_sidebar = True
@@ -540,7 +545,9 @@ def test_changing_a_width_resizes_without_a_restart(gtk_app, isolated_store, mon
     assert widths[-1] == 500
 
 
-def test_hover_expansion_does_not_change_the_saved_state(gtk_app, isolated_store):
+def test_hover_expansion_does_not_change_the_saved_state(
+    gtk_app, isolated_store, monkeypatch
+):
     """Peeking is not a decision — the rail is still what it goes back to."""
     from context import uistate
     from context.store import ContextStore
@@ -553,9 +560,14 @@ def test_hover_expansion_does_not_change_the_saved_state(gtk_app, isolated_store
     def body(app):
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
         window.is_sidebar = True
+        holder = _fake_app_with([window])
+        monkeypatch.setattr(window, "get_application", lambda: holder)
         window.toggle_collapsed()
+        uistate.save(collapsed=window.collapsed)
+
         window._auto_expand()
         seen["expanded_now"] = window.collapsed is False
+        # Peeking must not rewrite what was stored.
         seen["saved_state"] = uistate.get("collapsed")
         window._on_pointer_leave()
         seen["collapsed_again"] = window.collapsed
@@ -758,6 +770,9 @@ def test_hiding_always_reveals_on_hover(gtk_app, isolated_store, monkeypatch):
 
         settings.update(collapse_mode="hidden", auto_expand=False)
         window.toggle_collapsed()
+        # Collapsing shrinks the window out from under the pointer, so the
+        # compositor sends a leave before any later hover.
+        window._on_pointer_leave()
         window._on_pointer_enter()
         seen["scheduled_when_hidden"] = window._auto_expand_source is not None
 
@@ -1342,3 +1357,221 @@ def test_hovering_no_longer_touches_the_keyboard(gtk_app, isolated_store, monkey
     store.create("alpha")
     run_app(gtk_app, body)
     assert seen["released"] == []
+
+
+# -- more than one launcher --------------------------------------------------
+#
+# Every test above builds a single LauncherWindow directly. That is why two
+# bugs shipped: collapsing applied to the launcher that was clicked while the
+# stored state is global, so the other screen stayed expanded and disagreed
+# with what was saved.
+
+
+def _fake_app_with(launchers):
+    """A stand-in application that owns several launchers."""
+
+    class Holder:
+        def __init__(self):
+            self.launchers = launchers
+            self.saved = []
+
+        def set_collapsed(self, collapsed):
+            self.saved.append(collapsed)
+            for window in self.launchers:
+                window.set_collapsed(collapsed)
+
+    return Holder()
+
+
+def test_collapsing_applies_to_every_launcher(gtk_app, isolated_store, monkeypatch):
+    """The collapsed state is stored once, so the launchers cannot disagree.
+
+    Collapsing one and leaving the other expanded meant whichever restarted
+    last decided what the setting had been.
+    """
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(collapse_mode="rail")
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        store.create("alpha")
+        first = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        second = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        for window in (first, second):
+            window.is_sidebar = True
+
+        holder = _fake_app_with([first, second])
+        monkeypatch.setattr(first, "get_application", lambda: holder)
+
+        first.toggle_collapsed()
+        seen["both_collapsed"] = (first.collapsed, second.collapsed)
+        seen["saved_once"] = holder.saved
+
+        first.toggle_collapsed()
+        seen["both_expanded"] = (first.collapsed, second.collapsed)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["both_collapsed"] == (True, True)
+    assert seen["both_expanded"] == (False, False)
+    assert seen["saved_once"] == [True, False]
+
+
+def test_every_launcher_shows_the_rail(gtk_app, isolated_store, monkeypatch):
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(collapse_mode="rail")
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        store.create("alpha")
+        windows = [
+            LauncherWindow(app, store, lambda c: None, lambda c: None) for _ in range(2)
+        ]
+        for window in windows:
+            window.is_sidebar = True
+        for window in windows:
+            window.set_collapsed(True)
+        seen["pages"] = [w.mode_stack.get_visible_child_name() for w in windows]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["pages"] == ["rail", "rail"]
+
+
+def test_the_rail_reaches_the_width_it_was_set_to(gtk_app, isolated_store, monkeypatch):
+    """Asserting the stack switched says nothing about how wide it ended up.
+
+    The rail came out at 44px when set to 32, because a fixed icon size and the
+    expand button's own minimum were both larger than the rail.
+    """
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        store.create("alpha")
+        for width in (settings.MIN_RAIL_WIDTH, 48, 80):
+            settings.update(rail_width=width, collapse_mode="rail")
+            window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+            window.present()
+            window.mode_stack.set_visible_child_name("rail")
+            window.header.set_visible(False)
+            window.collapsed = True
+            window.refresh()
+            window.set_size_request(width, -1)
+            minimum, _, _, _ = window.measure(Gtk.Orientation.HORIZONTAL, -1)
+            seen[width] = minimum
+            window.destroy()
+        app.quit()
+
+    run_app(gtk_app, body)
+    # Every offered width has to be one the rail can actually render.
+    for asked, got in seen.items():
+        assert got <= asked, f"asked for {asked}px, rail floors at {got}px"
+
+
+def test_the_rail_icon_fits_the_rail(isolated_store, monkeypatch):
+    from context import settings, window as window_module
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+
+    settings.update(rail_width=80)
+    assert window_module.rail_icon_size() < 80
+
+    settings.update(rail_width=settings.MIN_RAIL_WIDTH)
+    assert window_module.rail_icon_size() < settings.MIN_RAIL_WIDTH
+
+
+def test_collapsing_is_not_undone_by_the_pointer_still_being_there(
+    gtk_app, isolated_store, monkeypatch
+):
+    """The collapse button sits inside the sidebar it collapses.
+
+    With hover-to-expand on, clicking it collapsed the sidebar and the pointer
+    — which had not moved — expanded it again a moment later, so the button
+    appeared to do nothing at all.
+    """
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(collapse_mode="rail", auto_expand=True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        store.create("alpha")
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+
+        window.set_collapsed(True)
+        # The pointer never left, so this is the enter that follows the click.
+        window._on_pointer_enter()
+        seen["hover_scheduled"] = window._auto_expand_source is not None
+        seen["still_collapsed"] = window.collapsed
+
+        # Once the pointer has left and come back, hover works again.
+        window._on_pointer_leave()
+        window._on_pointer_enter()
+        seen["hover_after_leaving"] = window._auto_expand_source is not None
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["hover_scheduled"] is False
+    assert seen["still_collapsed"] is True
+    assert seen["hover_after_leaving"] is True
+
+
+def test_a_pending_hover_expand_is_cancelled_by_collapsing(
+    gtk_app, isolated_store, monkeypatch
+):
+    """A queued expand must not fire after a deliberate collapse."""
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    settings.update(collapse_mode="rail", auto_expand=True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        store.create("alpha")
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = True
+        window._on_pointer_enter()
+        seen["queued"] = window._auto_expand_source is not None
+
+        window.set_collapsed(True)
+        seen["cancelled"] = window._auto_expand_source is None
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["queued"] is True
+    assert seen["cancelled"] is True

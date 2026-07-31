@@ -163,6 +163,21 @@ There is no "unfocus me" request — the mode *is* the request — so
 `release_focus` drops to NONE and straight back to ON_DEMAND. Staying on NONE
 leaves the sidebar unclickable for the rest of the session.
 
+## More than one launcher
+
+`monitor = "*"` puts a launcher on every screen, because a layer surface
+belongs to exactly one output. `app.launchers` is all of them; `app.window` is
+the primary and is where toasts go.
+
+**Anything stored once must be applied to all of them.** Collapsing shipped
+broken twice for this reason: the collapsed flag is a single value in
+`ui.json`, but the toggle applied it to whichever window was clicked, so the
+two disagreed and whichever restarted last decided what the setting had been.
+Settings changes fan out the same way.
+
+Every test built one `LauncherWindow` directly, which is why none of it was
+caught — see the multi-launcher block in `test_window.py`.
+
 ## Testing
 
 ```sh
@@ -182,6 +197,9 @@ exercised, not just imported.
 
 Traps found the hard way:
 
+- **Assert geometry, not just widget state.** "The stack switched to the rail"
+  is not "the sidebar is 36px wide". A rail that came out at 44px when asked
+  for 32 passed every test. Measure the window.
 - **A stub adapter that never opens a window costs 10s per launch.** Every
   launch waits `WINDOW_TIMEOUT` for a window that is not coming. `stub_adapters`
   adds one to the workspace being launched into; without that the suite took

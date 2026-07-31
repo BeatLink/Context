@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from .logging_setup import get_logger
@@ -169,6 +169,13 @@ class Theme:
     background-color: {self.rail_active};
     border-color: {self.accent};
     opacity: 1;
+}}
+
+/* Nothing in the rail may set a floor above the configured width. */
+.ctx-rail-toggle {{
+    min-width: 0;
+    min-height: 0;
+    padding: 2px;
 }}
 
 .ctx-rail-divider {{

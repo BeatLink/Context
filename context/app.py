@@ -35,7 +35,7 @@ COMMANDS = {
     "switch-window-all": lambda app: app.switch_window_all(),
     "previous": lambda app: app.previous_context(),
     "settings": lambda app: app.ensure_window().open_settings(),
-    "toggle-rail": lambda app: app.ensure_window().toggle_collapsed(),
+    "toggle-rail": lambda app: app.toggle_collapsed(),
     "restart": lambda app: app.restart(),
     # Window management. These act on the focused window, so they are bound to
     # keys rather than driven from the launcher.
@@ -270,7 +270,7 @@ class ContextApplication(Adw.Application):
                 else f"Nothing open to save for “{current.title}”"
             )
             self.window.toasts.add_toast(Adw.Toast(title=message, timeout=3))
-            self.window.refresh()
+        self.refresh_all()
 
     def _show_picker(self, picker) -> None:
         existing = self.switcher
@@ -397,6 +397,21 @@ class ContextApplication(Adw.Application):
                 self.extra_windows.append(window)
         self.log.info("launcher on %d screen(s)", len(docks))
 
+    def toggle_collapsed(self) -> None:
+        window = self.ensure_window()
+        if window is not None:
+            window.toggle_collapsed()
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Collapse or expand every launcher together.
+
+        There is one stored collapsed state, so the launchers cannot disagree
+        about it without one of them being wrong after a restart.
+        """
+        uistate.save(collapsed=collapsed)
+        for launcher_window in self.launchers:
+            launcher_window.set_collapsed(collapsed)
+
     def refresh_all(self) -> None:
         """Keep every launcher showing the same thing."""
         for launcher_window in self.launchers:
@@ -458,6 +473,7 @@ class ContextApplication(Adw.Application):
         self.log.info("closed %d window(s) for %s", result.closed, ctx.title)
         if self.window is not None:
             self.window.report_close(ctx, result)
+        self.refresh_all()
 
 
 def main(argv: list[str] | None = None) -> int:

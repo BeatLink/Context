@@ -390,7 +390,7 @@ class SettingsPage(Adw.NavigationPage):
         group.add(
             _row_combo(
                 "Log level",
-                "How much detail is written to the log.",
+"How much detail is written to the log. Applies on restart.",
                 LEVEL_LABELS,
                 settings.LOG_LEVELS,
                 live.log_level,
@@ -454,7 +454,14 @@ class SettingsPage(Adw.NavigationPage):
         settings.update(**changes)
         if resync:
             self._sync_rows()
-        self.window.settings_changed(needs_restart=restart, changed=changes)
+        # Every launcher, not just the one showing this page: a width or a
+        # collapse mode applies to all of them.
+        app = self.window.get_application()
+        targets = getattr(app, "launchers", None) or [self.window]
+        for window in targets:
+            window.settings_changed(needs_restart=False, changed=changes)
+        if restart:
+            self.window.settings_changed(needs_restart=True, changed=changes)
 
     def _restart(self) -> None:
         app = self.window.get_application()

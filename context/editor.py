@@ -9,7 +9,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, Gtk
 
-from .adapters import configurable, describe
+
 from .apps import App, installed_apps, search_apps
 from . import isolation, monitors, settings, theme
 from .logging_setup import get_logger
