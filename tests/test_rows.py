@@ -236,3 +236,90 @@ def test_a_row_only_carries_the_buttons_it_will_show(gtk_app):
     assert seen["linked"] is True
     assert seen["spacing"] == 0
     assert seen["flat"] == [False, False, False]
+
+
+@needs_display
+def test_an_app_card_has_the_same_menu_the_context_card_does(gtk_app):
+    """Reaching for a right-click on an application and getting nothing reads
+    as the row being inert, when it has the same two answers as its buttons."""
+    from context.system.apps import App
+    from context.ui.rows import AppRow
+
+    seen = {"picked": []}
+
+    def body(app):
+        info = App(id="firefox.desktop", name="Firefox", description="", icon=None)
+        # In a window first: a popover parented to a row with no root crashes
+        # GTK outright rather than failing the assertion.
+        window = Gtk.ApplicationWindow(application=app)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        window.set_child(box)
+
+        both = AppRow(
+            info,
+            lambda i: seen["picked"].append("new"),
+            lambda i: seen["picked"].append("here"),
+        )
+        box.append(both)
+        both.open_menu()
+        seen["with_context"] = sorted(both.menu_items)
+        both.menu_items["here"].emit("clicked")
+
+        alone = AppRow(info, lambda i: seen["picked"].append("new"))
+        box.append(alone)
+        alone.open_menu()
+        seen["without_context"] = sorted(alone.menu_items)
+        alone.menu_items["new"].emit("clicked")
+
+        window.destroy()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["with_context"] == ["here", "new"]
+    assert seen["without_context"] == ["new"]
+    assert seen["picked"] == ["here", "new"]
+
+
+@needs_display
+def test_a_drifted_context_offers_the_way_back_as_well_as_the_way_on(gtk_app, isolated_store):
+    """Only offering "keep this" made drifting a one-way door: the way back was
+    to close the context and reopen it."""
+    from context.state.store import ContextStore
+    from context.ui.rows import ContextRow
+
+    seen = {"restored": []}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create("work")
+        window = Gtk.ApplicationWindow(application=app)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        window.set_child(box)
+
+        drifted = ContextRow(
+            ctx, lambda c: None, lambda c: None, lambda c: None,
+            is_open=True, is_drifted=True,
+            on_save=lambda c: None, on_restore=seen["restored"].append,
+        )
+        box.append(drifted)
+        seen["offered"] = drifted.restore.get_visible()
+        drifted.restore.emit("clicked")
+        drifted.open_menu()
+        seen["in_menu"] = "restore" in drifted.menu_items
+
+        # Nothing has changed, so there is nothing to put back.
+        settled = ContextRow(
+            ctx, lambda c: None, lambda c: None, lambda c: None,
+            is_open=True, is_drifted=False,
+            on_save=lambda c: None, on_restore=seen["restored"].append,
+        )
+        box.append(settled)
+        seen["settled"] = settled.restore.get_visible()
+        window.destroy()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["offered"] is True
+    assert seen["settled"] is False
+    assert seen["in_menu"] is True
+    assert [c.title for c in seen["restored"]] == ["work"]

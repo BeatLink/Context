@@ -770,6 +770,43 @@ def _slot_from(client: dict, box: tuple[float, float, float, float]) -> "Slot":
 
 
 @traced(log)
+@traced(log)
+def restore_arrangement(
+    ctx: Context, backend: Backend | None = None
+) -> tuple[int, int]:
+    """Put the windows back where the context was saved.
+
+    The inverse of `capture_arrangement`, and the same operation the launch path
+    performs: the stored slots are proportions of the box the windows span, so
+    re-applying them is exactly what opening the context would have done.
+
+    It restores *positions*, not membership. A window that was closed since is
+    not relaunched and an extra one is not shut — the first would be surprising
+    and the second destroys work, and neither is what "put it back how it was"
+    is asking for. So a context that has drifted by count stays drifted after
+    this, which is honest: the layout is what was rolled back.
+
+    Returns how many windows moved and across how many screens.
+    """
+    wm: Backend = backend or backends.detect()
+    handles = ctx.handles_for(wm.name)
+    if not handles:
+        return (0, 0)
+
+    saved = ctx.arrangement_for(len(handles))
+    ratios = getattr(wm, "apply_ratios", None)
+    if ratios is None:
+        return (0, 0)
+
+    moved = 0
+    for screen, handle in enumerate(handles):
+        slots = saved.layout_for(screen).slots
+        if len(slots) > 1:
+            moved += ratios(handle, slots)
+    log.info("restored %s: %d window(s) on %d screen(s)", ctx.title, moved, len(handles))
+    return (moved, len(handles))
+
+
 def has_drifted(ctx: Context, backend: Backend | None = None) -> bool:
     """Whether a context's windows no longer match what was saved.
 

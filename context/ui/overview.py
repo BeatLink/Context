@@ -26,7 +26,7 @@ from context.system.apps import MAIN_CATEGORIES, SORTS, App, arrange_apps, categ
 from context.system.apps import in_category, installed_apps, search_apps
 from context.system.launcher import is_no_context, loose_context, read_live_state
 from context.system.logging_setup import get_logger
-from context.ui.rows import ContextRow, app_tile, context_for_app
+from context.ui.rows import AppRow, ContextRow, context_for_app
 
 log = get_logger("overview")
 
@@ -64,12 +64,12 @@ class OverviewWindow(Gtk.ApplicationWindow):
         # Not a setting: it is narrowing done in the moment, and an overview
         # that opened filtered would look like half your applications had gone.
         self.category = ""
-        # The order and the target are settings, so the overview opens the same
-        # way every time rather than however it was left.
+        # The order is a setting, so the overview opens the same way every time
+        # rather than however it was left. Where an application opens is not:
+        # each tile asks, the way the sidebar's rows do.
         live = settings.current()
         self.sort = live.overview_sort if live.overview_sort in SORTS else next(iter(SORTS))
-        self.target = live.overview_target
-        self.flows: list[Gtk.FlowBox] = []
+        self.flows: list[Gtk.ListBox] = []
         self._live = read_live_state([], backend=self.backend)
 
         theme.install()
@@ -197,19 +197,9 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.sort_chooser.set_selected(self.sort_keys.index(self.sort), notify=False)
         right.append(_labelled("Sort", self.sort_chooser))
 
-        # What clicking an application does, with the other two things that
-        # decide what the grid is showing and in what order. It was under the
-        # grid, on the reasoning that it is answered after you have found
-        # something; in practice it is a mode the grid is in, and a mode belongs
-        # with the other controls rather than past the scroll.
-        self.target_chooser = widgets.SegmentedChoice(self._on_target)
-        self.target_chooser.add("New context")
-        self.target_chooser.add("Current context")
-        self.target_chooser.set_selected(1 if self.target == "current" else 0, notify=False)
-        right.append(_labelled("Opens", self.target_chooser))
 
         # One section per group, each with its own grid: a heading cannot sit
-        # inside a FlowBox, and the groups are the point of the ordering.
+        # inside a list, and the groups are the point of the ordering.
         self.sections = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
 
         right_scroller = Gtk.ScrolledWindow(vexpand=True)
@@ -296,10 +286,6 @@ class OverviewWindow(Gtk.ApplicationWindow):
 
         # Only offered while there is a context to add to.
         current = self._active_context()
-        self.target_chooser.set_choice_sensitive(1, current is not None)
-        if current is None and self.target == "current":
-            self.target = "new"
-            self.target_chooser.set_selected(0, notify=False)
 
     def _fill_sections(self, sections: list[tuple[str, list[App]]]) -> None:
         child = self.sections.get_first_child()
@@ -308,20 +294,20 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self.sections.remove(child)
             child = following
 
-        self.flows: list[Gtk.FlowBox] = []
+        self.flows: list[Gtk.ListBox] = []
         for heading, apps in sections:
             if heading:
                 label = Gtk.Label(label=heading, xalign=0.0)
                 label.add_css_class("heading")
                 label.add_css_class("dim-label")
                 self.sections.append(label)
-            flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE)
-            flow.set_valign(Gtk.Align.START)
-            flow.set_max_children_per_line(30)
+            listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+            listbox.add_css_class("boxed-list")
+            listbox.set_valign(Gtk.Align.START)
             for info in apps:
-                flow.append(self._app_tile(info))
-            self.sections.append(flow)
-            self.flows.append(flow)
+                listbox.append(self._app_row(info))
+            self.sections.append(listbox)
+            self.flows.append(listbox)
 
     def _context_row(self, ctx, is_open: bool) -> ContextRow:
         """The sidebar's row, unchanged.
@@ -342,7 +328,14 @@ class OverviewWindow(Gtk.ApplicationWindow):
             on_forget=None if virtual else self._forget_context,
             on_add_app=None if virtual else self._add_app_to_context,
             on_save=self._save_context,
+            on_restore=self._restore_context,
         )
+
+    def _restore_context(self, ctx) -> None:
+        # Housekeeping done while you carry on looking, the same exception
+        # closing and saving make: the list refreshes rather than dismissing.
+        self.on_restore(ctx)
+        self.refresh()
 
     def _save_context(self, ctx) -> None:
         """Keeping windows is housekeeping, so the overview stays up — unless
@@ -359,8 +352,20 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.close()
         self.on_add_app(ctx)
 
-    def _app_tile(self, info: App) -> Gtk.FlowBoxChild:
-        return app_tile(info, self._open_app)
+    def _app_row(self, info: App) -> AppRow:
+        """The sidebar's row, unchanged.
+
+        An application has the same two answers wherever it is listed — a
+        context of its own, or the one you are in — so the row is shared rather
+        than drawn a second way. It was a grid of tiles with a mode above it,
+        which meant the same question was asked differently in the two views and
+        a tile had nowhere to put the second answer.
+        """
+        return AppRow(
+            info,
+            self._open_app,
+            self._open_app_here if self._active_context() else None,
+        )
 
     # -- acting --------------------------------------------------------------
 
@@ -376,10 +381,6 @@ class OverviewWindow(Gtk.ApplicationWindow):
         if self._active_id is None:
             return None
         return next((c for c in self.store.contexts if c.id == self._active_id), None)
-
-    def _on_target(self, selected: int) -> None:
-        self.target = "current" if selected == 1 else "new"
-        log.debug("apps open %s", self.target)
 
     def _on_sort(self, selected: int) -> None:
         if 0 <= selected < len(self.sort_keys):
@@ -457,18 +458,22 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.refresh()
 
     def _open_app(self, info: App) -> None:
-        """Either a context grown around this app, or this app added to the one
-        you are in — whichever the toggle above the grid says."""
-        current = self._active_context() if self.target == "current" else None
-        if current is not None:
-            log.info("overview: %s into %s", info.id, current.title)
-            self.close()
-            self.on_app_into(current, info)
-            return
+        """A context grown around this app. What clicking the tile does, since
+        it is the answer that works whether or not anything is open."""
         ctx = context_for_app(self.store, info)
         log.info("overview: new context around %s", info.id)
         self.close()
         self.on_context(ctx)
+
+    def _open_app_here(self, info: App) -> None:
+        """This app added to the context you are in."""
+        current = self._active_context()
+        if current is None:
+            self._open_app(info)
+            return
+        log.info("overview: %s into %s", info.id, current.title)
+        self.close()
+        self.on_app_into(current, info)
 
     def _dismiss(self) -> bool:
         self.close()
@@ -514,6 +519,9 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return None
 
     def on_save(self, ctx) -> None:
+        return None
+
+    def on_restore(self, ctx) -> None:
         return None
 
     def on_app_into(self, ctx, info) -> None:

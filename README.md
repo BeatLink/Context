@@ -87,15 +87,18 @@ switches to all of them from its header.
 
 The **overview** puts everything on one screen: one search over the contexts
 you have — open ones first, with the same handles the sidebar gives them — and
-the applications installed. Clicking an application either starts a context
-around it or adds it to the one you are in, whichever the toggle above the grid
-says.
+the applications installed. Contexts and applications are the same cards the
+sidebar lists, so everything they do there they do here.
 
-The grid filters by kind, and groups itself four ways: **Recent** by how long
-ago you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under
-letter headings, **By kind** under the categories the desktop entries claim,
-and **In contexts**, which splits what you actually work in from everything
-else.
+An application card offers both answers: open it in the context you are in, or
+start a new one around it. Clicking the card takes the second, since it is the
+one that works whether or not anything is open, and right-clicking says both in
+words.
+
+The applications filter by kind and group four ways: **Recent** by how long ago
+you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under letter
+headings, **By kind** under the categories the desktop entries claim, and **In
+contexts**, which splits what you actually work in from everything else.
 
 ## The editor
 
@@ -165,6 +168,11 @@ offers each one a home, so nothing stays orphaned.
 moved, resized, opened and closed. `capture` reads the live positions back into
 the arrangement for however many screens you have now, so reopening rebuilds
 what you actually had. What each app opens is kept.
+
+**Or put it back.** A drifted context's card offers both: keep the windows as
+they are, or move them back to where the context was saved. Restoring is
+positions only — a window closed since is not relaunched and an extra one is not
+shut, so a context that has drifted by *what is open* stays that way.
 
 Context can also offer this itself, at whichever moment suits — whenever a
 context changes, when you switch away from it, or when you close it. **Ask to
@@ -306,8 +314,7 @@ make them; the few that need a restart say so.
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |
 | Order contexts by | Most recently used, when they were made, or name |
-| Sort applications by | How the overview's grid is ordered when it opens |
-| Applications open in | What clicking an application in the overview does |
+| Sort applications by | How the overview's application list is ordered when it opens |
 | Scratchpad (overview) | Show the scratchpad in the overview |
 | Scratchpad | Somewhere to type in the sidebar and the overview |
 | Global scratchpad | The one that is there wherever you are |

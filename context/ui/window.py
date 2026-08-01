@@ -880,6 +880,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             on_forget=None if virtual else self._delete,
             on_add_app=None if virtual else self._add_app_to_context,
             on_save=self._save,
+            on_restore=self._restore,
         )
 
     def _save(self, ctx: Context) -> None:
@@ -887,6 +888,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
         app = self.get_application()
         if app is not None and hasattr(app, "save_context"):
             app.save_context(ctx)
+
+    def _restore(self, ctx: Context) -> None:
+        """Put the windows back where this context was saved."""
+        app = self.get_application()
+        if app is not None and hasattr(app, "restore_context"):
+            app.restore_context(ctx)
 
     def _add_app_to_context(self, ctx: Context) -> None:
         """Pick an app to join this context, from the row's menu."""

@@ -391,8 +391,8 @@ def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch
 def test_an_app_can_go_into_the_context_you_are_in(
     gtk_app, isolated_store, backend, fake_apps
 ):
-    """The grid answers two questions, and which one is a toggle rather than a
-    different way in."""
+    """The overview lists the sidebar's app card, so an application offers the
+    same two answers in both views rather than a mode above a grid in one."""
     from context.state.store import ContextStore
 
     store = ContextStore()
@@ -407,17 +407,17 @@ def test_an_app_can_go_into_the_context_you_are_in(
         window.on_app_into = lambda c, i: seen["into"].append((c.title, i.id))
         window.on_context = seen["opened"].append
         window.close = lambda: None
-        seen["offers"] = window.target_chooser._buttons[1].get_label()
 
-        window._on_target(1)
-        window._open_app(fake_apps[0])
-        # And back: a new context is still one click away.
-        window._on_target(0)
-        window._open_app(fake_apps[1])
+        row = window._app_row(fake_apps[0])
+        seen["offers_both"] = row.here.get_visible()
+        row.here.emit("clicked")
+
+        # And a new context is still one click away, on the other button.
+        window._app_row(fake_apps[1]).fresh.emit("clicked")
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["offers"] == "Current context"
+    assert seen["offers_both"] is True
     assert seen["into"] == [("work", "firefox.desktop")]
     assert [c.title for c in seen["opened"]] == ["KiCad"]
 
@@ -425,18 +425,26 @@ def test_an_app_can_go_into_the_context_you_are_in(
 def test_there_is_nothing_to_add_to_without_a_context(
     gtk_app, isolated_store, backend, fake_apps
 ):
+    """With nothing open there is nothing to add to, so that button is not
+    offered rather than meaning what its neighbour means."""
     from context.state.store import ContextStore
 
-    seen = {}
+    seen = {"opened": []}
 
     def body(app):
         window = _build(app, ContextStore(), backend)
-        seen["offered"] = window.target_chooser._buttons[1].get_sensitive()
-        window.close()
+        window.on_context = seen["opened"].append
+        window.close = lambda: None
+
+        row = window._app_row(fake_apps[0])
+        seen["offers_here"] = row.here.get_visible()
+        # Activating it still works; it just has one meaning.
+        row.emit("activated")
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["offered"] is False
+    assert seen["offers_here"] is False
+    assert [c.title for c in seen["opened"]] == ["Firefox"]
 
 
 def test_by_kind_groups_under_the_categories(gtk_app, isolated_store, backend, monkeypatch):

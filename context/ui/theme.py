@@ -608,6 +608,7 @@ window.ctx-window checkbutton check:checked {
     border-color: @ctx_accent;
 }
 
+
 /* One of several, chosen. */
 .ctx-choice:checked {
     box-shadow: inset 0 0 0 2px @ctx_accent;

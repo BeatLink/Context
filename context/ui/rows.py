@@ -34,6 +34,44 @@ def relative_time(stamp: float) -> str:
     return "just now"
 
 
+def _row_menu(row: Gtk.Widget, x: float, y: float):
+    """A row's menu, built where it was asked for.
+
+    Built per opening rather than kept on the row: rows are thrown away and
+    rebuilt on every refresh, and a popover parented to a dead row is a warning
+    at best. Unparenting on close keeps the tree clean.
+
+    Shared by both cards so a right-click means the same thing on either — the
+    context row grew this first and the app row would otherwise have reinvented
+    it a second way.
+    """
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    popover = Gtk.Popover()
+    popover.set_has_arrow(False)
+    popover.set_halign(Gtk.Align.START)
+    popover.set_child(box)
+    popover.set_parent(row)
+    at = Gdk.Rectangle()
+    at.x, at.y, at.width, at.height = int(x), int(y), 1, 1
+    popover.set_pointing_to(at)
+    popover.connect("closed", lambda p: p.unparent())
+
+    items: dict[str, Gtk.Button] = {}
+
+    def item(key: str, label: str, action, destructive: bool = False):
+        button = Gtk.Button(label=label)
+        button.set_has_frame(False)
+        button.get_child().set_xalign(0.0)
+        if destructive:
+            button.add_css_class("destructive-action")
+        button.connect("clicked", lambda _b: action())
+        box.append(button)
+        items[key] = button
+        return button
+
+    return popover, item, items
+
+
 class ContextRow(widgets.ActionRow):
     """A context in a list.
 
@@ -54,6 +92,7 @@ class ContextRow(widgets.ActionRow):
         on_forget=None,
         on_add_app=None,
         on_save=None,
+        on_restore=None,
     ) -> None:
         super().__init__()
         self.ctx = ctx
@@ -66,6 +105,7 @@ class ContextRow(widgets.ActionRow):
         self.on_forget = on_forget
         self.on_add_app = on_add_app
         self.on_save = on_save
+        self.on_restore = on_restore
         # Escaped only where markup is actually parsed — see below. A plain
         # label shows what it is given, so an escaped one spelled out the
         # entities: "Review todos &amp; notes" on every row but the current.
@@ -123,6 +163,19 @@ class ContextRow(widgets.ActionRow):
         self.save.set_visible(bool(is_drifted and on_save is not None))
         self.save.connect("clicked", lambda _b: on_save and on_save(ctx))
 
+        # Beside the save, and shown under the same condition: they are the two
+        # answers to one question, and offering only "keep this" made drifting
+        # a one-way door — the way back was to close the context and reopen it.
+        self.restore = Gtk.Button(
+            icon_name="edit-undo-symbolic", valign=Gtk.Align.CENTER
+        )
+        self.restore.add_css_class("flat")
+        self.restore.set_tooltip_text("Put these windows back where they were saved")
+        self.restore.set_visible(
+            bool(is_drifted and on_restore is not None and not self.is_virtual)
+        )
+        self.restore.connect("clicked", lambda _b: on_restore and on_restore(ctx))
+
         self.close = Gtk.Button(
             icon_name="media-playback-stop-symbolic", valign=Gtk.Align.CENTER
         )
@@ -144,7 +197,7 @@ class ContextRow(widgets.ActionRow):
         self.edit.connect("clicked", lambda _b: on_edit and on_edit(ctx))
 
         # Only the ones that will show, then joined — see `link_suffixes`.
-        for button in (self.save, self.close, self.edit):
+        for button in (self.save, self.restore, self.close, self.edit):
             if button.get_visible():
                 self.add_suffix(button)
         self.link_suffixes()
@@ -163,35 +216,9 @@ class ContextRow(widgets.ActionRow):
         self.open_menu(x, y)
 
     def open_menu(self, x: float = 0.0, y: float = 0.0) -> Gtk.Popover:
-        """The row's menu, built where it was asked for.
-
-        Built per opening rather than kept on the row: rows are thrown away and
-        rebuilt on every refresh, and a popover parented to a dead row is a
-        warning at best. Unparenting on close keeps the tree clean.
-        """
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        popover = Gtk.Popover()
-        popover.set_has_arrow(False)
-        popover.set_halign(Gtk.Align.START)
-        popover.set_child(box)
-        popover.set_parent(self)
-        at = Gdk.Rectangle()
-        at.x, at.y, at.width, at.height = int(x), int(y), 1, 1
-        popover.set_pointing_to(at)
-        popover.connect("closed", lambda p: p.unparent())
-
-        self.menu_items: dict[str, Gtk.Button] = {}
-
-        def item(key: str, label: str, action, destructive: bool = False):
-            button = Gtk.Button(label=label)
-            button.set_has_frame(False)
-            button.get_child().set_xalign(0.0)
-            if destructive:
-                button.add_css_class("destructive-action")
-            button.connect("clicked", lambda _b: action())
-            box.append(button)
-            self.menu_items[key] = button
-            return button
+        """Everything this context can do, on the button the desktop reserves
+        for exactly that question."""
+        popover, item, self.menu_items = _row_menu(self, x, y)
 
         item("open", "Switch to" if self.is_open else "Open", self._menu(self.on_open))
         if self.on_add_app is not None:
@@ -204,6 +231,8 @@ class ContextRow(widgets.ActionRow):
                 "Save as a context" if self.is_virtual else "Save these windows",
                 self._menu(self.on_save),
             )
+        if self.on_restore is not None and self.is_drifted and not self.is_virtual:
+            item("restore", "Put the windows back", self._menu(self.on_restore))
         if self.is_open and self.on_close is not None:
             item("close", "Close", self._menu(self.on_close))
         if self.on_forget is not None:
@@ -265,35 +294,105 @@ class AppRow(widgets.ActionRow):
         )
         self.add_prefix(icon)
 
-        # Only offered when there is a context to open it in. Without one the
-        # button would be the same as the other and say something untrue.
-        self.here = Gtk.Button(icon_name="go-jump-symbolic", valign=Gtk.Align.CENTER)
-        self.here.add_css_class("flat")
-        self.here.set_tooltip_text(f"Open “{info.name}” in this context")
-        self.here.set_visible(on_current is not None)
-        self.here.connect("clicked", lambda _b: on_current and on_current(info))
-
-        self.fresh = Gtk.Button(icon_name="list-add-symbolic", valign=Gtk.Align.CENTER)
-        self.fresh.add_css_class("flat")
-        self.fresh.set_tooltip_text(f"Open a new “{info.name}” context")
-        self.fresh.connect("clicked", lambda _b: on_new(info))
-
-        for button in (self.here, self.fresh):
-            if button.get_visible():
-                self.add_suffix(button)
-        self.link_suffixes()
+        # The same pair the overview's tiles carry, so the two views teach one
+        # thing rather than each inventing its own icons and words.
+        buttons = _open_buttons(info, on_new, on_current)
+        self.here, self.fresh = buttons.here, buttons.fresh
+        self.add_suffix(buttons)
 
         # Activating the row takes the answer that always works: with no context
         # open there is nothing to add to, so a new one is the only one of the
         # two that is always available.
         self.connect("activated", lambda _r: on_new(info))
 
+        self.on_new, self.on_current = on_new, on_current
+        secondary = Gtk.GestureClick()
+        secondary.set_button(Gdk.BUTTON_SECONDARY)
+        secondary.connect("pressed", lambda _g, _n, x, y: self.open_menu(x, y))
+        self.add_controller(secondary)
+
+    def open_menu(self, x: float = 0.0, y: float = 0.0) -> Gtk.Popover:
+        """The same two answers the buttons give, in words.
+
+        A right-click means the same thing on both cards, which is the point of
+        it being here: the context row has had a menu since it had actions, and
+        reaching for one on an application and getting nothing is the kind of
+        gap that reads as the row being inert.
+        """
+        popover, item, self.menu_items = _row_menu(self, x, y)
+
+        def run(action):
+            def go() -> None:
+                popover.popdown()
+                action(self.app_info)
+
+            return go
+
+        item("new", "Open in a new context", run(self.on_new))
+        if self.on_current is not None:
+            item("here", "Open in this context", run(self.on_current))
+
+        self.menu = popover
+        popover.popup()
+        return popover
+
+
+# What the two ways of opening an application look like, wherever it is drawn.
+# One pair of icons and one pair of words, so both views teach the same thing
+# rather than each inventing its own.
+#
+# Run it where you are, against send it somewhere of its own.
+#
+# A play triangle rather than an arrow for the first: the question is what
+# happens to the application, and "run it" is what happens — `go-jump-symbolic`
+# is a hooked arrow that reads as navigating somewhere instead. Adwaita has no
+# rocket, and of what it does have this is the only glyph that means start.
+#
+# An arrow leaving an open box for the second. A plus said "one more of these",
+# which is true of the context and not of the application; the arrow says where
+# the application goes. `document-send-symbolic` keeps its arrow inside a closed
+# square and `system-log-out-symbolic` reads as leaving rather than sending —
+# compared by rendering all three, not by their names.
+#
+# The play triangle also marks a running context in `ContextRow`'s prefix. That
+# is a status rather than a button, on the other side of the row, and both uses
+# mean the same thing by it.
+OPEN_HERE_ICON = "media-playback-start-symbolic"
+OPEN_NEW_ICON = "send-to-symbolic"
+
+
+def _open_buttons(info: App, on_new, on_current) -> Gtk.Box:
+    """The choice of where an application opens, as the row and the tile share."""
+    box = Gtk.Box(spacing=0, halign=Gtk.Align.CENTER)
+    box.add_css_class("linked")
+
+    here = Gtk.Button(icon_name=OPEN_HERE_ICON, valign=Gtk.Align.CENTER)
+    here.set_tooltip_text(f"Open “{info.name}” in this context")
+    here.connect("clicked", lambda _b: on_current and on_current(info))
+    # Only where there is a context to open it in. Without one the button would
+    # mean the same as its neighbour and say something untrue. Set as well as
+    # skipped, so asking the button whether it shows gets the truth — an
+    # unparented widget reports itself visible.
+    here.set_visible(on_current is not None)
+    if on_current is not None:
+        box.append(here)
+
+    fresh = Gtk.Button(icon_name=OPEN_NEW_ICON, valign=Gtk.Align.CENTER)
+    fresh.set_tooltip_text(f"Open a new “{info.name}” context")
+    fresh.connect("clicked", lambda _b: on_new(info))
+    box.append(fresh)
+
+    box.here, box.fresh = here, fresh
+    return box
+
 
 def app_tile(info: App, on_pick, tooltip: str | None = None) -> Gtk.FlowBoxChild:
     """One application in a grid: its icon over its name, clickable.
 
-    The overview grid and the "open app here" picker are the same grid asked
-    two different questions, so they draw the same tile.
+    Only the "open app here" picker draws these now. It asks one question — pick
+    an application — so a tile is the right shape for it; anywhere the answer is
+    *where* an application should open lists `AppRow` instead, which has room
+    for the two buttons and for what the application is.
     """
     child = Gtk.FlowBoxChild()
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)

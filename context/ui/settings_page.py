@@ -492,17 +492,6 @@ class SettingsPage(widgets.NavigationPage):
                 lambda v: self._apply(overview_sort=v),
             )
         )
-        group.add(
-            _row_combo(
-                "Applications open in",
-                "What clicking an application does. The current context takes "
-                "it in; without one open, a new context is made either way.",
-                ("A new context", "The current context"),
-                settings.APP_TARGETS,
-                live.overview_target,
-                lambda v: self._apply(overview_target=v),
-            )
-        )
         return group
 
     def _scratchpad(self) -> widgets.Group:

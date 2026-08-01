@@ -18,6 +18,7 @@ from context.ui import switcher
 from context.state.resources import Resource
 from context.system.backends import Workspace
 from context.system.launcher import active_context, adopt_loose, capture_arrangement, close_loose
+from context.system.launcher import restore_arrangement
 from context.system.launcher import open_state
 from context.system.launcher import has_drifted, is_no_context
 from context.system.launcher import move_window_to_context, move_window_to_screen
@@ -202,6 +203,7 @@ class ContextApplication(Gtk.Application):
         picker.on_add_app = self.open_app_in_context
         picker.on_app_into = self.add_app_to_context
         picker.on_note = self.edit_note
+        picker.on_restore = self.restore_context
         self._show_picker(picker)
 
     def edit_context(self, ctx: Context, is_new: bool = False) -> None:
@@ -229,6 +231,24 @@ class ContextApplication(Gtk.Application):
             self.switcher = None
             return
         self._show_picker(SettingsWindow(self, self.ensure_window()))
+
+    def restore_context(self, ctx: Context) -> None:
+        """Put a drifted context's windows back where they were saved."""
+        if is_no_context(ctx):
+            return
+        windows, screens = restore_arrangement(ctx, backend=self.backend)
+        self.asked_about.discard(ctx.id)
+        notify.withdraw(self, "drift")
+        message = (
+            f"Put {windows} window{'s' if windows != 1 else ''} back for “{ctx.title}”"
+            if windows
+            else f"Nothing to move for “{ctx.title}”"
+        )
+        self.log.info(
+            "restored %s: %d window(s), %d screen(s)", ctx.title, windows, screens
+        )
+        notify.send(self, "restore", message)
+        self.refresh_all()
 
     def open_app_in_context(self, ctx: Context) -> None:
         """Pick an application and open it inside an existing context.

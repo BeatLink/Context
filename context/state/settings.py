@@ -73,9 +73,6 @@ ALL_MONITORS = "*"
 # the moments you were leaving anyway, which is where a prompt costs least.
 SAVE_PROMPTS = ("never", "change", "switch", "close")
 
-# Where an app opens from: a context of its own, or the one you are standing in.
-APP_TARGETS = ("new", "current")
-
 # How the context list is ordered, in the sidebar, the overview and the rail.
 # "recent" is by when each was last opened, which is what the list has always
 # done; the other two are stable orders that do not move under the pointer.
@@ -252,7 +249,6 @@ class Settings:
     # it was left. It is reached to do one thing and dismissed, so what it
     # remembers between openings is a setting rather than a habit it picks up.
     overview_sort: str = "recent"
-    overview_target: str = "new"
     # Whether the overview shows the scratchpad beneath the contexts.
     overview_scratchpad: bool = True
     # Notes, kept as an append-only history. The master switch; with it off the
@@ -356,11 +352,6 @@ class Settings:
                 self.overview_sort.strip().lower()
                 if self.overview_sort.strip().lower() in OVERVIEW_SORTS
                 else "recent"
-            ),
-            overview_target=(
-                self.overview_target.strip().lower()
-                if self.overview_target.strip().lower() in APP_TARGETS
-                else "new"
             ),
             overview_scratchpad=bool(self.overview_scratchpad),
             scratchpad=bool(self.scratchpad),

@@ -451,3 +451,30 @@ def test_the_context_you_are_in_is_open_even_with_no_windows(backend):
     # Switch away and it is not running any more: there is nothing to go back to.
     backend.current = None
     assert launcher.open_state(store.contexts, backend=backend)[0] == set()
+
+
+def test_restoring_puts_the_windows_back_where_they_were_saved(backend):
+    """The inverse of capturing, and the same call the launch path makes: the
+    stored slots are proportions of the box the windows span."""
+    from context.state.layout import Layout, Slot
+    from context.state.store import Context
+    from context.system.launcher import restore_arrangement
+
+    ctx = Context(title="work")
+    ctx.set_handle("fake", "ctx-work")
+    ctx.layout = Layout(slots=[Slot(0.0, 0.0, 0.5, 1.0), Slot(0.5, 0.0, 0.5, 1.0)])
+    backend.add_window("ctx-work", 2)
+
+    moved, screens = restore_arrangement(ctx, backend=backend)
+
+    assert screens == 1
+    assert ("ratios", "ctx-work", 2) in backend.calls
+    assert moved == 1
+
+
+def test_restoring_a_context_that_is_not_open_does_nothing(backend):
+    from context.state.store import Context
+    from context.system.launcher import restore_arrangement
+
+    assert restore_arrangement(Context(title="closed"), backend=backend) == (0, 0)
+    assert not [c for c in backend.calls if c[0] == "ratios"]

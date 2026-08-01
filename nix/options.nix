@@ -151,9 +151,6 @@ rec {
       overview_sort = setting (t.enum [ "recent" "name" "kind" "contexts" ]) "`recent`"
         "How the overview's application grid is ordered each time it opens.";
 
-      overview_target = setting (t.enum [ "new" "current" ]) "`new`"
-        "What clicking an application in the overview does.";
-
       overview_scratchpad = setting t.bool "true"
         "Show the scratchpad in the overview, beneath the contexts.";
 
