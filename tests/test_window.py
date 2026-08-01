@@ -3376,3 +3376,42 @@ def test_saving_keeps_a_context_even_with_nothing_open(
     run_app(gtk_app, body)
     assert seen["kept"] is False
     assert seen["stored"] == [False]
+
+
+def test_the_card_buttons_are_offered_on_the_contexts_tab(gtk_app, isolated_store):
+    """Four toggles, one per shortcut a context's row draws. On the Contexts
+    tab rather than the Launcher one: they are about a context's row wherever
+    it is listed, not about where the launcher sits."""
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Gtk
+
+    from context.state.store import ContextStore
+    from context.ui.settings_page import SettingsPage
+    from context.ui.window import LauncherWindow
+
+    seen = {}
+
+    def body(app):
+        launcher = LauncherWindow(app, ContextStore(), lambda c: None, lambda c: None)
+        page = SettingsPage(launcher)
+        tab = page.stack.get_child_by_name("contexts")
+        labels = []
+
+        def walk(w):
+            if isinstance(w, Gtk.Label) and w.get_label():
+                labels.append(w.get_label())
+            child = w.get_first_child()
+            while child is not None:
+                walk(child)
+                child = child.get_next_sibling()
+
+        walk(tab)
+        seen["labels"] = labels
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert "Buttons on a context" in seen["labels"]
+    for title in ("Save", "Put back", "Open an app", "Close"):
+        assert title in seen["labels"], title

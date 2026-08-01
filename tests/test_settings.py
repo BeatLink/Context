@@ -257,3 +257,4 @@ def test_the_order_setting_reaches_the_list(isolated_settings):
     settings.update(context_sort="recent")
     store._sort()
     assert [c.title for c in store.contexts] == ["Zebra", "Apple"]
+
