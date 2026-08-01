@@ -205,7 +205,15 @@ launch and tile into the layout; if it is, you simply arrive where you left off.
 
 **Closing** a context shuts its windows but keeps the context itself, so opening
 it again rebuilds it. **Forgetting** a context deletes the definition and lives
-in the editor, behind a confirmation.
+in the editor and in a context's own menu, behind a confirmation either way.
+
+Right-clicking a context — in the sidebar or the overview — opens its menu:
+open it, open an app inside it, edit it, close it, or forget it. "Open app
+here" shows the app grid; what you pick joins that context and opens in it.
+
+Searching the sidebar searches applications as well as contexts, and starting
+an app from those results makes a context around it, the same as the overview's
+grid does.
 
 If Context is restarted while contexts are open, it reconnects to them.
 
@@ -225,9 +233,11 @@ need a restart say so.
 | Collapsed width | Pixels reserved by the rail |
 | Expand on hover | Open the launcher while the pointer is over it |
 | Hover delay | How long to wait first, so passing over does not open it |
+| Collapse delay | How long it stays open after the pointer leaves its zone |
 | Window manager | Which backend drives workspaces |
 | Refresh interval | How often the open list is re-checked |
 | Ask to save | When to offer to keep a context's changes |
+| Notifications | Report launches, closes and drift to the desktop |
 | Log level | How much detail is written to the log |
 
 Settings that do nothing in the current collapse mode are not shown: the

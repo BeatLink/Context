@@ -310,11 +310,6 @@ def _missing_on(
         else:
             missing.append(index)
     return missing
-    # Finish on the context's first screen rather than wherever the last one
-    # happened to be, so opening a context leaves you looking at its main work.
-    if screens > 1:
-        wm.switch_to(Workspace(handle=primary.handle, label=ctx.title))
-    return result
 
 
 def _outputs(wm: Backend):

@@ -463,14 +463,6 @@ window.ctx-window checkbutton check:checked {
     color: @ctx_surface;
 }
 
-.ctx-toast {
-    background-color: @ctx_card;
-    color: @ctx_on_surface;
-    border: 1px solid @ctx_border;
-    border-radius: 12px;
-    padding: 10px 16px;
-}
-
 .ctx-status-title {
     font-weight: bold;
     font-size: 1.2em;

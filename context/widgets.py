@@ -31,8 +31,6 @@ from .logging_setup import get_logger
 
 log = get_logger("widgets")
 
-# How long a toast stays up when nothing says otherwise.
-DEFAULT_TOAST_SECONDS = 3
 
 
 class Page(Gtk.ScrolledWindow):
@@ -360,94 +358,6 @@ class HeaderBar(Gtk.CenterBox):
     def set_show_end_title_buttons(self, _show: bool) -> None: ...
     def set_title_widget(self, widget: Gtk.Widget) -> None:
         self.set_center_widget(widget)
-
-
-class Toast:
-    """A message, how long it stays up, and optionally something to do about it.
-
-    Replaces `Adw.Toast`. The button is what makes a toast more than a message:
-    "the layout changed" offers to save it, and a setting that needs a restart
-    offers to restart. Both are how those features are reached at all.
-    """
-
-    def __init__(self, title: str = "", timeout: int = DEFAULT_TOAST_SECONDS) -> None:
-        self.title = title
-        self.timeout = timeout
-        self._button_label: str | None = None
-        self._clicked: list = []
-
-    def set_button_label(self, label: str) -> None:
-        self._button_label = label
-
-    def get_button_label(self) -> str | None:
-        return self._button_label
-
-    def connect(self, signal: str, handler) -> int:
-        if signal == "button-clicked":
-            self._clicked.append(handler)
-        return 0
-
-    def clicked(self) -> None:
-        for handler in list(self._clicked):
-            handler(self)
-
-
-class ToastOverlay(Gtk.Overlay):
-    """Transient messages over the content.
-
-    Replaces `Adw.ToastOverlay`. One at a time, newest wins: the launcher
-    reports things like "context saved" that are superseded rather than queued,
-    and a queue meant a burst of them was still draining a minute later.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._label = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER)
-
-        self._button = Gtk.Button()
-        self._button.set_visible(False)
-        self._button.connect("clicked", lambda _b: self._activate())
-        self._current: Toast | None = None
-
-        body = Gtk.Box(spacing=10, valign=Gtk.Align.CENTER)
-        body.add_css_class("ctx-toast")
-        body.append(self._label)
-        body.append(self._button)
-
-        self._holder = Gtk.Revealer(
-            transition_type=Gtk.RevealerTransitionType.CROSSFADE,
-            halign=Gtk.Align.CENTER,
-            valign=Gtk.Align.END,
-        )
-        self._holder.set_margin_bottom(18)
-        self._holder.set_child(body)
-        self.add_overlay(self._holder)
-        self._timer = 0
-
-    def _activate(self) -> None:
-        toast, self._current = self._current, None
-        self._hide()
-        if toast is not None:
-            toast.clicked()
-
-    def add_toast(self, toast: Toast) -> None:
-        self._current = toast
-        self._label.set_label(toast.title)
-        label = toast.get_button_label()
-        self._button.set_visible(bool(label))
-        if label:
-            self._button.set_label(label)
-        self._holder.set_reveal_child(True)
-        if self._timer:
-            GLib.source_remove(self._timer)
-        self._timer = GLib.timeout_add_seconds(
-            max(1, int(toast.timeout or DEFAULT_TOAST_SECONDS)), self._hide
-        )
-
-    def _hide(self) -> bool:
-        self._timer = 0
-        self._holder.set_reveal_child(False)
-        return GLib.SOURCE_REMOVE
 
 
 class NavigationPage(Gtk.Box):

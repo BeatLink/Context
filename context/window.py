@@ -10,88 +10,41 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gdk, Gio, GLib, Gtk
 
-from . import settings, sidebar, theme, uistate, widgets
+from . import notify, settings, sidebar, theme, uistate, widgets
+from .apps import App, installed_apps, search_apps
 from .editor_window import EditorWindow
 from .launcher import hand_keyboard_back, open_state
 from .layout import Layout
 from .logging_setup import get_logger
 from .resources import Resource
+from .rows import AppRow, ContextRow, context_for_app, relative_time
 from .store import Context, ContextStore
 
 log = get_logger("window")
 
-# The icon fills the rail minus its button's padding and border. Derived rather
-# than fixed: a 32px icon in a 32px rail cannot fit, so the rail silently came
-# out wider than it was set to.
+# How far the rail's contents sit from the surface's edges. Without it the
+# buttons ran into the card's border, which the expanded sidebar never does —
+# everything in it is inset from the edge.
+RAIL_MARGIN = 4
+# The icon fills the rail minus its button's padding and border, and minus the
+# margins either side. Derived rather than fixed: a 32px icon in a 32px rail
+# cannot fit, so the rail silently came out wider than it was set to.
 RAIL_ICON_PADDING = 16
-MIN_RAIL_ICON = 16
+MIN_RAIL_ICON = 12
+
+# How many application results the sidebar's list shows. The full set is
+# hundreds of rows rebuilt on every keystroke, and the point of the sidebar's
+# search is the first few hits; the heading says when there are more.
+APP_RESULTS = 8
+
+# How often the cursor is asked for while the sidebar waits to retract. It has
+# left the surface by then, so there are no motion events to go on.
+ZONE_POLL_MS = 200
 
 
 def rail_icon_size() -> int:
-    return max(MIN_RAIL_ICON, sidebar.rail_width() - RAIL_ICON_PADDING)
-
-
-def relative_time(stamp: float) -> str:
-    delta = max(0, int(time.time() - stamp))
-    if delta < 60:
-        return "just now"
-    for unit, seconds in (("d", 86400), ("h", 3600), ("m", 60)):
-        if delta >= seconds:
-            return f"{delta // seconds}{unit} ago"
-    return "just now"
-
-
-class ContextRow(widgets.ActionRow):
-    """A context in the list.
-
-    Open contexts get a close button; saved ones do not, and neither gets a
-    delete button — forgetting a context happens in its editor, so it cannot be
-    triggered by a stray click next to launch.
-    """
-
-    def __init__(
-        self, ctx: Context, on_open, on_edit, on_close, is_open=False, is_active=False
-    ) -> None:
-        super().__init__()
-        self.ctx = ctx
-        self.is_open = is_open
-        self.is_active = is_active
-        self.set_title(GLib.markup_escape_text(ctx.title))
-        self.set_activatable(True)
-
-        subtitle = [relative_time(ctx.last_used_at)]
-        if ctx.apps:
-            subtitle.append(f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}")
-        if ctx.ephemeral:
-            subtitle.append("ephemeral")
-        self.set_subtitle(" · ".join(subtitle))
-
-        icon = Gtk.Image.new_from_icon_name(
-            "media-playback-start-symbolic" if is_open else "view-grid-symbolic"
-        )
-        self.add_prefix(icon)
-
-        # The context you are actually in is marked the way a browser marks the
-        # selected tab, so it is obvious at a glance which one is current.
-        if is_active:
-            self.add_css_class("accent")
-            self.set_title(f"<b>{GLib.markup_escape_text(ctx.title)}</b>")
-            self.set_use_markup(True)
-
-        self.close = Gtk.Button(icon_name="media-playback-stop-symbolic", valign=Gtk.Align.CENTER)
-        self.close.add_css_class("flat")
-        self.close.set_tooltip_text("Close this context, keeping it for later")
-        self.close.set_visible(is_open)
-        self.close.connect("clicked", lambda _b: on_close(ctx))
-        self.add_suffix(self.close)
-
-        self.edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER)
-        self.edit.add_css_class("flat")
-        self.edit.set_tooltip_text("Edit this context")
-        self.edit.connect("clicked", lambda _b: on_edit(ctx))
-        self.add_suffix(self.edit)
-
-        self.connect("activated", lambda _r: on_open(ctx))
+    room = sidebar.rail_width() - RAIL_ICON_PADDING - 2 * RAIL_MARGIN
+    return max(MIN_RAIL_ICON, room)
 
 
 class LauncherWindow(Gtk.ApplicationWindow):
@@ -113,10 +66,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self._open_ids: set[str] = set()
         self._active_id: str | None = None
         self._open_signature: tuple | None = None
+        # Installed applications, read on the first search rather than at start.
+        self._apps: list[App] | None = None
         self._auto_expanded = False
         self._auto_expand_source: int | None = None
         # A pending collapse, waiting out the grace period after a leave.
         self._collapse_source: int | None = None
+        # When the cursor left the hover zone, for the collapse delay to
+        # measure from. Cleared whenever it comes back.
+        self._left_zone_at: float | None = None
         # Set when collapsing deliberately, cleared when the pointer leaves.
         self._suppress_hover = False
         self._pointer_inside = False
@@ -172,8 +130,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.collapse_button.set_visible(self.collapses)
             self.header.pack_end(self.collapse_button)
         self.toolbar.add_top_bar(self.header)
-
-        self.toasts = widgets.ToastOverlay()
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         content.set_margin_top(12)
@@ -235,10 +191,23 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # itself; once they have chosen, the choice holds in both modes.
         self._saved_pinned_open: bool | None = None
 
+        # Applications, so the sidebar can start something that has no context
+        # yet — the same reach the overview has, in the shape a narrow column
+        # allows. Only ever while searching: unfiltered it is every app
+        # installed, which would bury the contexts the sidebar is for.
+        self.apps_label = Gtk.Label(xalign=0.0)
+        self.apps_label.add_css_class("heading")
+        self.apps_label.add_css_class("dim-label")
+
+        self.apps_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.apps_listbox.add_css_class("boxed-list")
+
         groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         groups.append(self.open_label)
         groups.append(self.open_listbox)
         groups.append(self.saved_expander)
+        groups.append(self.apps_label)
+        groups.append(self.apps_listbox)
 
         self.empty_state = widgets.StatusPage(
             icon_name="view-grid-symbolic",
@@ -275,8 +244,19 @@ class LauncherWindow(Gtk.ApplicationWindow):
         rail_scroller.set_child(self.rail)
 
         rail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        # Inset from the card the same way everything in the expanded sidebar
+        # is; `rail_icon_size` gives the margins back out of the icon so the
+        # rail still renders at the width it was set to.
+        for setter in (
+            "set_margin_top",
+            "set_margin_bottom",
+            "set_margin_start",
+            "set_margin_end",
+        ):
+            getattr(rail_box, setter)(RAIL_MARGIN)
         rail_box.append(self.expand_button)
         rail_box.append(rail_scroller)
+        self.rail_box = rail_box
 
         self.mode_stack = Gtk.Stack()
         # A homogeneous stack requests the largest child's size, so the full
@@ -293,8 +273,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             child=self.toolbar, title="Context", tag="home"
         )
         self.nav.add(self.home_page)
-        self.toasts.set_child(self.nav)
-        self.set_child(self.toasts)
+        self.set_child(self.nav)
 
         escape = Gtk.ShortcutController()
         escape.add_shortcut(
@@ -411,20 +390,30 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self._restart_poll()
         if needs_restart:
             names = ", ".join(sorted(changed or {}))
-            # The toast carries the restart rather than only mentioning it,
-            # since the setting is otherwise stuck until Context is found and
-            # relaunched by hand.
-            toast = widgets.Toast(
-                title=f"{names} applies when Context restarts", timeout=8
+            # The notification carries the restart rather than only mentioning
+            # it, since the setting is otherwise stuck until Context is found
+            # and relaunched by hand.
+            self.notify(
+                "restart",
+                "Restart to apply",
+                f"{names} applies when Context restarts",
+                button="Restart",
+                on_click=self._restart_app,
             )
-            toast.set_button_label("Restart")
-            toast.connect("button-clicked", lambda _t: self._restart_app())
-            self.toasts.add_toast(toast)
 
     def _restart_app(self) -> None:
         app = self.get_application()
         if app is not None:
             app.restart()
+
+    def notify(self, key: str, title: str, body: str = "", **extra) -> bool:
+        """Say something to the desktop rather than to the sidebar.
+
+        What the launcher reports — a context opened, a close that found
+        nothing, a setting needing a restart — used to be a toast over its own
+        list, which nobody sees while it is collapsed to a rail or hidden.
+        """
+        return notify.send(self.get_application(), key, title, body, **extra)
 
     def _restart_poll(self) -> None:
         if self._poll_source is not None:
@@ -475,20 +464,40 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # sidebar retracts only once the cursor leaves it. The gaps around
         # the surface send pointer-leave while the cursor is, visibly, still
         # at the sidebar, so leaving the *surface* proves nothing.
+        self._left_zone_at = None
         if self._collapse_source is None:
-            self._collapse_source = GLib.timeout_add(200, self._collapse_after_leave)
+            self._collapse_source = GLib.timeout_add(
+                ZONE_POLL_MS, self._collapse_after_leave
+            )
 
     def _collapse_after_leave(self) -> bool:
         self._collapse_source = None
         if self._pointer_inside or not self._auto_expanded:
             return GLib.SOURCE_REMOVE
         if self._inside_hover_zone():
-            self._collapse_source = GLib.timeout_add(200, self._collapse_after_leave)
-            return GLib.SOURCE_REMOVE
+            # Back inside: the delay starts again from the next departure.
+            self._left_zone_at = None
+            return self._keep_watching()
+        # Outside, but not necessarily gone: cutting the corner on the way to
+        # a window, or rounding a menu, leaves the zone for a moment. The
+        # delay is what tells that apart from actually walking away.
+        now = time.monotonic()
+        if self._left_zone_at is None:
+            self._left_zone_at = now
+        delay = settings.current().collapse_delay_ms / 1000
+        if now - self._left_zone_at < delay:
+            return self._keep_watching()
+        self._left_zone_at = None
         self._auto_expanded = False
         self.collapsed = True
         self._apply_collapsed()
         self.refresh()
+        return GLib.SOURCE_REMOVE
+
+    def _keep_watching(self) -> bool:
+        self._collapse_source = GLib.timeout_add(
+            ZONE_POLL_MS, self._collapse_after_leave
+        )
         return GLib.SOURCE_REMOVE
 
     def _inside_hover_zone(self) -> bool:
@@ -559,6 +568,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         if self._collapse_source is not None:
             GLib.source_remove(self._collapse_source)
             self._collapse_source = None
+        self._left_zone_at = None
         # Collapsing happens with the pointer on the button, which is inside
         # the sidebar — so hover would expand it again a moment later and the
         # button would appear to do nothing. Hovering is suppressed until the
@@ -745,11 +755,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.open_listbox.remove_all()
         for ctx in opened:
             self.open_listbox.append(
-                ContextRow(
+                self._context_row(
                     ctx,
-                    self._open,
-                    self._edit,
-                    self._close,
                     is_open=True,
                     is_active=active is not None and ctx.id == active.id,
                 )
@@ -757,9 +764,21 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
         self.listbox.remove_all()
         for ctx in saved:
-            self.listbox.append(
-                ContextRow(ctx, self._open, self._edit, self._close, is_open=False)
-            )
+            self.listbox.append(self._context_row(ctx, is_open=False))
+
+        app_matches = self._app_matches(query)
+        self.apps_listbox.remove_all()
+        for info in app_matches[:APP_RESULTS]:
+            self.apps_listbox.append(AppRow(info, self._open_app))
+
+        shown = min(len(app_matches), APP_RESULTS)
+        self.apps_label.set_label(
+            f"Apps · {shown} of {len(app_matches)}"
+            if len(app_matches) > shown
+            else f"Apps · {shown}"
+        )
+        self.apps_label.set_visible(bool(app_matches))
+        self.apps_listbox.set_visible(bool(app_matches))
 
         self.open_label.set_visible(bool(opened))
         self.open_listbox.set_visible(bool(opened))
@@ -775,7 +794,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.saved_expander.set_expanded(should_expand)
             self._suppress_toggle = False
 
-        if opened or saved:
+        if opened or saved or app_matches:
             self.stack.set_visible_child_name("list")
             return
 
@@ -788,6 +807,58 @@ class LauncherWindow(Gtk.ApplicationWindow):
         else:
             self.empty_state.set_title("No contexts yet")
             self.empty_state.set_description("Type a name above to create your first one.")
+
+    def _context_row(self, ctx: Context, is_open: bool, is_active: bool = False):
+        return ContextRow(
+            ctx,
+            self._open,
+            self._edit,
+            self._close,
+            is_open=is_open,
+            is_active=is_active,
+            on_forget=self._delete,
+            on_add_app=self._add_app_to_context,
+        )
+
+    def _add_app_to_context(self, ctx: Context) -> None:
+        """Pick an app to join this context, from the row's menu."""
+        app = self.get_application()
+        if app is None or not hasattr(app, "open_app_in_context"):
+            return
+        self._release_keyboard()
+        app.open_app_in_context(ctx)
+
+    def edit_context(self, ctx: Context, is_new: bool = False) -> None:
+        """Open the editor for a context, wherever it was asked for.
+
+        The overview and the switcher have no editor of their own — they close
+        and hand the context here, since the editor is an overlay and two of
+        those stacked leaves one covering the other.
+        """
+        if is_new:
+            self._pick_apps(ctx)
+        else:
+            self._edit(ctx)
+
+    def _app_matches(self, query: str) -> list[App]:
+        """Installed apps matching the search, or nothing when not searching.
+
+        The list is read the first time it is needed rather than at startup:
+        scanning every desktop entry costs a noticeable slice of the launcher's
+        start, and most sessions never search for an app at all.
+        """
+        if not query:
+            return []
+        if self._apps is None:
+            self._apps = installed_apps()
+            log.debug("read %d installed apps", len(self._apps))
+        return search_apps(self._apps, query)
+
+    def _open_app(self, info: App) -> None:
+        """Start a context around one app, the overview's fast path in a list."""
+        log.info("new context around %s", info.id)
+        self.entry.set_text("")
+        self._open(context_for_app(self.store, info))
 
     def _saved_group_shown(self, opened, saved, searching: bool) -> bool:
         """Whether the saved group is on show.
@@ -1087,7 +1158,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             message = f"Opened {len(result.launched)}, {len(result.failed)} failed"
         if result.workspace is not None:
             message += f" · {result.backend} {result.workspace}"
-        self.toasts.add_toast(widgets.Toast(title=message, timeout=3))
+        self.notify("launch", ctx.title, message)
 
     def _active_context(self):
         active_id = self._active_id
@@ -1111,7 +1182,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
                 message += " · workspace kept"
         else:
             message = f"Nothing to close in “{ctx.title}”"
-        self.toasts.add_toast(widgets.Toast(title=message, timeout=3))
+        self.notify("close", ctx.title, message)
         self.refresh()
 
     def _delete(self, ctx: Context) -> None:

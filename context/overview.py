@@ -20,9 +20,8 @@ from gi.repository import Gtk
 from . import backends, sidebar, theme, widgets
 from .apps import App, installed_apps, search_apps
 from .launcher import open_state
-from .layout import preset_for
 from .logging_setup import get_logger
-from .resources import Resource
+from .rows import ContextRow, app_tile, context_for_app
 
 log = get_logger("overview")
 
@@ -36,6 +35,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.store = store
         self.backend = backend or backends.detect()
         self.apps = installed_apps()
+        self._active_id: str | None = None
 
         theme.install()
         self.set_default_size(1200, 720)
@@ -72,6 +72,18 @@ class OverviewWindow(Gtk.ApplicationWindow):
         # the time. stop-search is the entry's own Escape.
         self.entry.connect("stop-search", lambda _e: self._dismiss())
         content.append(self.entry)
+
+        # The same built-in row the sidebar's list carries: with a name typed
+        # it starts that context, blank it opens the editor to be named.
+        self.create_row = widgets.ActionRow(title="New context")
+        self.create_row.set_activatable(True)
+        self.create_row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        self.create_row.set_subtitle("Name it in the editor")
+        self.create_row.connect("activated", lambda _r: self._create_from_entry())
+        create_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        create_list.add_css_class("boxed-list")
+        create_list.append(self.create_row)
+        content.append(create_list)
 
         columns = Gtk.Box(spacing=18)
 
@@ -145,7 +157,9 @@ class OverviewWindow(Gtk.ApplicationWindow):
     def refresh(self) -> None:
         query = self.entry.get_text().strip()
         matches = self.store.search(query)
-        open_ids, _active = open_state(self.store.contexts, backend=self.backend)
+        open_ids, active_id = open_state(self.store.contexts, backend=self.backend)
+        self._active_id = active_id
+        self.create_row.set_subtitle(self._create_subtitle(query))
 
         opened = [c for c in matches if c.id in open_ids]
         saved = [c for c in matches if c.id not in open_ids]
@@ -166,85 +180,101 @@ class OverviewWindow(Gtk.ApplicationWindow):
         for info in search_apps(self.apps, query):
             self.flow.append(self._app_tile(info))
 
-    def _context_row(self, ctx, is_open: bool) -> widgets.ActionRow:
-        row = widgets.ActionRow()
-        row.set_title(ctx.title)
-        if ctx.apps:
-            row.set_subtitle(f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}")
-        row.set_activatable(True)
-        row.ctx = ctx
-        icon = Gtk.Image.new_from_icon_name(
-            "media-playback-start-symbolic" if is_open else "view-grid-symbolic"
+    def _context_row(self, ctx, is_open: bool) -> ContextRow:
+        """The sidebar's row, unchanged.
+
+        A context has the same handles wherever it is listed — open it, edit
+        it, close it — so the row is shared rather than reimplemented here
+        with half of them missing, which is how the two drifted apart before.
+        """
+        return ContextRow(
+            ctx,
+            self._open_context,
+            self._edit_context,
+            self._close_context,
+            is_open=is_open,
+            is_active=self._active_id is not None and ctx.id == self._active_id,
+            on_forget=self._forget_context,
+            on_add_app=self._add_app_to_context,
         )
-        row.add_prefix(icon)
-        row.connect("activated", lambda _r, c=ctx: self._open_context(c))
-        return row
+
+    def _add_app_to_context(self, ctx) -> None:
+        """Hand app-picking to the application, which owns the picker."""
+        log.info("overview: adding an app to %s", ctx.title)
+        self.close()
+        self.on_add_app(ctx)
 
     def _app_tile(self, info: App) -> Gtk.FlowBoxChild:
-        child = Gtk.FlowBoxChild()
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        box.add_css_class("ctx-tile")
-        box.set_size_request(104, 104)
-        for setter in (
-            "set_margin_top",
-            "set_margin_bottom",
-            "set_margin_start",
-            "set_margin_end",
-        ):
-            getattr(box, setter)(4)
-
-        icon = (
-            Gtk.Image.new_from_gicon(info.icon)
-            if info.icon is not None
-            else Gtk.Image.new_from_icon_name("application-x-executable-symbolic")
-        )
-        icon.set_pixel_size(40)
-        # Centred as a cluster, the same slack-absorbing shape as the editor's
-        # tiles: a box stacks from the top otherwise.
-        icon.set_vexpand(True)
-        icon.set_valign(Gtk.Align.END)
-        box.append(icon)
-
-        name = Gtk.Label(
-            label=info.name, wrap=True, lines=2, justify=Gtk.Justification.CENTER
-        )
-        name.set_ellipsize(3)  # Pango.EllipsizeMode.END
-        name.add_css_class("caption")
-        name.set_vexpand(True)
-        name.set_valign(Gtk.Align.START)
-        box.append(name)
-
-        child.set_tooltip_text(f"Open a new “{info.name}” context")
-        click = Gtk.GestureClick()
-        click.connect("released", lambda *_a, i=info: self._open_app(i))
-        box.add_controller(click)
-
-        child.set_child(box)
-        return child
+        return app_tile(info, self._open_app)
 
     # -- acting --------------------------------------------------------------
 
+    def _create_subtitle(self, query: str) -> str:
+        if not query:
+            return "Name it in the editor"
+        if any(c.title.lower() == query.lower() for c in self.store.contexts):
+            return f"Open “{query}”"
+        return f"Start “{query}”"
+
     def _activate_first(self) -> None:
+        """Enter: the first context that matches, or a new one by that name.
+
+        Typing something nothing is called and pressing Enter used to do
+        nothing at all here, while the sidebar started it — the same keystroke
+        meaning two different things depending on which was open.
+        """
         for listbox in (self.open_list, self.saved_list):
             row = listbox.get_row_at_index(0)
             if row is not None and listbox.get_visible():
                 self._open_context(row.ctx)
                 return
+        self._create_from_entry()
+
+    def _create_from_entry(self) -> None:
+        title = self.entry.get_text().strip()
+        if not title:
+            self._edit_context(self.store.create("New context"), is_new=True)
+            return
+        for ctx in self.store.contexts:
+            if ctx.title.lower() == title.lower():
+                self._open_context(ctx)
+                return
+        self._edit_context(self.store.create(title), is_new=True)
 
     def _open_context(self, ctx) -> None:
         log.info("overview: opening context %s", ctx.title)
         self.close()
         self.on_context(ctx)
 
-    def _open_app(self, info: App) -> None:
-        """A context grown around one app, opened on the spot.
+    def _edit_context(self, ctx, is_new: bool = False) -> None:
+        """Hand editing to the launcher, and get out of its way.
 
-        Named after the app rather than left blank: the overview is the fast
-        path, and a naming step would make it slower than the sidebar.
+        The editor is an overlay that takes the keyboard exclusively, and so is
+        this — two of them stacked leaves the top one typed into and the bottom
+        one still covering the screen.
         """
-        ctx = self.store.create(info.name, resources=[Resource(app_id=info.id)])
-        ctx.layout = preset_for(1)
-        self.store.save()
+        log.info("overview: editing context %s", ctx.title)
+        self.close()
+        self.on_edit(ctx, is_new)
+
+    def _close_context(self, ctx) -> None:
+        """Close a context without leaving the overview.
+
+        Unlike opening or editing, this is housekeeping: you close a couple of
+        contexts and carry on choosing, so the list stays up and re-reads
+        itself instead.
+        """
+        log.info("overview: closing context %s", ctx.title)
+        self.on_close(ctx)
+        self.refresh()
+
+    def _forget_context(self, ctx) -> None:
+        self.store.delete(ctx)
+        self.refresh()
+
+    def _open_app(self, info: App) -> None:
+        """A context grown around one app, opened on the spot."""
+        ctx = context_for_app(self.store, info)
         log.info("overview: new context around %s", info.id)
         self.close()
         self.on_context(ctx)
@@ -256,4 +286,10 @@ class OverviewWindow(Gtk.ApplicationWindow):
     # Set by the application; opening goes through the launcher so a context
     # is launched rather than merely focused when its windows are gone.
     def on_context(self, ctx) -> None:
+        return None
+
+    def on_edit(self, ctx, is_new: bool = False) -> None:
+        return None
+
+    def on_close(self, ctx) -> None:
         return None

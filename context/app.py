@@ -12,7 +12,8 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gdk, Gio, GLib, Gtk
 
-from . import backends, switcher, uistate, widgets
+from . import backends, notify, switcher, uistate
+from .resources import Resource
 from .backends import Workspace
 from .launcher import active_context, capture_arrangement, has_drifted
 from .launcher import move_window_to_context, move_window_to_screen
@@ -73,8 +74,8 @@ class ContextApplication(Gtk.Application):
         self.backend = backends.detect()
         self.log.info("backend: %s", self.backend.name)
         # The primary launcher, and the extras when it is shown on every
-        # screen. `window` stays the one everything else talks to — toasts and
-        # refreshes go to it — while `windows` is what gets kept in step.
+        # screen. `window` stays the one everything else talks to — the editor
+        # and refreshes go to it — while `windows` is what gets kept in step.
         self.window: LauncherWindow | None = None
         self.extra_windows: list[LauncherWindow] = []
         # Contexts already offered a save this run, so a drifting one that is
@@ -181,7 +182,43 @@ class ContextApplication(Gtk.Application):
             return
         picker = OverviewWindow(self, self.store, backend=self.backend)
         picker.on_context = self.go_to_context
+        picker.on_edit = self.edit_context
+        picker.on_close = self.close_context
+        picker.on_add_app = self.open_app_in_context
         self._show_picker(picker)
+
+    def edit_context(self, ctx: Context, is_new: bool = False) -> None:
+        """Open a context's editor, whichever view asked for it."""
+        window = self.ensure_window()
+        if window is not None:
+            window.edit_context(ctx, is_new=is_new)
+
+    def open_app_in_context(self, ctx: Context) -> None:
+        """Pick an application and open it inside an existing context.
+
+        The app joins the context rather than only being started in its
+        workspace: "open this here" almost always means it belongs here, and a
+        context that forgets it the moment it is closed would have to be told
+        again every time.
+        """
+        from .app_picker import AppGridWindow
+
+        picker = AppGridWindow(
+            self,
+            f"Open in “{ctx.title}”",
+            lambda info: self.add_app_to_context(ctx, info),
+            subtitle="The app joins this context and opens in it.",
+        )
+        self._show_picker(picker)
+
+    def add_app_to_context(self, ctx: Context, info) -> None:
+        ctx.resources.append(Resource(app_id=info.id))
+        self.store.save()
+        self.log.info("added %s to %s", info.id, ctx.title)
+        # Launching the whole context rather than the one app: it only starts
+        # what is missing, so an open context gains the new window and a closed
+        # one opens properly instead of stranding a window on its own.
+        self.launch_context(ctx)
 
     def restart(self) -> None:
         """Replace this process with a fresh one.
@@ -261,9 +298,9 @@ class ContextApplication(Gtk.Application):
     def _finish_move(self, window, ctx: Context) -> None:
         if move_window_to_context(window.id, ctx, backend=self.backend):
             self.log.info("moved %s to %s", window.app_id, ctx.title)
-        elif self.window is not None:
-            self.window.toasts.add_toast(
-                widgets.Toast(title=f"Open “{ctx.title}” first", timeout=4)
+        else:
+            notify.send(
+                self, "move", "Nothing to move into", f"Open “{ctx.title}” first"
             )
 
     def adopt_windows(self) -> None:
@@ -271,10 +308,7 @@ class ContextApplication(Gtk.Application):
         loose = unmanaged_windows(self.store.contexts, backend=self.backend)
         if not loose:
             self.log.info("every window already belongs to a context")
-            if self.window is not None:
-                self.window.toasts.add_toast(
-                    widgets.Toast(title="Every window is in a context", timeout=3)
-                )
+            notify.send(self, "adopt", "Nothing to adopt", "Every window is in a context")
             return
         from .adopt import AdoptWindow
 
@@ -293,14 +327,13 @@ class ContextApplication(Gtk.Application):
             "captured %s: %d window(s) across %d screen(s)",
             current.title, windows, screens,
         )
-        if self.window is not None:
-            message = (
-                f"Saved {windows} window{'s' if windows != 1 else ''} for "
-                f"“{current.title}”"
-                if windows
-                else f"Nothing open to save for “{current.title}”"
-            )
-            self.window.toasts.add_toast(widgets.Toast(title=message, timeout=3))
+        message = (
+            f"Saved {windows} window{'s' if windows != 1 else ''} for "
+            f"“{current.title}”"
+            if windows
+            else f"Nothing open to save for “{current.title}”"
+        )
+        notify.send(self, "capture", current.title, message)
         self.refresh_all()
 
     def _show_picker(self, picker) -> None:
@@ -354,21 +387,26 @@ class ContextApplication(Gtk.Application):
         return True
 
     def _ask_to_save(self, ctx: Context) -> None:
-        if self.window is None or ctx.id in self.asked_about:
+        if ctx.id in self.asked_about:
             return
         # Once per context per run: a context that drifts and is not saved
         # would otherwise ask again on every switch.
         self.asked_about.add(ctx.id)
 
-        toast = widgets.Toast(title=f"“{ctx.title}” has changed", timeout=8)
-        toast.set_button_label("Save layout")
-        toast.connect("button-clicked", lambda _t: self._save_drift(ctx))
-        self.window.toasts.add_toast(toast)
+        notify.send(
+            self,
+            "drift",
+            f"“{ctx.title}” has changed",
+            "Its windows no longer match what was saved.",
+            button="Save layout",
+            on_click=lambda: self._save_drift(ctx),
+        )
 
     def _save_drift(self, ctx: Context) -> None:
         windows, screens = capture_arrangement(ctx, backend=self.backend)
         self.store.save()
         self.asked_about.discard(ctx.id)
+        notify.withdraw(self, "drift")
         self.log.info(
             "saved %s: %d window(s) across %d screen(s)", ctx.title, windows, screens
         )

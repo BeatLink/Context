@@ -187,3 +187,16 @@ def test_an_unknown_save_prompt_falls_back():
 def test_every_save_moment_is_accepted():
     for moment in settings.SAVE_PROMPTS:
         assert Settings(save_prompt=moment).validated().save_prompt == moment
+
+
+def test_the_hover_delays_and_notifications_are_settings():
+    from context.settings import Settings
+
+    live = Settings().validated()
+    assert live.collapse_delay_ms > live.auto_expand_delay_ms
+    assert live.notifications is True
+
+    clamped = Settings(collapse_delay_ms=99999).validated()
+    assert clamped.collapse_delay_ms == 5000
+    assert Settings(collapse_delay_ms=-5).validated().collapse_delay_ms == 0
+    assert Settings(notifications=False).validated().notifications is False

@@ -433,14 +433,35 @@ that reach both the widgets and the Cairo drawing, the file is watched so
 saving restyles the running launcher, and the scheme setting is gone: a look
 is a file, not an option. Constraints recorded in CLAUDE.md under "Theming".
 
-### 17. The overview — *first step done*
+### 17. The overview — *in progress*
 
 A new direction taking shape step by step, keeping the sidebar as it is. Done
-so far: a New Context button in the sidebar's header, and an `overview`
-command — one screen with the search bar on top, contexts (open, then saved)
-on one side, and the installed apps on the other, where clicking an app
-creates a context around it and opens it on the spot. Next steps to be decided
-as it gets used.
+so far: a New Context button in the sidebar's header; an `overview` command —
+one screen with the search bar on top, contexts (open, then saved) on one side
+and the installed apps on the other, where clicking an app creates a context
+around it and opens it on the spot; and parity between the two views, which
+now share their rows (`rows.py`). Both search apps as well as contexts, both
+start a context from an app or a typed name, and a context's row offers the
+same handles wherever it is listed. Next steps to be decided as it gets used.
+
+### 18. A context's own menu — *done*
+
+Right-clicking a context row opens its menu: open, open an app inside it, edit,
+close, forget. Forgetting asks in the menu itself, the way the editor asks in
+its row — a menu is deliberate, but one click either side of "Close" must not
+lose a context.
+
+"Open app here" is §6's remaining half done from the other direction: the app
+grid, asked which application to add to an existing context rather than which
+to build a new one around. The app joins the context's definition and the
+context is relaunched, so only the missing window opens.
+
+### 19. Notifications — *done*
+
+What the launcher reports goes to the desktop's notification daemon rather
+than to a toast over its own list, which nobody sees while it is a rail. The
+drift prompt's "Save layout" is a notification button, so the machinery has to
+carry actions, not only text. A `notifications` setting turns them off.
 
 ## Next
 

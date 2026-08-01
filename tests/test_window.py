@@ -571,6 +571,7 @@ def test_hover_expansion_does_not_change_the_saved_state(
         seen["expanded_now"] = window.collapsed is False
         # Peeking must not rewrite what was stored.
         seen["saved_state"] = uistate.get("collapsed")
+        _instant_collapse(monkeypatch)
         window._on_pointer_leave()
         window._collapse_after_leave()  # the grace period, elapsed
         seen["collapsed_again"] = window.collapsed
@@ -749,6 +750,29 @@ def test_hiding_always_reveals_on_hover(gtk_app, isolated_store, monkeypatch):
     run_app(gtk_app, body)
     assert seen["scheduled_when_hidden"] is True
     assert seen["scheduled_when_rail"] is False
+
+
+def _instant_collapse(monkeypatch) -> None:
+    """No collapse delay, for the tests that are about something else."""
+    from context import settings
+
+    monkeypatch.setattr(
+        settings, "_current", settings.current().replace(collapse_delay_ms=0)
+    )
+
+
+def _catch_notifications(monkeypatch) -> list:
+    """Collect what would have gone to the notification daemon."""
+    from context import notify
+
+    sent = []
+
+    def fake(app, key, title, body="", **extra):
+        sent.append({"key": key, "title": title, "body": body, **extra})
+        return True
+
+    monkeypatch.setattr(notify, "send", fake)
+    return sent
 
 
 def _mode(monkeypatch, isolated_store, **changes):
@@ -965,17 +989,21 @@ def test_a_restart_setting_offers_the_restart(gtk_app, isolated_store, monkeypat
 
     def body(app):
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        added = []
-        monkeypatch.setattr(
-            window.toasts, "add_toast", lambda t: added.append(t)
-        )
+        sent = _catch_notifications(monkeypatch)
+        restarted = []
+        monkeypatch.setattr(window, "_restart_app", lambda: restarted.append(True))
         window.settings_changed(needs_restart=True, changed={"sidebar_edge": "right"})
-        seen["label"] = added[0].get_button_label() if added else None
+        seen["label"] = sent[0]["button"] if sent else None
+        # The button is only useful if it still reaches the restart.
+        if sent:
+            sent[0]["on_click"]()
+        seen["restarted"] = restarted
         app.quit()
 
     store = ContextStore()
     run_app(gtk_app, body)
     assert seen["label"] == "Restart"
+    assert seen["restarted"] == [True]
 
 
 def test_restart_replaces_the_process(gtk_app, isolated_store, monkeypatch):
@@ -1935,6 +1963,7 @@ def test_a_grazed_edge_does_not_snap_the_sidebar_shut(gtk_app, isolated_store, m
         window._apply_collapsed()
         window._auto_expand()  # hover already fired; sidebar is open
 
+        _instant_collapse(monkeypatch)
         window._on_pointer_leave()
         seen["still_open_during_grace"] = not window.collapsed
         window._on_pointer_enter()  # pointer came straight back
@@ -1978,6 +2007,7 @@ def test_the_hover_zone_holds_the_sidebar_open(
         window.collapsed = True
         window._apply_collapsed()
         window._auto_expand()
+        _instant_collapse(monkeypatch)
         window._on_pointer_leave()
         window._pointer_inside = False
 
@@ -2002,3 +2032,236 @@ def test_the_hover_zone_holds_the_sidebar_open(
     assert seen["held_open"] is True
     assert seen["still_watching"] is True
     assert seen["retracted"] is True
+
+
+def test_searching_finds_apps_as_well_as_contexts(gtk_app, isolated_store, monkeypatch):
+    """Parity with the overview: the sidebar can start something new too."""
+    from context import window as window_module
+    from context.apps import App
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    apps = [
+        App(id="firefox.desktop", name="Firefox", description="Browser", icon=None),
+        App(id="kicad.desktop", name="KiCad", description="EDA", icon=None),
+    ]
+    monkeypatch.setattr(window_module, "installed_apps", lambda: apps)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["idle"] = window.apps_listbox.get_visible()
+        window.entry.set_text("fire")
+        seen["matches"] = [
+            r.app_info.name for r in _list_rows(window.apps_listbox)
+        ]
+        seen["shown"] = window.apps_listbox.get_visible()
+        seen["heading"] = window.apps_label.get_label()
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    # Not while idle: unfiltered it is every app installed, which would bury
+    # the contexts the sidebar is for.
+    assert seen["idle"] is False
+    assert seen["matches"] == ["Firefox"]
+    assert seen["shown"] is True
+    assert seen["heading"] == "Apps · 1"
+
+
+def test_an_app_from_the_sidebar_becomes_a_context_and_opens(
+    gtk_app, isolated_store, monkeypatch
+):
+    from context import window as window_module
+    from context.apps import App
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    apps = [App(id="kicad.desktop", name="KiCad", description="EDA", icon=None)]
+    monkeypatch.setattr(window_module, "installed_apps", lambda: apps)
+    opened = []
+
+    def body(app):
+        window = LauncherWindow(app, store, opened.append, lambda c: None)
+        window.entry.set_text("kic")
+        _list_rows(window.apps_listbox)[0].emit("activated")
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert [c.title for c in opened] == ["KiCad"]
+    assert [r.app_id for r in opened[0].resources] == ["kicad.desktop"]
+    # Persisted, so it is a real context rather than a one-off launch.
+    assert "KiCad" in [c.title for c in ContextStore().contexts]
+
+
+def _list_rows(listbox) -> list:
+    rows = []
+    row = listbox.get_first_child()
+    while row is not None:
+        rows.append(row)
+        row = row.get_next_sibling()
+    return rows
+
+
+def test_the_rail_is_inset_from_its_card(gtk_app, isolated_store, monkeypatch):
+    """The rail's icons ran into the surface's border.
+
+    Everything in the expanded sidebar is inset from the edge; collapsed, the
+    buttons were flush against it.
+    """
+    from context import settings, sidebar, window as window_module
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail", rail_width=56)
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["start"] = window.rail_box.get_margin_start()
+        seen["end"] = window.rail_box.get_margin_end()
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["start"] > 0 and seen["end"] > 0
+    # And the icon gives that room back, so the rail still renders at the
+    # width it was set to.
+    assert window_module.rail_icon_size() + 2 * window_module.RAIL_MARGIN < 56
+
+
+def test_the_sidebar_waits_out_the_collapse_delay(
+    gtk_app, isolated_store, backend, monkeypatch
+):
+    """Leaving the zone starts a clock, it does not close the sidebar.
+
+    Cutting the corner on the way to a window leaves the zone for a moment,
+    and retracting on the first frame outside it made the sidebar feel like it
+    was running away.
+    """
+    from context import settings, sidebar, window as window_module
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
+    monkeypatch.setattr(
+        settings, "_current", settings.current().replace(collapse_delay_ms=500)
+    )
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(window_module.time, "monotonic", lambda: clock["now"])
+    seen = {}
+
+    def body(app):
+        app.backend = backend
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = True
+        window._apply_collapsed()
+        window._auto_expand()
+        window._on_pointer_leave()
+        window._pointer_inside = False
+
+        backend.cursor = (900, 500)  # outside the zone
+        window._collapse_after_leave()
+        seen["waiting"] = not window.collapsed
+        seen["still_watching"] = window._collapse_source is not None
+        _drop_timer(window)
+
+        # Back inside before the delay is up: the clock starts again.
+        backend.cursor = (200, 500)
+        clock["now"] += 0.3
+        window._collapse_after_leave()
+        seen["held"] = not window.collapsed
+        seen["clock_reset"] = window._left_zone_at is None
+        _drop_timer(window)
+
+        backend.cursor = (900, 500)
+        window._collapse_after_leave()  # leaves again; delay starts now
+        _drop_timer(window)
+        clock["now"] += 0.6
+        window._collapse_after_leave()
+        seen["retracted"] = window.collapsed
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["waiting"] is True
+    assert seen["still_watching"] is True
+    assert seen["held"] is True
+    assert seen["clock_reset"] is True
+    assert seen["retracted"] is True
+
+
+def _drop_timer(window) -> None:
+    from gi.repository import GLib
+
+    if window._collapse_source is not None:
+        GLib.source_remove(window._collapse_source)
+        window._collapse_source = None
+
+
+def test_what_the_launcher_reports_goes_to_the_desktop(
+    gtk_app, isolated_store, monkeypatch
+):
+    """A toast over the sidebar is invisible while it is a rail, which is most
+    of the time. The desktop's notification daemon is where these belong."""
+    from context.launcher import CloseResult, LaunchResult
+    from context.resources import Resource
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        sent = _catch_notifications(monkeypatch)
+        ctx = store.create("alpha", resources=[Resource(app_id="a.desktop")])
+        window.report_launch(ctx, LaunchResult(backend="fake", launched=["a.desktop"]))
+        window.report_close(ctx, CloseResult(was_open=True, closed=2))
+        seen["sent"] = [(n["key"], n["title"], n["body"]) for n in sent]
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    keys = [key for key, _title, _body in seen["sent"]]
+    assert keys == ["launch", "close"]
+    assert all(title == "alpha" for _key, title, _body in seen["sent"])
+    assert "Opened 1 app" in seen["sent"][0][2]
+    assert "Closed 2 windows" in seen["sent"][1][2]
+
+
+def test_notifications_can_be_switched_off(gtk_app, isolated_store, monkeypatch):
+    from context import notify, settings
+
+    monkeypatch.setattr(
+        settings, "_current", settings.current().replace(notifications=False)
+    )
+    assert notify.enabled() is False
+
+    sent = []
+
+    class FakeApp:
+        def send_notification(self, key, note):
+            sent.append(key)
+
+        def lookup_action(self, _name):
+            return None
+
+        def add_action(self, _action):
+            return None
+
+    assert notify.send(FakeApp(), "launch", "alpha", "opened") is False
+    assert sent == []
+
+    monkeypatch.setattr(
+        settings, "_current", settings.current().replace(notifications=True)
+    )
+    assert notify.send(FakeApp(), "launch", "alpha", "opened") is True
+    assert sent == ["launch"]

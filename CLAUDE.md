@@ -160,6 +160,33 @@ screenshot, never by looking up a colour. A colour can resolve correctly and
 be painted over, which is what made two light-mode attempts look like they had
 worked.
 
+## Two views of the same thing
+
+The sidebar and the overview list the same contexts and the same applications,
+so they share their pieces rather than each growing their own — `rows.py` holds
+`ContextRow`, `AppRow`, `app_tile` and `context_for_app`, and both views build
+from them. They drifted apart once: the overview could open a context but not
+edit, close or forget one, and its Enter key did nothing where the sidebar's
+started something. **A new handle on a context goes in the row, not in a view.**
+
+Neither view owns the editor. It is a layer-shell overlay holding the keyboard
+exclusively, and so are the overview and the pickers — stacked, the top one is
+typed into while the bottom one still covers the screen. So the overview closes
+and hands the context to `app.edit_context`, which routes to the launcher.
+
+Closing a context is the exception that stays put: it is housekeeping done
+while you carry on choosing, so the overview refreshes rather than dismissing.
+
+## Notifications, not toasts
+
+What the launcher reports goes to the desktop's notification daemon through
+`notify.send`. Toasts were drawn over the launcher's own list, which is only on
+screen while it is expanded — Context spends most of its life as a rail, so a
+failed launch reported itself to nobody. `notify.py` owns the `notifications`
+setting, and a message with a button registers a `Gio.SimpleAction` for it,
+since `Gio.Notification` takes an action name rather than a callback. Keys are
+per message, not per occurrence: sending "launch" again replaces what is up.
+
 ## Keyboard focus in the sidebar
 
 The layer is `KeyboardMode.ON_DEMAND`, which is the protocol's "let the user
@@ -202,7 +229,7 @@ same bug in another shell):
 
 `monitor = "*"` puts a launcher on every screen, because a layer surface
 belongs to exactly one output. `app.launchers` is all of them; `app.window` is
-the primary and is where toasts go.
+the primary and is what the editor and refreshes go through.
 
 **Anything stored once must be applied to all of them.** Collapsing shipped
 broken twice for this reason: the collapsed flag is a single value in
@@ -304,5 +331,15 @@ launching real applications, and point `XDG_DATA_DIRS` at it.
   fails on protocol versions or GPU access (table in README). It needs a spare VT or
   a VM. Keep logic testable without a live Hyprland; the `hyprctl` stub approach in
   the scratchpad works well for this.
+- **A GTK label shows what it is given.** `markup_escape_text` on a title that
+  is *not* parsed as markup spells the entities out — every context row but the
+  current one read "Review todos &amp; notes", because only the active row is
+  bolded and therefore only it parses markup. Escape where markup is used and
+  nowhere else.
+- **The expanded sidebar cannot see the cursor in its own gaps.** It floats 8px
+  off the edges, so the pointer crossing that gap is a pointer-leave with the
+  cursor visibly still on the sidebar. Hover-expansion is held open by a *zone*
+  — the sidebar's width plus its margins, from the docked edge — polled from
+  `backend.cursor_position()`, with `collapse_delay_ms` before it retracts.
 - `GLib.get_real_name()` returns the literal string `"Unknown"`, not empty, when
   GECOS is unset.

@@ -329,6 +329,18 @@ class SettingsPage(widgets.NavigationPage):
         )
         group.add(self.hover_delay_row)
 
+        self.collapse_delay_row = _row_spin(
+            "Collapse delay",
+            "Milliseconds the sidebar stays open after the pointer leaves it, "
+            "so passing out and back does not close it.",
+            live.collapse_delay_ms,
+            0,
+            5000,
+            50,
+            lambda v: self._apply(collapse_delay_ms=v),
+        )
+        group.add(self.collapse_delay_row)
+
         self._sync_rows()
         return group
 
@@ -346,6 +358,8 @@ class SettingsPage(widgets.NavigationPage):
         self.hover_delay_row.set_visible(
             collapses and (live.auto_expand or live.collapse_mode == "hidden")
         )
+        # Only hover-expansion retracts on its own, so only it has a delay.
+        self.collapse_delay_row.set_visible(self.hover_delay_row.get_visible())
 
     def _saving(self) -> widgets.Group:
         live = settings.current()
@@ -363,6 +377,16 @@ class SettingsPage(widgets.NavigationPage):
                 settings.SAVE_PROMPTS,
                 live.save_prompt,
                 lambda v: self._apply(save_prompt=v),
+            )
+        )
+        group.add(
+            _row_switch(
+                "Notifications",
+                "Report launches, closes and drift to the desktop's "
+                "notification daemon. The save prompt is one of them, so with "
+                "this off a drifting context is only saved by hand.",
+                live.notifications,
+                lambda v: self._apply(notifications=v),
             )
         )
         return group
@@ -485,4 +509,4 @@ class SettingsPage(widgets.NavigationPage):
     def _write_theme(self) -> None:
         path = theme.current().write_template()
         log.info("wrote the style file to %s", path)
-        self.window.toasts.add_toast(widgets.Toast(title=f"Wrote {path}", timeout=4))
+        self.window.notify("theme", "Style file written", str(path))

@@ -136,3 +136,101 @@ def test_an_app_becomes_a_new_context_and_opens(gtk_app, isolated_store, backend
     # Persisted, so it is a real context and not a one-off launch.
     fresh = __import__("context.store", fromlist=["ContextStore"]).ContextStore()
     assert "KiCad" in [c.title for c in fresh.contexts]
+
+
+def test_a_row_offers_the_same_handles_as_the_sidebar(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    """Editing and closing were sidebar-only, so the overview could show a
+    context but not do anything with it beyond opening."""
+    from context.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("running")
+    ctx.set_handle("fake", "ctx-running")
+    backend.workspaces["ctx-running"] = 1
+    seen = {"edited": [], "closed": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_edit = lambda c, is_new=False: seen["edited"].append((c, is_new))
+        window.on_close = seen["closed"].append
+        dismissed = []
+        window.close = lambda: dismissed.append(True)
+        row = _rows(window.open_list)[0]
+        row.close.emit("clicked")
+        seen["still_up"] = dismissed == []
+        row.edit.emit("clicked")
+        seen["left_for_the_editor"] = dismissed == [True]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["closed"] == [ctx]
+    # Closing is housekeeping — you carry on choosing, so the overview stays.
+    assert seen["still_up"] is True
+    assert seen["left_for_the_editor"] is True
+    # Editing hands over to the launcher, which owns the editor overlay.
+    assert seen["edited"] == [(ctx, False)]
+
+
+def test_enter_starts_a_context_by_the_name_typed(gtk_app, isolated_store, fake_apps, backend):
+    """The sidebar starts one; the overview used to do nothing at all."""
+    from context.store import ContextStore
+
+    store = ContextStore()
+    seen = {"edited": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_edit = lambda c, is_new=False: seen["edited"].append((c.title, is_new))
+        window.entry.set_text("plan the week")
+        window.refresh()
+        window._activate_first()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["edited"] == [("plan the week", True)]
+
+
+def test_the_built_in_row_says_what_it_will_do(gtk_app, isolated_store, fake_apps, backend):
+    from context.store import ContextStore
+
+    store = ContextStore()
+    store.create("alpha")
+    seen = {}
+
+    def body(app):
+        window = _build(app, store, backend)
+        seen["blank"] = window.create_row.get_subtitle()
+        window.entry.set_text("alpha")
+        window.refresh()
+        seen["existing"] = window.create_row.get_subtitle()
+        window.entry.set_text("something new")
+        window.refresh()
+        seen["new"] = window.create_row.get_subtitle()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["blank"] == "Name it in the editor"
+    assert seen["existing"] == "Open “alpha”"
+    assert seen["new"] == "Start “something new”"
+
+
+def test_opening_an_app_into_a_context_hands_over(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    from context.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("alpha")
+    seen = {"asked": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_add_app = seen["asked"].append
+        _rows(window.saved_list)[0].open_menu()
+        _rows(window.saved_list)[0].menu_items["add-app"].emit("clicked")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["asked"] == [ctx]

@@ -99,6 +99,13 @@ class Settings:
     # collapsed state — the rail stays the resting shape.
     auto_expand: bool = False
     auto_expand_delay_ms: int = 120
+    # How long the sidebar stays open after the pointer leaves its zone. Going
+    # back the way you came — around a menu, past the edge of the screen — is
+    # common enough that retracting the instant the cursor is outside made the
+    # sidebar feel like it was running away.
+    collapse_delay_ms: int = 400
+    # Whether Context reports itself to the desktop's notification daemon.
+    notifications: bool = True
     # How often the open list is re-checked against the compositor.
     poll_seconds: int = 2
     log_level: str = "info"
@@ -174,6 +181,8 @@ class Settings:
             ),
             auto_expand=bool(self.auto_expand),
             auto_expand_delay_ms=_clamp(self.auto_expand_delay_ms, 0, 2000, 120),
+            collapse_delay_ms=_clamp(self.collapse_delay_ms, 0, 5000, 400),
+            notifications=bool(self.notifications),
             poll_seconds=_clamp(self.poll_seconds, 1, 60, 2),
             log_level=(
                 self.log_level.strip().lower()
