@@ -24,11 +24,23 @@ def _rows(listbox):
     return out
 
 
-def _tiles(flow):
+def _tiles(window):
+    """Every app tile in the grid, in the order the sections show them."""
     out = []
-    child = flow.get_first_child()
+    for flow in window.flows:
+        child = flow.get_first_child()
+        while child is not None:
+            out.append(child)
+            child = child.get_next_sibling()
+    return out
+
+
+def _headings(window) -> list[str]:
+    out = []
+    child = window.sections.get_first_child()
     while child is not None:
-        out.append(child)
+        if isinstance(child, Gtk.Label):
+            out.append(child.get_label())
         child = child.get_next_sibling()
     return out
 
@@ -66,7 +78,7 @@ def test_contexts_split_into_open_and_saved(gtk_app, isolated_store, backend, fa
         window = _build(app, store, backend)
         seen["open"] = [r.ctx.title for r in _rows(window.open_list)]
         seen["saved"] = [r.ctx.title for r in _rows(window.saved_list)]
-        seen["apps"] = len(_tiles(window.flow))
+        seen["apps"] = len(_tiles(window))
         window.close()
         app.quit()
 
@@ -89,7 +101,7 @@ def test_one_search_filters_both_sides(gtk_app, isolated_store, backend, fake_ap
         window.entry.set_text("fire")
         window.refresh()  # SearchEntry debounces search-changed; refresh directly
         seen["saved"] = [r.ctx.title for r in _rows(window.saved_list)]
-        seen["apps"] = len(_tiles(window.flow))
+        seen["apps"] = len(_tiles(window))
         window.close()
         app.quit()
 
@@ -258,16 +270,16 @@ def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatc
             b.get_label() for b in window.category_chooser._buttons
         ]
         window._on_category(window.categories.index("Development"))
-        seen["development"] = [t.app_info.name for t in _tiles(window.flow)]
+        seen["development"] = [t.app_info.name for t in _tiles(window)]
         seen["heading"] = window.apps_label.get_label()
         # A search still applies inside the category.
         window.entry.set_text("car")
         window.refresh()
-        seen["searched"] = [t.app_info.name for t in _tiles(window.flow)]
+        seen["searched"] = [t.app_info.name for t in _tiles(window)]
         window._on_category(0)
         window.entry.set_text("")
         window.refresh()
-        seen["all"] = len(_tiles(window.flow))
+        seen["all"] = len(_tiles(window))
         window.close()
         app.quit()
 
@@ -318,12 +330,14 @@ def test_the_no_context_is_listed_with_the_open_ones(
 
 
 def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch):
-    """Alphabetical is a poor default once you have contexts: what you put in
-    them is what you reach for."""
+    """Three questions, three orders: the one I was just using, the one whose
+    name I know, and the ones I actually work in."""
     from context import overview
     from context.apps import App
     from context.resources import Resource
     from context.store import ContextStore
+
+    from context import uistate
 
     apps = [
         App(id="a.desktop", name="Ardour", description="", icon=None,
@@ -332,27 +346,96 @@ def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch
             categories=("Development",)),
         App(id="m.desktop", name="Meld", description="", icon=None,
             categories=("Development",)),
+        App(id="7.desktop", name="7-Zip", description="", icon=None),
     ]
     monkeypatch.setattr(overview, "installed_apps", lambda: apps)
     store = ContextStore()
     store.create("one", resources=[Resource(app_id="z.desktop")])
     store.create("two", resources=[Resource(app_id="z.desktop")])
     store.create("three", resources=[Resource(app_id="m.desktop")])
+    import time
+
+    now = time.time()
+    uistate.note_app("m.desktop", when=now - 3 * 86400)  # three days ago
+    uistate.note_app("a.desktop", when=now - 90 * 60)  # an hour and a half
     seen = {}
 
     def body(app):
         window = _build(app, store, backend)
-        seen["by_name"] = [t.app_info.name for t in _tiles(window.flow)]
+        seen["default"] = [t.app_info.name for t in _tiles(window)]
+        seen["default_headings"] = _headings(window)
+
+        window._on_sort(window.sort_keys.index("name"))
+        seen["by_name"] = [t.app_info.name for t in _tiles(window)]
+        seen["letters"] = _headings(window)
+
         window._on_sort(window.sort_keys.index("contexts"))
-        seen["by_use"] = [t.app_info.name for t in _tiles(window.flow)]
-        window._on_sort(window.sort_keys.index("category"))
-        seen["by_kind"] = [t.app_info.name for t in _tiles(window.flow)]
+        seen["by_use"] = [t.app_info.name for t in _tiles(window)]
+        seen["split"] = _headings(window)
         window.close()
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["by_name"] == ["Ardour", "Meld", "Zed"]
-    # Zed is in two contexts, Meld in one, Ardour in none.
-    assert seen["by_use"] == ["Zed", "Meld", "Ardour"]
-    # Development before Media, alphabetically within each.
-    assert seen["by_kind"] == ["Meld", "Zed", "Ardour"]
+    # Recent is the default: last launched first, then everything never opened.
+    assert seen["default"] == ["Ardour", "Meld", "7-Zip", "Zed"]
+    # Grouped by how long ago, in the words a person would use.
+    assert seen["default_headings"] == ["1 hour ago", "3 days ago", "Not opened yet"]
+    # A-Z is lettered, with anything not starting with a letter last.
+    assert seen["by_name"] == ["Ardour", "Meld", "Zed", "7-Zip"]
+    assert seen["letters"] == ["A", "M", "Z", "#"]
+    # In contexts: those you work in, most contexts first, then the rest.
+    assert seen["by_use"] == ["Zed", "Meld", "7-Zip", "Ardour"]
+    assert seen["split"] == ["In contexts", "Not in a context"]
+
+
+def test_an_app_can_go_into_the_context_you_are_in(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    """The grid answers two questions, and which one is a toggle rather than a
+    different way in."""
+    from context.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("work")
+    ctx.set_handle("fake", "ctx-work")
+    backend.workspaces["ctx-work"] = 1
+    backend.current = "ctx-work"
+    seen = {"into": [], "opened": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_app_into = lambda c, i: seen["into"].append((c.title, i.id))
+        window.on_context = seen["opened"].append
+        window.close = lambda: None
+        seen["offers"] = window.target_chooser._buttons[1].get_label()
+
+        window._on_target(1)
+        window._open_app(fake_apps[0])
+        # And back: a new context is still one click away.
+        window._on_target(0)
+        window._open_app(fake_apps[1])
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["offers"] == "Into “work”"
+    assert seen["into"] == [("work", "firefox.desktop")]
+    assert [c.title for c in seen["opened"]] == ["KiCad"]
+
+
+def test_there_is_nothing_to_add_to_without_a_context(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    from context.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        seen["label"] = window.target_chooser._buttons[1].get_label()
+        seen["offered"] = window.target_chooser._buttons[1].get_sensitive()
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["label"] == "In this context"
+    assert seen["offered"] is False

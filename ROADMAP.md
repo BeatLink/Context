@@ -468,10 +468,12 @@ holding it open.
 ### 23. Finding an app in the overview — *done*
 
 The grid filters by the freedesktop main categories, offering only the ones
-something is actually filed under, and orders itself A–Z, by how many contexts
-an application is already in, or by kind. Nothing that would need usage
-tracking Context does not do: the contexts that exist are the record of what
-these applications are for.
+something is actually filed under, and groups itself three ways: by recency
+(headed "just now", "3 hours ago", "2 days ago" — `uistate` records when each
+application was launched), A–Z under letter headings, and In contexts, which
+splits what you work in from everything else. Clicking an app either starts a
+context around it or adds it to the one you are in, whichever the toggle above
+the grid says.
 
 ### 20. Choosing on an overlay — *done*
 

@@ -438,6 +438,15 @@ class SegmentedChoice(Gtk.Box):
     def get_selected(self) -> int:
         return self._selected
 
+    def set_choice_label(self, index: int, label: str) -> None:
+        """Rename one choice, for a label that says what it will act on."""
+        if 0 <= index < len(self._buttons):
+            self._buttons[index].set_label(label)
+
+    def set_choice_sensitive(self, index: int, sensitive: bool) -> None:
+        if 0 <= index < len(self._buttons):
+            self._buttons[index].set_sensitive(sensitive)
+
 
 class NavigationPage(Gtk.Box):
     """One screen in a navigation stack.

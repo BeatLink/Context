@@ -87,9 +87,14 @@ switches to all of them from its header.
 
 The **overview** puts everything on one screen: one search over the contexts
 you have — open ones first, with the same handles the sidebar gives them — and
-the applications installed, each one a new context around it. The grid filters
-by kind and can be ordered A–Z, by how many contexts an app is already in, or
-by kind.
+the applications installed. Clicking an application either starts a context
+around it or adds it to the one you are in, whichever the toggle above the grid
+says.
+
+The grid filters by kind, and groups itself three ways: **Recent** by how long
+ago you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under
+letter headings, and **In contexts**, which splits what you actually work in
+from everything else.
 
 ## The editor
 

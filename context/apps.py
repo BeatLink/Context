@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from gi.repository import Gio
@@ -83,32 +84,120 @@ def in_category(apps: list[App], category: str) -> list[App]:
     return [app for app in apps if category in app.categories]
 
 
-# How the grid can be ordered. Deliberately nothing that would need usage
-# tracking Context does not do: "In contexts" is counted from the contexts
-# that exist, which is the only record of what these applications are for.
+# How the grid can be ordered, and what it is split into when it is. Each of
+# these answers a different question — "the one I was just using", "the one
+# whose name I know", "the ones I actually work in" — and each answers it with
+# groups rather than one wall of icons.
 SORTS: dict[str, str] = {
+    "recent": "Recent",
     "name": "A–Z",
     "contexts": "In contexts",
-    "category": "By kind",
 }
 
+# Headings for the two halves of the "In contexts" split.
+IN_CONTEXTS = "In contexts"
+OUTSIDE_CONTEXTS = "Not in a context"
 
-def sort_apps(apps: list[App], order: str, counts: dict[str, int] | None = None):
-    """Order the grid. Unknown orders fall back to by name."""
-    counts = counts or {}
+# And for the tail of the recency grouping: everything Context has never seen
+# launched, which on a fresh install is everything.
+NOT_YET_OPENED = "Not opened yet"
+
+HOUR = 3600
+DAY = 86400
+
+
+def recency_heading(age: float) -> str:
+    """How long ago, in the words a person would use.
+
+    Coarse on purpose: the heading is what groups the grid, and per-minute
+    headings would give one application each.
+    """
+    if age < HOUR:
+        return "Just now"
+    hours = int(age // HOUR)
+    if hours < 24:
+        return "1 hour ago" if hours == 1 else f"{hours} hours ago"
+    days = int(age // DAY)
+    if days < 7:
+        return "1 day ago" if days == 1 else f"{days} days ago"
+    weeks = days // 7
+    if weeks < 5:
+        return "1 week ago" if weeks == 1 else f"{weeks} weeks ago"
+    months = max(1, days // 30)
+    return "1 month ago" if months == 1 else f"{months} months ago"
+
+
+def arrange_apps(
+    apps: list[App],
+    order: str,
+    times: dict[str, float] | None = None,
+    counts: dict[str, int] | None = None,
+    now: float | None = None,
+) -> list[tuple[str, list[App]]]:
+    """The grid's contents as (heading, apps) sections, in order."""
+    if order == "recent":
+        return by_recency(apps, times or {}, now=now)
+
     if order == "contexts":
-        return sorted(
-            apps, key=lambda a: (-counts.get(a.id, 0), a.name.casefold())
+        counts = counts or {}
+        inside = [a for a in apps if counts.get(a.id)]
+        outside = [a for a in apps if not counts.get(a.id)]
+        inside.sort(key=lambda a: (-counts.get(a.id, 0), a.name.casefold()))
+        outside.sort(key=lambda a: a.name.casefold())
+        return [
+            section
+            for section in ((IN_CONTEXTS, inside), (OUTSIDE_CONTEXTS, outside))
+            if section[1]
+        ]
+
+    return by_initial(apps)
+
+
+def by_recency(
+    apps: list[App], times: dict[str, float], now: float | None = None
+) -> list[tuple[str, list[App]]]:
+    """Most recently launched first, in groups of how long ago that was."""
+    moment = time.time() if now is None else now
+    sections: list[tuple[str, list[App]]] = []
+    unseen = [a for a in apps if a.id not in times]
+    seen = sorted(
+        (a for a in apps if a.id in times),
+        key=lambda a: (-times[a.id], a.name.casefold()),
+    )
+
+    for app in seen:
+        heading = recency_heading(max(0.0, moment - times[app.id]))
+        if sections and sections[-1][0] == heading:
+            sections[-1][1].append(app)
+        else:
+            sections.append((heading, [app]))
+
+    if unseen:
+        sections.append(
+            (NOT_YET_OPENED, sorted(unseen, key=lambda a: a.name.casefold()))
         )
-    if order == "category":
-        return sorted(
-            apps,
-            key=lambda a: (
-                MAIN_CATEGORIES.get(a.categories[0], "~") if a.categories else "~",
-                a.name.casefold(),
-            ),
-        )
-    return sorted(apps, key=lambda a: a.name.casefold())
+    return sections
+
+
+def initial_of(app: App) -> str:
+    """The heading an application is filed under: A–Z, or # for the rest."""
+    first = app.name.strip()[:1].upper()
+    return first if first.isalpha() else "#"
+
+
+def by_initial(apps: list[App]) -> list[tuple[str, list[App]]]:
+    """Alphabetical apps in lettered groups.
+
+    A hundred icons in one run is a wall to read; the letters are what make it
+    scannable, and what an application menu has always had.
+    """
+    groups: dict[str, list[App]] = {}
+    for app in sorted(apps, key=lambda a: a.name.casefold()):
+        groups.setdefault(initial_of(app), []).append(app)
+    letters = sorted(k for k in groups if k != "#")
+    return [(letter, groups[letter]) for letter in letters] + (
+        [("#", groups["#"])] if "#" in groups else []
+    )
 
 
 def search_apps(apps: list[App], query: str) -> list[App]:

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from gi.repository import GLib
 
-from . import adapters, backends, isolation
+from . import adapters, backends, isolation, uistate
 from .backends import Backend, Workspace
 from .layout import split_directions
 from .logging_setup import get_logger, traced
@@ -521,6 +521,10 @@ def _launch_resources(
             with adapters.isolating(_isolation_for(ctx, resource)):
                 adapters.adapter_for(resource).launch(resource, ctx.id)
             launched.append(resource.app_id)
+            # What the overview's recency grouping is built from. Recorded on
+            # the launch rather than on the click, so an app started as part of
+            # a context counts the same as one picked from the grid.
+            uistate.note_app(resource.app_id)
         except (GLib.Error, LookupError, OSError) as exc:
             failed.append((resource.app_id, str(exc)))
             continue

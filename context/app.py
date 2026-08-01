@@ -186,6 +186,7 @@ class ContextApplication(Gtk.Application):
         picker.on_edit = self.edit_context
         picker.on_close = self.close_context
         picker.on_add_app = self.open_app_in_context
+        picker.on_app_into = self.add_app_to_context
         self._show_picker(picker)
 
     def edit_context(self, ctx: Context, is_new: bool = False) -> None:

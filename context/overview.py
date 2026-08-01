@@ -18,8 +18,9 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from . import backends, sidebar, theme, widgets
-from .apps import MAIN_CATEGORIES, SORTS, App, categories_of, in_category
-from .apps import installed_apps, search_apps, sort_apps
+from . import uistate
+from .apps import MAIN_CATEGORIES, SORTS, App, arrange_apps, categories_of
+from .apps import in_category, installed_apps, search_apps
 from .launcher import is_no_context, loose_context, read_live_state
 from .logging_setup import get_logger
 from .rows import ContextRow, app_tile, context_for_app
@@ -39,8 +40,11 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self._active_id: str | None = None
         # Which kind of application the grid is showing; "" is all of them.
         self.category = ""
-        # And in what order — the first of SORTS, which is by name.
+        # And in what order — the first of SORTS, which is most recent first.
         self.sort = next(iter(SORTS))
+        # What clicking an app does: "new" starts a context around it.
+        self.target = "new"
+        self.flows: list[Gtk.FlowBox] = []
         self._live = read_live_state([], backend=self.backend)
 
         theme.install()
@@ -125,10 +129,25 @@ class OverviewWindow(Gtk.ApplicationWindow):
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         right.set_hexpand(True)
 
-        self.apps_label = Gtk.Label(label="Apps · open in a new context", xalign=0.0)
+        self.apps_label = Gtk.Label(label="Apps", xalign=0.0)
         self.apps_label.add_css_class("heading")
         self.apps_label.add_css_class("dim-label")
         right.append(self.apps_label)
+
+        # What clicking an application does. Starting a context around it is
+        # the overview's own answer; adding it to the context you are already
+        # in is the other half of the same question, and doing that from here
+        # saves going through the row's menu for something the grid is showing
+        # anyway.
+        target_row = Gtk.Box(spacing=8)
+        target_label = Gtk.Label(label="Opens", xalign=0.0)
+        target_label.add_css_class("dim-label")
+        target_row.append(target_label)
+        self.target_chooser = widgets.SegmentedChoice(self._on_target)
+        self.target_chooser.add("In a new context")
+        self.target_chooser.add("In this context")
+        target_row.append(self.target_chooser)
+        right.append(target_row)
 
         # What is installed, by kind. Buttons rather than a dropdown, like
         # everything else on an overlay, and only the categories something is
@@ -157,13 +176,13 @@ class OverviewWindow(Gtk.ApplicationWindow):
         sort_row.append(self.sort_chooser)
         right.append(sort_row)
 
-        self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE)
-        self.flow.set_valign(Gtk.Align.START)
-        self.flow.set_max_children_per_line(30)
+        # One section per group, each with its own grid: a heading cannot sit
+        # inside a FlowBox, and the groups are the point of the ordering.
+        self.sections = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
 
         right_scroller = Gtk.ScrolledWindow(vexpand=True)
         right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        right_scroller.set_child(self.flow)
+        right_scroller.set_child(self.sections)
         right.append(right_scroller)
 
         columns.append(left)
@@ -215,15 +234,51 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.saved_label.set_visible(bool(saved))
         self.saved_list.set_visible(bool(saved))
 
-        self.flow.remove_all()
         within = in_category(self.apps, self.category)
-        matches = sort_apps(search_apps(within, query), self.sort, self._app_counts())
-        for info in matches:
-            self.flow.append(self._app_tile(info))
-        kind = MAIN_CATEGORIES.get(self.category, "")
-        self.apps_label.set_label(
-            f"{kind or 'Apps'} · {len(matches)} · open in a new context"
+        matches = search_apps(within, query)
+        self._fill_sections(
+            arrange_apps(
+                matches,
+                self.sort,
+                times=uistate.app_times(),
+                counts=self._app_counts(),
+            )
         )
+        kind = MAIN_CATEGORIES.get(self.category, "")
+        self.apps_label.set_label(f"{kind or 'Apps'} · {len(matches)}")
+
+        # The second choice names what it would add to, and is only offered
+        # while there is something to add to.
+        current = self._active_context()
+        self.target_chooser.set_choice_label(
+            1, f"Into “{current.title}”" if current else "In this context"
+        )
+        self.target_chooser.set_choice_sensitive(1, current is not None)
+        if current is None and self.target == "current":
+            self.target = "new"
+            self.target_chooser.set_selected(0, notify=False)
+
+    def _fill_sections(self, sections: list[tuple[str, list[App]]]) -> None:
+        child = self.sections.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            self.sections.remove(child)
+            child = following
+
+        self.flows: list[Gtk.FlowBox] = []
+        for heading, apps in sections:
+            if heading:
+                label = Gtk.Label(label=heading, xalign=0.0)
+                label.add_css_class("heading")
+                label.add_css_class("dim-label")
+                self.sections.append(label)
+            flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE)
+            flow.set_valign(Gtk.Align.START)
+            flow.set_max_children_per_line(30)
+            for info in apps:
+                flow.append(self._app_tile(info))
+            self.sections.append(flow)
+            self.flows.append(flow)
 
     def _context_row(self, ctx, is_open: bool) -> ContextRow:
         """The sidebar's row, unchanged.
@@ -273,6 +328,15 @@ class OverviewWindow(Gtk.ApplicationWindow):
             for app_id in set(ctx.apps):
                 counts[app_id] = counts.get(app_id, 0) + 1
         return counts
+
+    def _active_context(self):
+        if self._active_id is None:
+            return None
+        return next((c for c in self.store.contexts if c.id == self._active_id), None)
+
+    def _on_target(self, selected: int) -> None:
+        self.target = "current" if selected == 1 else "new"
+        log.debug("apps open %s", self.target)
 
     def _on_sort(self, selected: int) -> None:
         if 0 <= selected < len(self.sort_keys):
@@ -350,7 +414,14 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.refresh()
 
     def _open_app(self, info: App) -> None:
-        """A context grown around one app, opened on the spot."""
+        """Either a context grown around this app, or this app added to the one
+        you are in — whichever the toggle above the grid says."""
+        current = self._active_context() if self.target == "current" else None
+        if current is not None:
+            log.info("overview: %s into %s", info.id, current.title)
+            self.close()
+            self.on_app_into(current, info)
+            return
         ctx = context_for_app(self.store, info)
         log.info("overview: new context around %s", info.id)
         self.close()
@@ -372,4 +443,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return None
 
     def on_save(self, ctx) -> None:
+        return None
+
+    def on_app_into(self, ctx, info) -> None:
         return None
