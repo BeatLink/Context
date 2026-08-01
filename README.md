@@ -114,10 +114,10 @@ run on one side, what you are already doing on the other.
 from. <kbd>Enter</kbd> opens the first application matched. Editing a context or
 picking an app opens over the overview and leaves it where it was.
 
-An application row offers both answers: open it in a context of its own, or in
-the context you came from — named, since standing on the overview "here" would
-mean the overview. Clicking the row takes the first, since it is the one that
-works whether or not anything is open, and right-clicking says both in words.
+Clicking a row opens the application in a context of its own — the answer that
+works whether or not anything is open. Right-clicking offers the other: open it
+in the context you came from, named, since standing on the overview "here"
+would mean the overview.
 
 The applications filter by kind and group four ways: **Recent** by how long ago
 you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under letter
@@ -270,9 +270,10 @@ editor to name what they have become.
 it again rebuilds it. **Forgetting** a context deletes the definition and lives
 in the editor and in a context's own menu, behind a confirmation either way.
 
-Right-clicking a context — in the sidebar or the overview — opens its menu:
-open it, open an app inside it, edit it, close it, or forget it. "Open app
-here" shows the app grid; what you pick joins that context and opens in it.
+Right-clicking a context in the sidebar opens its menu: open it, open an app
+inside it, edit it, close it, or forget it. "Open app here" shows the same
+application catalogue the overview and the editor do; what you pick joins that
+context and opens in it.
 
 Searching the sidebar searches applications as well as contexts, and starting
 an app from those results makes a context around it, the same as the overview's

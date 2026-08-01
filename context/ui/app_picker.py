@@ -1,8 +1,13 @@
-"""An app grid, asked which application to open somewhere in particular.
+"""The application catalogue, asked which one to open somewhere in particular.
 
-The overview's grid answers "what shall I start?" by making a context. This one
-answers "what shall I add to *this* context?" — same grid, same tiles, one
-question narrower — and is reached from a context's menu.
+The overview answers "what shall I start?" by making a context. This one
+answers "what shall I add to *this* context?" — one question narrower — and is
+reached from a context's menu.
+
+The same `AppCatalogue` both times, so an application is found the same way
+wherever it is being looked for. This was a flow of tiles with a search box and
+nothing else: no filter by kind, no ordering, and a name you half-remembered
+meant scrolling.
 """
 
 from __future__ import annotations
@@ -14,9 +19,10 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from context.ui import sidebar, theme, widgets
-from context.system.apps import App, installed_apps, search_apps
+from context.system.apps import App
 from context.system.logging_setup import get_logger
-from context.ui.rows import app_tile
+from context.ui.catalogue import AppCatalogue
+from context.ui.rows import AddAppRow
 
 log = get_logger("app-picker")
 
@@ -28,7 +34,7 @@ class AppGridWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title=title)
         self.add_css_class("ctx-window")
         self.on_pick = on_pick
-        self.apps = installed_apps()
+        self.where = title
 
         theme.install()
         self.set_default_size(900, 640)
@@ -63,20 +69,12 @@ class AppGridWindow(Gtk.ApplicationWindow):
             label.add_css_class("dim-label")
             content.append(label)
 
-        self.entry = widgets.SearchBar("Search apps")
-        self.entry.connect("search-changed", lambda _e: self.refresh())
-        self.entry.connect("activate", lambda _e: self._pick_first())
-        self.entry.connect("stop-search", lambda _e: self._dismiss())
-        content.append(self.entry)
-
-        self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE)
-        self.flow.set_valign(Gtk.Align.START)
-        self.flow.set_max_children_per_line(30)
-
-        scroller = Gtk.ScrolledWindow(vexpand=True)
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_child(self.flow)
-        content.append(scroller)
+        self.catalogue = AppCatalogue(self._row, placeholder="Search apps")
+        # The catalogue owns the search box; what Enter and Escape mean in it
+        # belong to the screen around it.
+        self.catalogue.entry.connect("activate", lambda _e: self._pick_first())
+        self.catalogue.entry.connect("stop-search", lambda _e: self._dismiss())
+        content.append(self.catalogue)
 
         toolbar.set_content(content)
         self.set_child(toolbar)
@@ -92,16 +90,23 @@ class AppGridWindow(Gtk.ApplicationWindow):
 
         self.refresh()
 
+    def _row(self, info: App) -> AddAppRow:
+        """One answer, since the context is already chosen — the overview is
+        the only screen that also asks *where*."""
+        return AddAppRow(
+            info,
+            self._pick,
+            tooltip=f"Open {info.name} here",
+            icon_name="media-playback-start-symbolic",
+        )
+
     def refresh(self) -> None:
-        self.flow.remove_all()
-        for info in search_apps(self.apps, self.entry.get_text().strip()):
-            self.flow.append(app_tile(info, self._pick, tooltip=f"Open {info.name}"))
+        self.catalogue.refresh()
 
     def _pick_first(self) -> None:
-        child = self.flow.get_first_child()
-        info = getattr(child, "app_info", None)
-        if info is not None:
-            self._pick(info)
+        row = self.catalogue.first()
+        if row is not None:
+            self._pick(row.app_info)
 
     def _pick(self, info: App) -> None:
         log.info("picked %s", info.id)

@@ -283,7 +283,14 @@ class AppRow(widgets.ActionRow):
     and the editor you are about to work in does not.
     """
 
-    def __init__(self, info: App, on_new, on_current=None, into: str = "") -> None:
+    def __init__(
+        self,
+        info: App,
+        on_new,
+        on_current=None,
+        into: str = "",
+        buttons: bool = True,
+    ) -> None:
         super().__init__()
         self.app_info = info
         # The context the second answer means, by name. It used to read "this
@@ -302,11 +309,14 @@ class AppRow(widgets.ActionRow):
         )
         self.add_prefix(icon)
 
-        # The same pair the overview's tiles carry, so the two views teach one
-        # thing rather than each inventing its own icons and words.
-        buttons = _open_buttons(info, on_new, on_current, into)
-        self.here, self.fresh = buttons.here, buttons.fresh
-        self.add_suffix(buttons)
+        # The pair of answers, where there is room to draw them. The overview
+        # leaves them off: a full screen of rows carrying two small icons each
+        # is a lot of furniture for a question most rows are never asked, and
+        # the right-click menu says both in words for every one of them.
+        pair = _open_buttons(info, on_new, on_current, into)
+        self.here, self.fresh = pair.here, pair.fresh
+        if buttons:
+            self.add_suffix(pair)
 
         # Activating the row takes the answer that always works: with no context
         # open there is nothing to add to, so a new one is the only one of the
@@ -350,16 +360,22 @@ class AppRow(widgets.ActionRow):
 
 
 class AddAppRow(widgets.ActionRow):
-    """An application in the editor's catalogue: activating it adds a window.
+    """An application row with one answer: activating it adds this one.
 
-    The same row the overview lists, with the one answer the editor has. There
-    the question is *where* an application should open and a row carries two
-    buttons; here the context is the one being edited, so the whole row is the
-    target and what it needs to say back is how many windows it has already
-    put in the layout.
+    Two screens ask that. The editor adds a window to the layout being edited
+    and wants the count back; the "open app here" picker adds one to a context
+    that already exists and has nothing to count. Where an application should
+    open is a *second* question, and only the overview asks it.
     """
 
-    def __init__(self, info: App, on_add, count: int = 0) -> None:
+    def __init__(
+        self,
+        info: App,
+        on_add,
+        count: int = 0,
+        tooltip: str = "",
+        icon_name: str = "list-add-symbolic",
+    ) -> None:
         super().__init__()
         self.app_info = info
         self.on_add = on_add
@@ -383,8 +399,8 @@ class AddAppRow(widgets.ActionRow):
         self.badge.add_css_class("dim-label")
         self.add_suffix(self.badge)
 
-        self.add = Gtk.Button(icon_name="list-add-symbolic", valign=Gtk.Align.CENTER)
-        self.add.set_tooltip_text(f"Add {info.name} to the layout")
+        self.add = Gtk.Button(icon_name=icon_name, valign=Gtk.Align.CENTER)
+        self.add.set_tooltip_text(tooltip or f"Add {info.name} to the layout")
         self.add.connect("clicked", lambda _b: on_add(info))
         self.add_suffix(self.add)
 

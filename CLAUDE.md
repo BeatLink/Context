@@ -277,7 +277,8 @@ list has to rebuild on arriving and leaving.
 ## One catalogue, two questions
 
 `ui/catalogue.py` is the application list — search, category filter, ordering,
-grouped sections — and both places that offer applications draw it. Neither is
+grouped sections — and all three places that offer applications draw it: the
+overview, the editor and the "open app here" picker. Neither is
 *about* applications: the overview asks where one should open, the editor asks
 what a context should hold, and `row_for(app)` is the difference. The two had
 grown separately, and the editor's had a search box over a flow of tiles with no
@@ -287,6 +288,12 @@ application depended on which screen you were on.
 The editor refreshes **one row** after an add (`catalogue.row(app_id)`) rather
 than rebuilding: adding to a layout is done in runs, and a rebuild throws the
 scroll back to the top.
+
+**The catalogue owns the search box; what Enter and Escape mean in it do not.**
+Each caller connects `activate` and `stop-search` on `catalogue.entry` itself.
+Swapping the catalogue into the overview dropped both connections and nothing
+failed — the test called `_activate_first()` directly. Drive those two through
+the entry, or the wiring can go missing in silence.
 
 ## One list per thing
 

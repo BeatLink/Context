@@ -493,7 +493,7 @@ def test_enter_opens_the_first_application_matched(
         window.on_context = lambda c: seen["opened"].append(c.title)
         window.catalogue.entry.set_text("kic")
         window.refresh()
-        window._activate_first()
+        window.catalogue.entry.emit("activate")
         app.quit()
 
     run_app(gtk_app, body)
@@ -524,3 +524,61 @@ def test_the_overview_lists_no_contexts(gtk_app, isolated_store, backend, fake_a
     run_app(gtk_app, body)
     assert seen["has_lists"] is False
     assert set(seen["rows"]) == {"AppRow"}
+
+
+@needs_display
+def test_an_app_row_carries_no_buttons(gtk_app, isolated_store, backend, fake_apps):
+    """A full screen of rows with two small icons each is a lot of furniture
+    for a question most rows are never asked. Clicking opens a context of its
+    own — the answer that always works — and the menu says both in words."""
+    from context.state import uistate
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("Work on Context")
+    ctx.set_handle("fake", "ctx-work")
+    backend.place_windows("ctx-work", "firefox.desktop")
+    backend.current = backend.home_handle()
+    uistate.note_visit(ctx.id)
+    seen = {"into": [], "new": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_app_into = lambda c, i: seen["into"].append(c.title)
+        window.on_context = lambda c: seen["new"].append(c.title)
+        row = _tiles(window)[0]
+        # The pair is built either way, so asking whether it shows gets the
+        # truth — an unparented widget reports itself visible.
+        seen["parented"] = row.here.get_parent() is not None
+
+        # Both answers survive, in the menu.
+        row.open_menu()
+        seen["menu"] = list(row.menu_items)
+        row.menu_items["here"].emit("clicked")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["parented"] is False
+    assert seen["menu"] == ["new", "here"]
+    assert seen["into"] == ["Work on Context"]
+
+
+@needs_display
+def test_enter_reaches_the_search_box(gtk_app, isolated_store, backend, fake_apps):
+    """The catalogue owns the entry now, and what Enter means in it belongs to
+    the screen around it — which is a connection that can simply be missing."""
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    seen = {"opened": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_context = lambda c: seen["opened"].append(c.title)
+        window.catalogue.entry.set_text("kic")
+        window.refresh()
+        window.catalogue.entry.emit("activate")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["opened"] == ["KiCad"]

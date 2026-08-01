@@ -94,6 +94,12 @@ class OverviewWindow(Gtk.ApplicationWindow):
         # The same catalogue the editor draws, asked a different question:
         # there a row adds a window to the layout, here it opens the app.
         self.catalogue = AppCatalogue(self._app_row, counts=self._app_counts)
+        # The catalogue owns the search box; what Enter and Escape mean in it
+        # belong to the screen around it.
+        self.catalogue.entry.connect("activate", lambda _e: self._activate_first())
+        # A focused search entry consumes Escape as stop-search, so the window
+        # shortcut never fires while typing — which is most of the time.
+        self.catalogue.entry.connect("stop-search", lambda _e: self._escape())
         content.append(self.catalogue)
 
         # Fills the window, so the rounding and the inset ring `.ctx-surface`
@@ -150,6 +156,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self._open_app,
             self._open_app_here if current is not None else None,
             into=current.title if current is not None else "",
+            buttons=False,
         )
 
     # -- acting --------------------------------------------------------------
