@@ -1,7 +1,8 @@
 # Design
 
 Where a thing goes, and why. **Proposed, not settled** — this is written to be
-argued with, and nothing here has been built yet.
+argued with. Anything already built says so where it is described; everything
+else is still an argument to have.
 
 The other three files answer different questions. [README.md](README.md) says
 what the software does. [CLAUDE.md](CLAUDE.md) records constraints found the
