@@ -177,6 +177,21 @@ and hands the context to `app.edit_context`, which routes to the launcher.
 Closing a context is the exception that stays put: it is housekeeping done
 while you carry on choosing, so the overview refreshes rather than dismissing.
 
+## What is live, in one pass
+
+`launcher.read_live_state` answers everything the list needs — which contexts
+are open, which is focused, which have drifted, and which windows belong to no
+context — from one `geometry_by_handle` call plus the two `open_state` already
+made. It runs on the poll timer, so a query per question is subprocess work on
+the GTK main loop; asking `has_drifted` per context was a `hyprctl clients`
+each, every couple of seconds.
+
+The no-context is a `Context` that is never stored: `loose_context()` builds
+one around the homeless windows and carries them on `ctx.windows`, so the views
+show and act on it with the row they already have. `is_no_context(ctx)` is the
+guard every action needs — it has no workspace to switch to, no definition to
+edit, and saving it means *becoming* a context rather than capturing one.
+
 ## Notifications, not toasts
 
 What the launcher reports goes to the desktop's notification daemon through

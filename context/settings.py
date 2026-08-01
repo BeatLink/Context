@@ -106,6 +106,13 @@ class Settings:
     collapse_delay_ms: int = 400
     # Whether Context reports itself to the desktop's notification daemon.
     notifications: bool = True
+    # What the expanded sidebar shows. All of it is useful and none of it is
+    # essential — a sidebar that is only the open contexts is a perfectly good
+    # sidebar, and at 380px every section costs the others room.
+    show_search: bool = True
+    show_overview_button: bool = True
+    show_saved: bool = True
+    show_apps: bool = True
     # How often the open list is re-checked against the compositor.
     poll_seconds: int = 2
     log_level: str = "info"
@@ -183,6 +190,10 @@ class Settings:
             auto_expand_delay_ms=_clamp(self.auto_expand_delay_ms, 0, 2000, 120),
             collapse_delay_ms=_clamp(self.collapse_delay_ms, 0, 5000, 400),
             notifications=bool(self.notifications),
+            show_search=bool(self.show_search),
+            show_overview_button=bool(self.show_overview_button),
+            show_saved=bool(self.show_saved),
+            show_apps=bool(self.show_apps),
             poll_seconds=_clamp(self.poll_seconds, 1, 60, 2),
             log_level=(
                 self.log_level.strip().lower()

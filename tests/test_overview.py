@@ -234,3 +234,84 @@ def test_opening_an_app_into_a_context_hands_over(
 
     run_app(gtk_app, body)
     assert seen["asked"] == [ctx]
+
+
+def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatch):
+    from context import overview
+    from context.apps import App
+    from context.store import ContextStore
+
+    apps = [
+        App(id="a.desktop", name="Ardour", description="", icon=None,
+            categories=("AudioVideo",)),
+        App(id="b.desktop", name="Builder", description="", icon=None,
+            categories=("Development",)),
+        App(id="c.desktop", name="Cargo", description="", icon=None,
+            categories=("Development", "Utility")),
+    ]
+    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        seen["offered"] = [
+            b.get_label() for b in window.category_chooser._buttons
+        ]
+        window._on_category(window.categories.index("Development"))
+        seen["development"] = [t.app_info.name for t in _tiles(window.flow)]
+        seen["heading"] = window.apps_label.get_label()
+        # A search still applies inside the category.
+        window.entry.set_text("car")
+        window.refresh()
+        seen["searched"] = [t.app_info.name for t in _tiles(window.flow)]
+        window._on_category(0)
+        window.entry.set_text("")
+        window.refresh()
+        seen["all"] = len(_tiles(window.flow))
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    # Only the categories something is actually filed under, "All" first.
+    assert seen["offered"] == ["All", "Media", "Development", "Utilities"]
+    assert seen["development"] == ["Builder", "Cargo"]
+    assert seen["heading"].startswith("Development · 2")
+    assert seen["searched"] == ["Cargo"]
+    assert seen["all"] == 3
+
+
+def test_the_no_context_is_listed_with_the_open_ones(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    """Windows outside every context are a context until they are given one."""
+    from context.launcher import NO_CONTEXT_ID
+    from context.store import ContextStore
+
+    store = ContextStore()
+    backend.geometry["stray"] = [
+        {"id": "0x1", "app_id": "firefox.desktop", "x": 0, "y": 0,
+         "width": 1920, "height": 1080},
+    ]
+    seen = {"saved": [], "closed": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_save = seen["saved"].append
+        window.on_close = seen["closed"].append
+        rows = _rows(window.open_list)
+        seen["titles"] = [r.ctx.title for r in rows]
+        row = rows[0]
+        seen["can_edit"] = row.edit.get_visible()
+        seen["offers_save"] = row.save.get_visible()
+        window.close = lambda: None
+        row.save.emit("clicked")
+        row.close.emit("clicked")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["titles"] == ["No context"]
+    # Nothing to edit until it has been saved as a context of its own.
+    assert seen["can_edit"] is False
+    assert seen["offers_save"] is True
+    assert [c.id for c in seen["saved"]] == [NO_CONTEXT_ID]
+    assert [c.id for c in seen["closed"]] == [NO_CONTEXT_ID]

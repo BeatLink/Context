@@ -130,6 +130,7 @@ class SettingsPage(widgets.NavigationPage):
 
         page = widgets.Page()
         page.add(self._appearance())
+        page.add(self._sidebar_contents())
         page.add(self._screens())
         page.add(self._behaviour())
         page.add(self._saving())
@@ -342,6 +343,48 @@ class SettingsPage(widgets.NavigationPage):
         group.add(self.collapse_delay_row)
 
         self._sync_rows()
+        return group
+
+    def _sidebar_contents(self) -> widgets.Group:
+        live = settings.current()
+        group = widgets.Group(
+            title="What the sidebar shows",
+            description="Every part of it is useful and none is essential; at "
+            "sidebar width each one costs the others room.",
+        )
+        for title, subtitle, field in (
+            (
+                "Search",
+                "The box, and the row that starts a context from what is typed "
+                "in it.",
+                "show_search",
+            ),
+            (
+                "Overview button",
+                "The + in the header, which opens the overview.",
+                "show_overview_button",
+            ),
+            (
+                "Saved contexts",
+                "The group beneath the open ones. Open contexts are always "
+                "listed.",
+                "show_saved",
+            ),
+            (
+                "Apps",
+                "Matching applications under the search results, each one a new "
+                "context.",
+                "show_apps",
+            ),
+        ):
+            group.add(
+                _row_switch(
+                    title,
+                    subtitle,
+                    getattr(live, field),
+                    lambda value, name=field: self._apply(**{name: value}),
+                )
+            )
         return group
 
     def _sync_rows(self) -> None:

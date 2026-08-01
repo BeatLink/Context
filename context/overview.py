@@ -18,8 +18,9 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from . import backends, sidebar, theme, widgets
-from .apps import App, installed_apps, search_apps
-from .launcher import open_state
+from .apps import MAIN_CATEGORIES, App, categories_of, in_category
+from .apps import installed_apps, search_apps
+from .launcher import is_no_context, loose_context, read_live_state
 from .logging_setup import get_logger
 from .rows import ContextRow, app_tile, context_for_app
 
@@ -36,6 +37,9 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.backend = backend or backends.detect()
         self.apps = installed_apps()
         self._active_id: str | None = None
+        # Which kind of application the grid is showing; "" is all of them.
+        self.category = ""
+        self._live = read_live_state([], backend=self.backend)
 
         theme.install()
         self.set_default_size(1200, 720)
@@ -119,10 +123,24 @@ class OverviewWindow(Gtk.ApplicationWindow):
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         right.set_hexpand(True)
 
-        apps_label = Gtk.Label(label="Apps · open in a new context", xalign=0.0)
-        apps_label.add_css_class("heading")
-        apps_label.add_css_class("dim-label")
-        right.append(apps_label)
+        self.apps_label = Gtk.Label(label="Apps · open in a new context", xalign=0.0)
+        self.apps_label.add_css_class("heading")
+        self.apps_label.add_css_class("dim-label")
+        right.append(self.apps_label)
+
+        # What is installed, by kind. Buttons rather than a dropdown, like
+        # everything else on an overlay, and only the categories something is
+        # actually filed under — an empty "Science" helps nobody.
+        self.categories = ["", *categories_of(self.apps)]
+        self.category_chooser = widgets.SegmentedChoice(self._on_category)
+        for key in self.categories:
+            self.category_chooser.add(MAIN_CATEGORIES.get(key, "All"))
+        category_scroller = Gtk.ScrolledWindow(
+            propagate_natural_width=True, hexpand=True
+        )
+        category_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        category_scroller.set_child(self.category_chooser)
+        right.append(category_scroller)
 
         self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE)
         self.flow.set_valign(Gtk.Align.START)
@@ -157,8 +175,9 @@ class OverviewWindow(Gtk.ApplicationWindow):
     def refresh(self) -> None:
         query = self.entry.get_text().strip()
         matches = self.store.search(query)
-        open_ids, active_id = open_state(self.store.contexts, backend=self.backend)
-        self._active_id = active_id
+        live = read_live_state(self.store.contexts, backend=self.backend)
+        open_ids, self._active_id = live.open_ids, live.active_id
+        self._live = live
         self.create_row.set_subtitle(self._create_subtitle(query))
 
         opened = [c for c in matches if c.id in open_ids]
@@ -167,18 +186,29 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.open_list.remove_all()
         for ctx in opened:
             self.open_list.append(self._context_row(ctx, is_open=True))
+        # Everything running that belongs to no context, listed as one until it
+        # is given a name. It has none to search by, so it goes when you type.
+        loose = loose_context(live.loose) if not query else None
+        if loose is not None:
+            self.open_list.append(self._context_row(loose, is_open=True))
         self.saved_list.remove_all()
         for ctx in saved:
             self.saved_list.append(self._context_row(ctx, is_open=False))
 
-        self.open_label.set_visible(bool(opened))
-        self.open_list.set_visible(bool(opened))
+        self.open_label.set_visible(bool(opened or loose))
+        self.open_list.set_visible(bool(opened or loose))
         self.saved_label.set_visible(bool(saved))
         self.saved_list.set_visible(bool(saved))
 
         self.flow.remove_all()
-        for info in search_apps(self.apps, query):
+        within = in_category(self.apps, self.category)
+        matches = search_apps(within, query)
+        for info in matches:
             self.flow.append(self._app_tile(info))
+        kind = MAIN_CATEGORIES.get(self.category, "")
+        self.apps_label.set_label(
+            f"{kind or 'Apps'} · {len(matches)} · open in a new context"
+        )
 
     def _context_row(self, ctx, is_open: bool) -> ContextRow:
         """The sidebar's row, unchanged.
@@ -187,16 +217,28 @@ class OverviewWindow(Gtk.ApplicationWindow):
         it, close it — so the row is shared rather than reimplemented here
         with half of them missing, which is how the two drifted apart before.
         """
+        virtual = is_no_context(ctx)
         return ContextRow(
             ctx,
             self._open_context,
-            self._edit_context,
+            None if virtual else self._edit_context,
             self._close_context,
             is_open=is_open,
             is_active=self._active_id is not None and ctx.id == self._active_id,
-            on_forget=self._forget_context,
-            on_add_app=self._add_app_to_context,
+            is_drifted=virtual or ctx.id in self._live.drifted_ids,
+            on_forget=None if virtual else self._forget_context,
+            on_add_app=None if virtual else self._add_app_to_context,
+            on_save=self._save_context,
         )
+
+    def _save_context(self, ctx) -> None:
+        """Keeping windows is housekeeping, so the overview stays up — unless
+        it was the no-context, which leaves for the editor to be named."""
+        log.info("overview: saving the windows of %s", ctx.title)
+        if is_no_context(ctx):
+            self.close()
+        self.on_save(ctx)
+        self.refresh()
 
     def _add_app_to_context(self, ctx) -> None:
         """Hand app-picking to the application, which owns the picker."""
@@ -208,6 +250,12 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return app_tile(info, self._open_app)
 
     # -- acting --------------------------------------------------------------
+
+    def _on_category(self, selected: int) -> None:
+        if 0 <= selected < len(self.categories):
+            self.category = self.categories[selected]
+            log.debug("category %s", self.category or "all")
+            self.refresh()
 
     def _create_subtitle(self, query: str) -> str:
         if not query:
@@ -292,4 +340,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return None
 
     def on_close(self, ctx) -> None:
+        return None
+
+    def on_save(self, ctx) -> None:
         return None

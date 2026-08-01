@@ -264,8 +264,14 @@ def test_refresh_open_state_rereads_the_backend(gtk_app, isolated_store, monkeyp
 
     def body(app):
         win = window_module.LauncherWindow(app, store, lambda c: None, lambda c: None)
+        from context.launcher import LiveState
+
         monkeypatch.setattr(
-            window_module, "open_state", lambda contexts: ({ctx.id}, ctx.id)
+            window_module,
+            "read_live_state",
+            lambda contexts, backend=None: LiveState(
+                open_ids={ctx.id}, active_id=ctx.id
+            ),
         )
         win.refresh_open_state()
         seen["open"] = len(rows(win.open_listbox))
@@ -2265,3 +2271,178 @@ def test_notifications_can_be_switched_off(gtk_app, isolated_store, monkeypatch)
     )
     assert notify.send(FakeApp(), "launch", "alpha", "opened") is True
     assert sent == ["launch"]
+
+
+def test_a_drifted_context_offers_to_be_saved(gtk_app, isolated_store, backend):
+    """The prompt is the button's presence: it is there while there is
+    something to keep, and gone once there is not."""
+    from context.layout import Layout, Slot
+    from context.resources import Resource
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    store = ContextStore()
+    ctx = store.create("work", resources=[Resource(app_id="a.desktop")])
+    ctx.set_handle("fake", "ctx-work")
+    ctx.layout = Layout(slots=[Slot(0.0, 0.0, 1.0, 1.0)])
+    backend.workspaces["ctx-work"] = 1
+    seen = {"saved": []}
+
+    def body(app):
+        app.backend = backend
+        app.save_context = seen["saved"].append
+        # Where the window actually is matches what was saved.
+        backend.geometry["ctx-work"] = [
+            {"id": "0x1", "app_id": "a.desktop", "x": 0, "y": 0,
+             "width": 1920, "height": 1080}
+        ]
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.refresh_open_state()
+        seen["settled"] = _list_rows(window.open_listbox)[0].save.get_visible()
+
+        # Half the screen now: that is drift.
+        backend.geometry["ctx-work"] = [
+            {"id": "0x1", "app_id": "a.desktop", "x": 0, "y": 0,
+             "width": 960, "height": 1080}
+        ]
+        window.refresh_open_state()
+        row = _list_rows(window.open_listbox)[0]
+        seen["drifted"] = row.save.get_visible()
+        row.save.emit("clicked")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["settled"] is False
+    assert seen["drifted"] is True
+    assert [c.title for c in seen["saved"]] == ["work"]
+
+
+def test_windows_in_no_context_are_listed_as_one(gtk_app, isolated_store, backend):
+    from context.launcher import NO_CONTEXT_ID
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    store = ContextStore()
+    seen = {"opened": [], "saved": []}
+
+    def body(app):
+        app.backend = backend
+        app.save_context = seen["saved"].append
+        backend.geometry["stray"] = [
+            {"id": "0x9", "app_id": "kicad.desktop", "x": 0, "y": 0,
+             "width": 960, "height": 1080}
+        ]
+        window = LauncherWindow(
+            app, store, seen["opened"].append, lambda c: None
+        )
+        window.refresh_open_state()
+        rows = _list_rows(window.open_listbox)
+        seen["titles"] = [r.ctx.title for r in rows]
+        seen["subtitle"] = rows[0].get_subtitle()
+        rows[0].save.emit("clicked")
+        rows[0].emit("activated")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["titles"] == ["No context"]
+    assert seen["subtitle"].startswith("1 window in no context")
+    assert [c.id for c in seen["saved"]] == [NO_CONTEXT_ID]
+    # Opening it goes to those windows rather than launching anything.
+    assert [c.id for c in seen["opened"]] == [NO_CONTEXT_ID]
+
+
+def test_the_collapse_button_pins_when_the_sidebar_opens_itself(
+    gtk_app, isolated_store, monkeypatch
+):
+    """"Collapse" is the wrong word for a sidebar the pointer is holding open —
+    and pressing it while peeking used to close it under the pointer."""
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail", auto_expand=True)
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        holder = _fake_app_with([window])
+        monkeypatch.setattr(window, "get_application", lambda: holder)
+        window.set_collapsed(True)
+        window._auto_expand()  # the pointer is holding it open
+
+        seen["peeking_icon"] = window.collapse_button.get_icon_name()
+        window.collapse_button.emit("clicked")
+        seen["pinned_open"] = not window.collapsed
+        seen["no_longer_peeking"] = window._auto_expanded is False
+        seen["pinned_icon"] = window.collapse_button.get_icon_name()
+
+        window.collapse_button.emit("clicked")
+        seen["unpinned"] = window.collapsed
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["peeking_icon"] == "view-pin-symbolic"
+    assert seen["pinned_open"] is True
+    assert seen["no_longer_peeking"] is True
+    # Pinned, it offers the opposite again.
+    assert seen["pinned_icon"] == "go-previous-symbolic"
+    assert seen["unpinned"] is True
+
+
+def test_the_sidebar_shows_only_what_is_switched_on(
+    gtk_app, isolated_store, monkeypatch
+):
+    from context import settings, window as window_module
+    from context.apps import App
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(
+        window_module,
+        "installed_apps",
+        lambda: [App(id="f.desktop", name="Firefox", description="", icon=None)],
+    )
+    _mode(
+        monkeypatch,
+        isolated_store,
+        show_search=False,
+        show_overview_button=False,
+        show_saved=False,
+        show_apps=False,
+    )
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["search"] = window.entry.get_visible()
+        seen["create"] = window.create_list.get_visible()
+        seen["overview"] = window.new_button.get_visible()
+        seen["saved"] = window.saved_expander.get_visible()
+        window.entry.set_text("fire")
+        window.refresh()
+        seen["apps"] = window.apps_listbox.get_visible()
+
+        window.entry.set_text("")
+        settings.update(show_search=True, show_saved=True)
+        window.settings_changed()
+        seen["search_again"] = window.entry.get_visible()
+        seen["saved_again"] = window.saved_expander.get_visible()
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen == {
+        "search": False,
+        "create": False,
+        "overview": False,
+        "saved": False,
+        "apps": False,
+        "search_again": True,
+        "saved_again": True,
+    }

@@ -249,10 +249,13 @@ class HyprlandBackend:
     def close_workspace(self, handle: str) -> int:
         closed = 0
         for address in self._windows_on(handle):
-            result = self._run("dispatch", "closewindow", f"address:{address}")
-            if result is not None and result.returncode == 0:
+            if self.close_window(address):
                 closed += 1
         return closed
+
+    def close_window(self, window_id: str) -> bool:
+        result = self._run("dispatch", "closewindow", f"address:{window_id}")
+        return result is not None and result.returncode == 0
 
     def client_geometry(self, handle: str) -> list[dict]:
         """Where each window on a workspace actually is, in layout order.
@@ -260,26 +263,49 @@ class HyprlandBackend:
         Sorted top-left to bottom-right rather than by focus, so capturing a
         context twice without moving anything gives the same answer.
         """
-        found = []
-        for client in self._clients_on(handle):
-            try:
-                x, y = int(client["at"][0]), int(client["at"][1])
-                width, height = int(client["size"][0]), int(client["size"][1])
-            except (KeyError, IndexError, TypeError, ValueError):
+        return _in_layout_order(
+            [g for g in map(self._geometry, self._clients_on(handle)) if g]
+        )
+
+    def geometry_by_handle(self) -> dict[str, list[dict]]:
+        """The same, for every workspace at once.
+
+        The launcher asks which contexts have drifted on every poll, and asking
+        per context is one `hyprctl clients` each — enough subprocess work on
+        the main loop to be felt with a handful of contexts open.
+        """
+        data = self._query("clients")
+        if not isinstance(data, list):
+            return {}
+        grouped: dict[str, list[dict]] = {}
+        for client in data:
+            if not isinstance(client, dict) or not client.get("address"):
                 continue
-            found.append(
-                {
-                    "app_id": self._desktop_id(str(client.get("class") or "")),
-                    "x": x,
-                    "y": y,
-                    "width": width,
-                    "height": height,
-                    # `monitor` is an id, not a name — the launcher matches it
-                    # against MonitorInfo by position instead.
-                    "monitor_id": client.get("monitor"),
-                }
-            )
-        return sorted(found, key=lambda c: (c["y"], c["x"]))
+            handle = str((client.get("workspace") or {}).get("name", ""))
+            geometry = self._geometry(client)
+            if handle and geometry:
+                grouped.setdefault(handle, []).append(geometry)
+        return {handle: _in_layout_order(found) for handle, found in grouped.items()}
+
+    def _geometry(self, client: dict) -> dict | None:
+        try:
+            x, y = int(client["at"][0]), int(client["at"][1])
+            width, height = int(client["size"][0]), int(client["size"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            return None
+        return {
+            # The address, so a window found this way can also be acted on.
+            "id": str(client.get("address") or ""),
+            "app_id": self._desktop_id(str(client.get("class") or "")),
+            "title": str(client.get("title") or ""),
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            # `monitor` is an id, not a name — the launcher matches it against
+            # MonitorInfo by position instead.
+            "monitor_id": client.get("monitor"),
+        }
 
     def _desktop_id(self, window_class: str) -> str:
         """A window's class as a desktop-entry id.
@@ -463,3 +489,8 @@ class HyprlandBackend:
         # Named workspaces disappear on their own once the last window closes,
         # and the handle stays valid because it is a name, not a position.
         return not self.workspace_exists(handle)
+
+
+def _in_layout_order(found: list[dict]) -> list[dict]:
+    """Top-left to bottom-right, which is the order a layout's slots are in."""
+    return sorted(found, key=lambda c: (c["y"], c["x"]))

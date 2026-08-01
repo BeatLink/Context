@@ -109,6 +109,13 @@ class Backend(Protocol):
         the backend can see.
         """
 
+    def geometry_by_handle(self) -> dict[str, list["dict"]]:
+        """Every window's live geometry, grouped by the container it is on.
+
+        The launcher asks which contexts have drifted on every poll, and doing
+        that one context at a time is a query each.
+        """
+
     def cursor_position(self) -> tuple[int, int] | None:
         """Where the pointer is in global coordinates, or None if unknown.
 
@@ -148,6 +155,9 @@ class Backend(Protocol):
         """Ask every window on the workspace to close. Returns how many were
         asked. Must never touch windows outside this workspace."""
 
+    def close_window(self, window_id: str) -> bool:
+        """Ask one window to close, wherever it is."""
+
     def remove_workspace(self, handle: str) -> bool:
         """Discard the now-empty workspace itself, if the backend can do so
         without invalidating other contexts' handles."""
@@ -185,6 +195,16 @@ class NullBackend:
     def windows(self, handle: str | None = None) -> list[WindowInfo]:
         return []
 
+    def geometry_by_handle(self) -> dict[str, list["dict"]]:
+        """Every window's live geometry, grouped by the container it is on.
+
+        The launcher asks which contexts have drifted on every poll, and doing
+        that one context at a time is a query each.
+        """
+
+    def geometry_by_handle(self) -> dict[str, list[dict]]:
+        return {}
+
     def cursor_position(self) -> tuple[int, int] | None:
         return None
 
@@ -214,6 +234,9 @@ class NullBackend:
 
     def close_workspace(self, handle: str) -> int:
         return 0
+
+    def close_window(self, window_id: str) -> bool:
+        return False
 
     def remove_workspace(self, handle: str) -> bool:
         return False

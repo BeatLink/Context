@@ -77,6 +77,9 @@ class FakeBackend:
         self.placements: dict[str, str] = {}
         self.states: dict[str, str] = {}
         self.grouped: set[str] = set()
+        # handle -> live window geometry, for drift and the no-context.
+        self.geometry: dict[str, list[dict]] = {}
+        self.closed_windows: list[str] = []
 
     # -- interface ----------------------------------------------------------
 
@@ -132,6 +135,19 @@ class FakeBackend:
                 )
             )
         self.workspaces[handle] = self.workspaces.get(handle, 0) + len(app_ids)
+
+    def client_geometry(self, handle: str) -> list[dict]:
+        return list(self.geometry.get(handle, []))
+
+    def geometry_by_handle(self) -> dict[str, list[dict]]:
+        self.calls.append(("geometry",))
+        return {handle: list(found) for handle, found in self.geometry.items()}
+
+    def close_window(self, window_id: str) -> bool:
+        self.calls.append(("close_window", window_id))
+        self.closed_windows.append(window_id)
+        self.open_windows = [w for w in self.open_windows if w.id != window_id]
+        return True
 
     def cursor_position(self) -> tuple[int, int] | None:
         return getattr(self, "cursor", None)

@@ -20,6 +20,7 @@ from . import widgets
 from .apps import App
 from .layout import preset_for
 from .resources import Resource
+from .launcher import is_no_context
 from .store import Context, ContextStore
 
 
@@ -49,33 +50,49 @@ class ContextRow(widgets.ActionRow):
         on_close,
         is_open=False,
         is_active=False,
+        is_drifted=False,
         on_forget=None,
         on_add_app=None,
+        on_save=None,
     ) -> None:
         super().__init__()
         self.ctx = ctx
         self.is_open = is_open
         self.is_active = is_active
+        self.is_drifted = is_drifted
         self.on_open = on_open
         self.on_edit = on_edit
         self.on_close = on_close
         self.on_forget = on_forget
         self.on_add_app = on_add_app
+        self.on_save = on_save
         # Escaped only where markup is actually parsed — see below. A plain
         # label shows what it is given, so an escaped one spelled out the
         # entities: "Review todos &amp; notes" on every row but the current.
         self.set_title(ctx.title)
         self.set_activatable(True)
 
-        subtitle = [relative_time(ctx.last_used_at)]
-        if ctx.apps:
-            subtitle.append(f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}")
-        if ctx.ephemeral:
-            subtitle.append("ephemeral")
+        self.is_virtual = is_no_context(ctx)
+        if self.is_virtual:
+            count = len(getattr(ctx, "windows", []))
+            subtitle = [
+                f"{count} window{'s' if count != 1 else ''} in no context",
+                "save them as a context, or close them",
+            ]
+        else:
+            subtitle = [relative_time(ctx.last_used_at)]
+            if ctx.apps:
+                subtitle.append(
+                    f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}"
+                )
+            if ctx.ephemeral:
+                subtitle.append("ephemeral")
         self.set_subtitle(" · ".join(subtitle))
 
         icon = Gtk.Image.new_from_icon_name(
-            "media-playback-start-symbolic" if is_open else "view-grid-symbolic"
+            "dialog-question-symbolic"
+            if self.is_virtual
+            else ("media-playback-start-symbolic" if is_open else "view-grid-symbolic")
         )
         self.add_prefix(icon)
 
@@ -88,19 +105,43 @@ class ContextRow(widgets.ActionRow):
             self.set_title(f"<b>{GLib.markup_escape_text(ctx.title)}</b>")
             self.set_use_markup(True)
 
+        # A context drifts as it is used — windows opened, moved, closed. The
+        # button is the offer to keep how it looks now, and appears only while
+        # there is something to keep, so its presence is the whole prompt.
+        self.save = Gtk.Button(
+            icon_name="document-save-symbolic", valign=Gtk.Align.CENTER
+        )
+        self.save.add_css_class("flat")
+        self.save.add_css_class("accent")
+        self.save.set_tooltip_text(
+            "Gather these windows into a context of their own"
+            if self.is_virtual
+            else "Save these windows as this context's layout"
+        )
+        self.save.set_visible(bool(is_drifted and on_save is not None))
+        self.save.connect("clicked", lambda _b: on_save and on_save(ctx))
+        self.add_suffix(self.save)
+
         self.close = Gtk.Button(
             icon_name="media-playback-stop-symbolic", valign=Gtk.Align.CENTER
         )
         self.close.add_css_class("flat")
-        self.close.set_tooltip_text("Close this context, keeping it for later")
-        self.close.set_visible(is_open)
-        self.close.connect("clicked", lambda _b: on_close(ctx))
+        self.close.set_tooltip_text(
+            "Close these windows"
+            if self.is_virtual
+            else "Close this context, keeping it for later"
+        )
+        self.close.set_visible(bool(is_open and on_close is not None))
+        self.close.connect("clicked", lambda _b: on_close and on_close(ctx))
         self.add_suffix(self.close)
 
         self.edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER)
         self.edit.add_css_class("flat")
         self.edit.set_tooltip_text("Edit this context")
-        self.edit.connect("clicked", lambda _b: on_edit(ctx))
+        # Nothing to edit about a context that is only a name for what has no
+        # context: it has no definition until it is saved as one.
+        self.edit.set_visible(on_edit is not None)
+        self.edit.connect("clicked", lambda _b: on_edit and on_edit(ctx))
         self.add_suffix(self.edit)
 
         self.connect("activated", lambda _r: on_open(ctx))
@@ -150,8 +191,15 @@ class ContextRow(widgets.ActionRow):
         item("open", "Switch to" if self.is_open else "Open", self._menu(self.on_open))
         if self.on_add_app is not None:
             item("add-app", "Open app here…", self._menu(self.on_add_app))
-        item("edit", "Edit…", self._menu(self.on_edit))
-        if self.is_open:
+        if self.on_edit is not None:
+            item("edit", "Edit…", self._menu(self.on_edit))
+        if self.on_save is not None and self.is_drifted:
+            item(
+                "save",
+                "Save as a context" if self.is_virtual else "Save these windows",
+                self._menu(self.on_save),
+            )
+        if self.is_open and self.on_close is not None:
             item("close", "Close", self._menu(self.on_close))
         if self.on_forget is not None:
             # Two steps, the way the editor asks: the menu is deliberate, but

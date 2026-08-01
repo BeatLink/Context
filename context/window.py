@@ -13,7 +13,8 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 from . import notify, settings, sidebar, theme, uistate, widgets
 from .apps import App, installed_apps, search_apps
 from .editor_window import EditorWindow
-from .launcher import hand_keyboard_back, open_state
+from .launcher import LiveState, hand_keyboard_back, is_no_context
+from .launcher import loose_context, read_live_state
 from .layout import Layout
 from .logging_setup import get_logger
 from .resources import Resource
@@ -66,6 +67,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self._open_ids: set[str] = set()
         self._active_id: str | None = None
         self._open_signature: tuple | None = None
+        self._live = LiveState()
         # Installed applications, read on the first search rather than at start.
         self._apps: list[App] | None = None
         self._auto_expanded = False
@@ -324,6 +326,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.is_sidebar and self.collapses and uistate.get("collapsed", False)
         )
         self._apply_collapsed()
+        self._apply_sections()
         self.refresh()
 
         # Which contexts are open changes outside this window — a context is
@@ -334,21 +337,30 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self._restart_poll()
 
     def _read_open_state(self) -> bool:
-        """Ask the backend what is open. Returns whether anything changed."""
+        """Ask the backend what is running. Returns whether anything changed.
+
+        One pass for all of it — open, focused, drifted, and what belongs to no
+        context — since each answer is a compositor query and this runs on a
+        timer.
+        """
         if self.on_close is None:
+            self._live = LiveState()
             self._open_ids, self._active_id = set(), None
             return False
         try:
-            open_ids, active_id = open_state(self.store.contexts)
+            live = read_live_state(self.store.contexts, backend=self._backend())
         except OSError:
             return False
 
-        signature = (frozenset(open_ids), active_id)
-        if signature == self._open_signature:
+        if live.signature == self._open_signature:
             return False
-        self._open_signature = signature
-        self._open_ids, self._active_id = open_ids, active_id
+        self._open_signature = live.signature
+        self._live = live
+        self._open_ids, self._active_id = live.open_ids, live.active_id
         return True
+
+    def _backend(self):
+        return getattr(self.get_application(), "backend", None)
 
     def _poll_open_state(self) -> bool:
         """Re-read which contexts are open, refreshing only when it changed."""
@@ -387,6 +399,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         if self.collapse_button is not None:
             self.collapse_button.set_visible(self.collapses)
         self._apply_collapsed()
+        self._apply_sections()
+        self.refresh()
         self._restart_poll()
         if needs_restart:
             names = ", ".join(sorted(changed or {}))
@@ -546,7 +560,10 @@ class LauncherWindow(Gtk.ApplicationWindow):
         if not self.collapses:
             log.info("collapsing is switched off")
             return
-        wanted = not self.collapsed
+        # Pinning: a sidebar held open by the pointer is not "expanded" in the
+        # sense the toggle means, so pressing the button while peeking has to
+        # keep it rather than close it.
+        wanted = False if (self._pins and self._auto_expanded) else not self.collapsed
         # Whether the launcher is collapsed is one thing, not one per screen:
         # the state is stored once, so letting each window decide separately
         # meant the two disagreed and whichever restarted last won. The
@@ -594,8 +611,51 @@ class LauncherWindow(Gtk.ApplicationWindow):
         """
         return settings.current().collapse_mode == "hidden"
 
+    def _apply_sections(self) -> None:
+        """Show only the parts of the sidebar that are switched on."""
+        live = settings.current()
+        self.entry.set_visible(live.show_search)
+        self.create_list.set_visible(live.show_search)
+        self.new_button.set_visible(live.show_overview_button)
+
+    def _sync_collapse_button(self) -> None:
+        """What the header's button means, which depends on how it collapses.
+
+        Expanding on hover makes "collapse" the wrong word: the sidebar is open
+        because the pointer is there and will close again on its own, so what
+        the button offers is to keep it — and pressing it while peeking used to
+        do the opposite of what it looked like, closing the sidebar under the
+        pointer.
+        """
+        if self.collapse_button is None:
+            return
+        if not self._pins:
+            self.collapse_button.set_icon_name("go-previous-symbolic")
+            self.collapse_button.set_tooltip_text("Collapse to a rail")
+            return
+        pinned = not getattr(self, "collapsed", False) and not self._auto_expanded
+        self.collapse_button.set_icon_name(
+            "view-pin-symbolic" if not pinned else "go-previous-symbolic"
+        )
+        self.collapse_button.set_tooltip_text(
+            "Unpin — let it collapse when the pointer leaves"
+            if pinned
+            else "Pin the launcher open"
+        )
+
+    @property
+    def _pins(self) -> bool:
+        """Whether the button pins rather than collapses.
+
+        Only when the sidebar opens itself: hiding always reveals on hover, so
+        that counts too whatever the switch says.
+        """
+        live = settings.current()
+        return self.collapses and (live.auto_expand or self.hides_when_collapsed)
+
     def _apply_collapsed(self) -> None:
         """Swap the content and give the reserved space back."""
+        self._sync_collapse_button()
         self.mode_stack.set_visible_child_name("rail" if self.collapsed else "full")
         # The header carries the title and collapse button, neither of which
         # fits at rail width; the rail has an expand button of its own.
@@ -761,12 +821,19 @@ class LauncherWindow(Gtk.ApplicationWindow):
                     is_active=active is not None and ctx.id == active.id,
                 )
             )
+        # Last in the open group: everything running that belongs to no
+        # context, as a context of its own until it is given one. Not filtered
+        # by the search, since it has no name to match.
+        loose = loose_context(self._live.loose) if not searching else None
+        if loose is not None:
+            self.open_listbox.append(self._context_row(loose, is_open=True))
 
         self.listbox.remove_all()
         for ctx in saved:
             self.listbox.append(self._context_row(ctx, is_open=False))
 
-        app_matches = self._app_matches(query)
+        live = settings.current()
+        app_matches = self._app_matches(query) if live.show_apps else []
         self.apps_listbox.remove_all()
         for info in app_matches[:APP_RESULTS]:
             self.apps_listbox.append(AppRow(info, self._open_app))
@@ -780,12 +847,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.apps_label.set_visible(bool(app_matches))
         self.apps_listbox.set_visible(bool(app_matches))
 
-        self.open_label.set_visible(bool(opened))
-        self.open_listbox.set_visible(bool(opened))
+        self.open_label.set_visible(bool(opened or loose))
+        self.open_listbox.set_visible(bool(opened or loose))
         self.open_label.set_label("Open")
 
-        self.saved_expander.set_visible(bool(saved))
-        self.list_label.set_visible(bool(saved))
+        self.saved_expander.set_visible(bool(saved) and live.show_saved)
+        self.list_label.set_visible(bool(saved) and live.show_saved)
         self.list_label.set_label(f"Saved · {len(saved)}")
 
         should_expand = self._saved_group_shown(opened, saved, searching)
@@ -794,7 +861,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.saved_expander.set_expanded(should_expand)
             self._suppress_toggle = False
 
-        if opened or saved or app_matches:
+        if opened or loose or app_matches or (saved and live.show_saved):
             self.stack.set_visible_child_name("list")
             return
 
@@ -809,16 +876,28 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.empty_state.set_description("Type a name above to create your first one.")
 
     def _context_row(self, ctx: Context, is_open: bool, is_active: bool = False):
+        # The no-context has no definition to edit, forget or add an app to
+        # until it has been saved as one; what it does have is windows, so it
+        # can be closed and it always offers to be kept.
+        virtual = is_no_context(ctx)
         return ContextRow(
             ctx,
             self._open,
-            self._edit,
+            None if virtual else self._edit,
             self._close,
             is_open=is_open,
             is_active=is_active,
-            on_forget=self._delete,
-            on_add_app=self._add_app_to_context,
+            is_drifted=virtual or ctx.id in self._live.drifted_ids,
+            on_forget=None if virtual else self._delete,
+            on_add_app=None if virtual else self._add_app_to_context,
+            on_save=self._save,
         )
+
+    def _save(self, ctx: Context) -> None:
+        """Keep the windows as they are — for a context, or as a new one."""
+        app = self.get_application()
+        if app is not None and hasattr(app, "save_context"):
+            app.save_context(ctx)
 
     def _add_app_to_context(self, ctx: Context) -> None:
         """Pick an app to join this context, from the row's menu."""
@@ -1134,6 +1213,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def _open(self, ctx: Context) -> None:
         log.info("opening context %s", ctx.title)
+        if is_no_context(ctx):
+            # Nothing to launch: its windows are already open, so this is a
+            # jump to them rather than an opening of anything.
+            self._release_keyboard()
+            self.on_open(ctx)
+            return
         self.store.touch(ctx)
         # Feeds the alt-tab between the last two contexts, which is the order
         # they were visited rather than the order they were edited.

@@ -206,6 +206,15 @@ isolated app has the same access to your files and network as any other.
 Opening a context switches to its workspace. If it is not running, its apps
 launch and tile into the layout; if it is, you simply arrive where you left off.
 
+A context that has **drifted** — its windows opened, moved or closed since it
+was saved — grows a save button in the list. Pressing it keeps the windows as
+they are; the button goes when there is nothing left to keep.
+
+Everything running that belongs to no context is listed as **No context**,
+alongside the open ones. Closing it closes those windows; saving it gathers
+them into a workspace of their own, captures where they landed, and opens the
+editor to name what they have become.
+
 **Closing** a context shuts its windows but keeps the context itself, so opening
 it again rebuilds it. **Forgetting** a context deletes the definition and lives
 in the editor and in a context's own menu, behind a confirmation either way.
@@ -241,6 +250,10 @@ need a restart say so.
 | Refresh interval | How often the open list is re-checked |
 | Ask to save | When to offer to keep a context's changes |
 | Notifications | Report launches, closes and drift to the desktop |
+| Search | Show the sidebar's search box and its "New context" row |
+| Overview button | Show the + in the sidebar's header |
+| Saved contexts | Show the saved group beneath the open one |
+| Apps | Show matching applications under the search results |
 | Log level | How much detail is written to the log |
 
 Settings that do nothing in the current collapse mode are not shown: the

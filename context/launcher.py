@@ -120,6 +120,141 @@ def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str 
     return open_ids, active_id
 
 
+# The stand-in for everything that belongs nowhere. Not a stored context and
+# never written to the file: it exists for as long as there are windows outside
+# every context, and stops existing when they have a home.
+NO_CONTEXT_ID = "virtual:no-context"
+NO_CONTEXT_TITLE = "No context"
+
+
+def loose_context(loose: list[dict]) -> Context | None:
+    """The windows belonging to no context, as something a list can show.
+
+    A context is what Context knows how to display and act on, so the loose
+    windows are given one rather than a list growing a second kind of row. It
+    carries the windows themselves on `windows`, since closing and saving them
+    need more than their applications.
+    """
+    if not loose:
+        return None
+    ctx = Context(
+        title=NO_CONTEXT_TITLE,
+        id=NO_CONTEXT_ID,
+        resources=[Resource(app_id=w.get("app_id", "")) for w in loose if w.get("app_id")],
+    )
+    ctx.windows = list(loose)
+    return ctx
+
+
+def is_no_context(ctx) -> bool:
+    return getattr(ctx, "id", None) == NO_CONTEXT_ID
+
+
+@traced(log)
+def close_loose(loose: list[dict], backend: Backend | None = None) -> int:
+    """Close every window that belongs to no context. Returns how many were asked."""
+    wm: Backend = backend or backends.detect()
+    closed = 0
+    for window in loose:
+        window_id = window.get("id")
+        if window_id and wm.close_window(window_id):
+            closed += 1
+    return closed
+
+
+@traced(log)
+def adopt_loose(
+    ctx: Context, loose: list[dict], backend: Backend | None = None
+) -> int:
+    """Move every loose window into `ctx`, so the context is what they became.
+
+    Saving the no-context is not a snapshot of where those windows happen to be
+    — they are scattered across whatever workspaces they opened on. They are
+    gathered into the new context's workspace, which is the only place their
+    positions mean anything, and captured from there.
+    """
+    wm: Backend = backend or backends.detect()
+    workspace = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
+    if workspace is None:
+        return 0
+    ctx.set_handle(wm.name, workspace.handle)
+
+    moved = 0
+    for window in loose:
+        window_id = window.get("id")
+        if window_id and wm.move_window(window_id, workspace.handle):
+            moved += 1
+    if moved:
+        # Their geometry only settles once the compositor has tiled them on the
+        # workspace they are now on, which needs it to be the one on screen.
+        wm.switch_to(workspace)
+        capture_arrangement(ctx, backend=wm)
+    return moved
+
+
+@dataclass(frozen=True)
+class LiveState:
+    """Everything the launcher's list needs to know about what is running.
+
+    Read in one pass rather than a query per question: the list is refreshed on
+    a timer, and each answer costs a `hyprctl` call — which is subprocess work
+    on the GTK main loop.
+    """
+
+    open_ids: set[str] = field(default_factory=set)
+    active_id: str | None = None
+    # Contexts whose windows no longer match what was saved.
+    drifted_ids: set[str] = field(default_factory=set)
+    # Windows belonging to no context, as geometry dictionaries.
+    loose: list[dict] = field(default_factory=list)
+
+    @property
+    def signature(self) -> tuple:
+        """What has to change for the list to be worth rebuilding."""
+        return (
+            frozenset(self.open_ids),
+            self.active_id,
+            frozenset(self.drifted_ids),
+            tuple(sorted(w.get("id", "") for w in self.loose)),
+        )
+
+
+@traced(log)
+def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
+    """Which contexts are open, which is focused, which have drifted, and what
+    belongs to none of them."""
+    wm: Backend = backend or backends.detect()
+    open_ids, active_id = open_state(contexts, backend=wm)
+
+    reader = getattr(wm, "geometry_by_handle", None)
+    geometry = reader() if reader is not None else {}
+    if not geometry:
+        return LiveState(open_ids=open_ids, active_id=active_id)
+
+    outputs = _outputs(wm)
+    claimed = {h for ctx in contexts for h in ctx.handles_for(wm.name)}
+    loose = [
+        window
+        for handle, windows in geometry.items()
+        if handle not in claimed
+        for window in windows
+    ]
+
+    drifted = set()
+    for ctx in contexts:
+        handles = ctx.handles_for(wm.name)
+        # Only what is running: a closed context cannot have drifted, and
+        # comparing one against no windows would say every one had.
+        if not handles or not any(geometry.get(handle) for handle in handles):
+            continue
+        if _drifted(ctx, handles, geometry, outputs):
+            drifted.add(ctx.id)
+
+    return LiveState(
+        open_ids=open_ids, active_id=active_id, drifted_ids=drifted, loose=loose
+    )
+
+
 @traced(log)
 def hand_keyboard_back(backend: Backend | None = None) -> None:
     """Focus the window the compositor still counts as focused.
@@ -627,13 +762,45 @@ def has_drifted(ctx: Context, backend: Backend | None = None) -> bool:
     handles = ctx.handles_for(wm.name)
     if not handles:
         return False
+    geometry = {handle: _clients_on(wm, handle) for handle in handles}
+    return _drifted(ctx, handles, geometry, _outputs(wm))
+
+
+@traced(log)
+def drifted_ids(contexts, backend: Backend | None = None) -> set[str]:
+    """The same question for every context, in two queries rather than two each.
+
+    The launcher asks on every poll so a drifted context can offer to be saved
+    where it is listed, and per-context queries put a `hyprctl clients` call per
+    open context on the main loop every couple of seconds.
+    """
+    wm: Backend = backend or backends.detect()
+    reader = getattr(wm, "geometry_by_handle", None)
+    if reader is None:
+        return set()
+    geometry = reader()
+    if not geometry:
+        return set()
 
     outputs = _outputs(wm)
+    drifted = set()
+    for ctx in contexts:
+        handles = ctx.handles_for(wm.name)
+        # Only what is running: a closed context cannot have drifted, and
+        # comparing one against no windows would say everything had.
+        if not handles or not any(geometry.get(handle) for handle in handles):
+            continue
+        if _drifted(ctx, handles, geometry, outputs):
+            drifted.add(ctx.id)
+    return drifted
+
+
+def _drifted(ctx: Context, handles, geometry: dict, outputs) -> bool:
     by_id = {m.id: m for m in outputs}
     saved = ctx.arrangement_for(len(handles))
 
     for screen, handle in enumerate(handles):
-        clients = _clients_on(wm, handle)
+        clients = geometry.get(handle) or []
         indices = saved.indices_on(screen)
         if len(clients) != len(indices):
             return True

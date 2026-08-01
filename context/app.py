@@ -15,7 +15,8 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 from . import backends, notify, switcher, uistate
 from .resources import Resource
 from .backends import Workspace
-from .launcher import active_context, capture_arrangement, has_drifted
+from .launcher import active_context, adopt_loose, capture_arrangement, close_loose
+from .launcher import has_drifted, is_no_context
 from .launcher import move_window_to_context, move_window_to_screen
 from .launcher import unmanaged_windows
 from .launcher import close_context as close_ctx
@@ -316,25 +317,13 @@ class ContextApplication(Gtk.Application):
         self._show_picker(picker)
 
     def capture_context(self) -> None:
-        """Save what the current context has become."""
+        """Save what the current context has become — the keybind for the
+        button a drifted context grows in the list."""
         current = active_context(self.store.contexts, backend=self.backend)
         if current is None:
             self.log.info("not in a context")
             return
-        windows, screens = capture_arrangement(current, backend=self.backend)
-        self.store.save()
-        self.log.info(
-            "captured %s: %d window(s) across %d screen(s)",
-            current.title, windows, screens,
-        )
-        message = (
-            f"Saved {windows} window{'s' if windows != 1 else ''} for "
-            f"“{current.title}”"
-            if windows
-            else f"Nothing open to save for “{current.title}”"
-        )
-        notify.send(self, "capture", current.title, message)
-        self.refresh_all()
+        self.save_context(current)
 
     def _show_picker(self, picker) -> None:
         existing = self.switcher
@@ -357,6 +346,12 @@ class ContextApplication(Gtk.Application):
 
     def go_to_context(self, ctx: Context) -> None:
         """Switch to a context, launching it if its windows are gone."""
+        if is_no_context(ctx):
+            # Nothing to launch — these windows are already open, and there is
+            # no workspace of their own to switch to. Going there means going
+            # to the first of them.
+            self.focus_loose(ctx)
+            return
         # Before leaving: the context being left is the one that drifted, and
         # switching away is the last chance to notice.
         self.offer_to_save("switch", leaving=ctx)
@@ -403,14 +398,7 @@ class ContextApplication(Gtk.Application):
         )
 
     def _save_drift(self, ctx: Context) -> None:
-        windows, screens = capture_arrangement(ctx, backend=self.backend)
-        self.store.save()
-        self.asked_about.discard(ctx.id)
-        notify.withdraw(self, "drift")
-        self.log.info(
-            "saved %s: %d window(s) across %d screen(s)", ctx.title, windows, screens
-        )
-        self.refresh_all()
+        self.save_context(ctx)
 
     def _focus_active_context(self) -> None:
         """Switch to whichever context is open, so a relaunch lands somewhere."""
@@ -585,7 +573,70 @@ class ContextApplication(Gtk.Application):
         self.refresh_all()
         return False
 
+    def focus_loose(self, ctx: Context) -> None:
+        windows = getattr(ctx, "windows", [])
+        if not windows:
+            return
+        self.backend.focus_window(str(windows[0].get("id") or ""), warp=False)
+
+    def save_context(self, ctx: Context) -> None:
+        """Keep a context's windows as they are.
+
+        For the no-context that means becoming a context: its windows are
+        gathered into one workspace, captured from there, and the editor opens
+        so it can be named. For a real one it is what the drift prompt does.
+        """
+        if is_no_context(ctx):
+            self.save_loose(ctx)
+            return
+        windows, screens = capture_arrangement(ctx, backend=self.backend)
+        self.store.save()
+        self.asked_about.discard(ctx.id)
+        notify.withdraw(self, "drift")
+        message = (
+            f"Saved {windows} window{'s' if windows != 1 else ''} for “{ctx.title}”"
+            if windows
+            else f"Nothing open to save for “{ctx.title}”"
+        )
+        self.log.info("saved %s: %d window(s), %d screen(s)", ctx.title, windows, screens)
+        notify.send(self, "capture", ctx.title, message)
+        self.refresh_all()
+
+    def save_loose(self, ctx: Context) -> None:
+        """Turn the windows that belong nowhere into a context that owns them."""
+        windows = getattr(ctx, "windows", [])
+        if not windows:
+            return
+        adopted = self.store.create(
+            "New context",
+            resources=[Resource(app_id=w["app_id"]) for w in windows if w.get("app_id")],
+        )
+        moved = adopt_loose(adopted, windows, backend=self.backend)
+        self.store.save()
+        self.log.info("adopted %d loose window(s) into a new context", moved)
+        notify.send(
+            self,
+            "adopt",
+            "Windows gathered",
+            f"{moved} window{'s' if moved != 1 else ''} are now a context — name it",
+        )
+        self.refresh_all()
+        # Named last: the windows are already where they belong, so backing out
+        # of the editor leaves a saved context rather than undoing the move.
+        self.edit_context(adopted)
+
     def close_context(self, ctx: Context) -> None:
+        if is_no_context(ctx):
+            closed = close_loose(getattr(ctx, "windows", []), backend=self.backend)
+            self.log.info("closed %d window(s) belonging to no context", closed)
+            notify.send(
+                self,
+                "close",
+                "Closed",
+                f"{closed} window{'s' if closed != 1 else ''} in no context",
+            )
+            self.refresh_all()
+            return
         # Before closing, while there is still something to read.
         self.offer_to_save("close")
         result = close_ctx(ctx, backend=self.backend)

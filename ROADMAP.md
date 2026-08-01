@@ -412,18 +412,6 @@ than time the window was open.
 Optional later: a target per context with a notification when it is reached, and
 an idle threshold so time does not accrue while the machine is untouched.
 
-### 15. Handing the keyboard back — *done*
-
-Clicking the sidebar then clicking back into the same window left typing dead:
-Hyprland only refocuses on a click when the window changes, and a layer holding
-the keyboard does not count as a change. Fixed by releasing the keyboard when
-the pointer leaves the sidebar (postponed while a popover is up), and by
-focusing the most recent window explicitly on every release — Hyprland reports
-the window active again without re-sending the keyboard enter, so dropping the
-layer's keyboard mode alone revives nothing. The same explicit hand-back runs
-when the switcher, pickers or the editor overlay close. Constraints recorded in
-CLAUDE.md under "Keyboard focus in the sidebar".
-
 ### 16. Theming like the rest of the session — *done*
 
 One built-in look, and `$XDG_CONFIG_HOME/context/style.css` loaded over it —
@@ -455,6 +443,32 @@ lose a context.
 grid, asked which application to add to an existing context rather than which
 to build a new one around. The app joins the context's definition and the
 context is relaunched, so only the missing window opens.
+
+### 21. Saving from the list, and the no-context — *done*
+
+A context that has drifted grows a save button where it is listed, in both the
+sidebar and the overview: the button's presence is the prompt, and it goes
+again once there is nothing to keep. Everything running that belongs to no
+context is listed as a context of its own — "No context" — which can be closed
+like any other, or saved, which gathers those windows into a workspace of their
+own, captures them from there and opens the editor to name it.
+
+Both need to know what is live, so the poll reads open, focused, drifted and
+homeless in one pass (`launcher.read_live_state`) rather than a query per
+question on the GTK main loop.
+
+### 22. Sidebar contents, and pinning — *done*
+
+Settings say which parts of the sidebar are shown: search, the overview button,
+saved contexts, apps. And when the sidebar expands itself on hover, the header
+button pins rather than collapses — it was the only control that did the
+opposite of what it looked like, closing the sidebar under the pointer that was
+holding it open.
+
+### 23. App categories in the overview — *done*
+
+The grid filters by the freedesktop main categories, offering only the ones
+something is actually filed under.
 
 ### 20. Choosing on an overlay — *done*
 

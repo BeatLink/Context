@@ -7,12 +7,34 @@ from dataclasses import dataclass
 from gi.repository import Gio
 
 
+# The freedesktop registered main categories, in the order they are worth
+# showing. Anything else an entry claims is a subcategory ("WebBrowser",
+# "TextEditor") or a vendor's own, and grouping by those gives one heading per
+# application.
+MAIN_CATEGORIES: dict[str, str] = {
+    "AudioVideo": "Media",
+    "Development": "Development",
+    "Education": "Education",
+    "Game": "Games",
+    "Graphics": "Graphics",
+    "Network": "Internet",
+    "Office": "Office",
+    "Science": "Science",
+    "Settings": "Settings",
+    "System": "System",
+    "Utility": "Utilities",
+}
+
+
 @dataclass(frozen=True)
 class App:
     id: str
     name: str
     description: str
     icon: Gio.Icon | None
+    # The main categories this entry claims, in the order above. Empty when it
+    # claims none that are registered — "Other" as far as a filter is concerned.
+    categories: tuple[str, ...] = ()
 
     @property
     def haystack(self) -> str:
@@ -33,8 +55,32 @@ def installed_apps() -> list[App]:
             name=name,
             description=info.get_description() or info.get_generic_name() or "",
             icon=info.get_icon(),
+            categories=_categories(info),
         )
     return sorted(apps.values(), key=lambda a: a.name.casefold())
+
+
+def _categories(info) -> tuple[str, ...]:
+    """The registered main categories a desktop entry claims."""
+    raw = ""
+    getter = getattr(info, "get_categories", None)
+    if getter is not None:
+        raw = getter() or ""
+    claimed = {part.strip() for part in raw.split(";") if part.strip()}
+    return tuple(key for key in MAIN_CATEGORIES if key in claimed)
+
+
+def categories_of(apps: list[App]) -> list[str]:
+    """Which categories are worth offering, given what is installed."""
+    present = {key for app in apps for key in app.categories}
+    return [key for key in MAIN_CATEGORIES if key in present]
+
+
+def in_category(apps: list[App], category: str) -> list[App]:
+    """Apps in one category, or everything when it is empty."""
+    if not category:
+        return list(apps)
+    return [app for app in apps if category in app.categories]
 
 
 def search_apps(apps: list[App], query: str) -> list[App]:

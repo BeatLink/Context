@@ -358,3 +358,65 @@ def test_a_few_pixels_is_not_drift(ctx):
 
 def test_a_context_with_no_workspace_has_not_drifted(ctx, backend):
     assert not launcher.has_drifted(ctx, backend=backend)
+
+
+def test_the_no_context_is_everything_no_context_claims(backend):
+    """One query answers open, focused, drifted and homeless together."""
+    from context import launcher
+    from context.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("work")
+    ctx.set_handle("fake", "ctx-work")
+    backend.workspaces["ctx-work"] = 1
+    backend.geometry = {
+        "ctx-work": [
+            {"id": "0x1", "app_id": "a", "x": 0, "y": 0, "width": 1920, "height": 1080}
+        ],
+        "3": [
+            {"id": "0x2", "app_id": "b", "x": 0, "y": 0, "width": 960, "height": 1080},
+            {"id": "0x3", "app_id": "c", "x": 960, "y": 0, "width": 960, "height": 1080},
+        ],
+    }
+
+    live = launcher.read_live_state(store.contexts, backend=backend)
+    assert live.open_ids == {ctx.id}
+    assert [w["id"] for w in live.loose] == ["0x2", "0x3"]
+
+    loose = launcher.loose_context(live.loose)
+    assert launcher.is_no_context(loose)
+    assert [r.app_id for r in loose.resources] == ["b", "c"]
+    # Nothing homeless, nothing to stand in for.
+    assert launcher.loose_context([]) is None
+
+
+def test_closing_the_no_context_closes_exactly_those_windows(backend):
+    from context import launcher
+
+    loose = [{"id": "0x2", "app_id": "b"}, {"id": "0x3", "app_id": "c"}]
+    assert launcher.close_loose(loose, backend=backend) == 2
+    assert backend.closed_windows == ["0x2", "0x3"]
+
+
+def test_saving_the_no_context_gathers_its_windows_in(backend):
+    """The windows are scattered across whatever workspaces they opened on, so
+    saving them means moving them somewhere their positions mean something."""
+    from context import launcher
+    from context.store import ContextStore
+
+    store = ContextStore()
+    backend.place_windows("3", "b.desktop")
+    backend.place_windows("7", "c.desktop")
+    loose = [
+        {"id": w.id, "app_id": w.app_id} for w in backend.open_windows
+    ]
+    ctx = store.create("gathered")
+
+    moved = launcher.adopt_loose(ctx, loose, backend=backend)
+    assert moved == 2
+    handle = ctx.handle_for("fake")
+    assert handle is not None
+    assert {w.handle for w in backend.open_windows} == {handle}
+    # And it is the workspace you are looking at, since that is where the
+    # compositor tiles them.
+    assert backend.current == handle
