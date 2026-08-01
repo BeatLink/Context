@@ -721,8 +721,13 @@ class EditorPage(widgets.NavigationPage):
 
     def _update_state(self) -> None:
         count = len(self.entries)
+        # What the *context* holds. Not "Apps · N", which is what the catalogue
+        # below calls its own count — two headings a line apart both reading
+        # "Apps ·" and meaning different numbers.
         self.count_label.set_label(
-            f"Apps · {count} selected" if count else "Apps · none selected yet"
+            f"{count} window{'s' if count != 1 else ''} in the layout"
+            if count
+            else "No windows yet — add an app below"
         )
         self.done_button.set_sensitive(bool(self.current_title()))
         self._sync_previews()
