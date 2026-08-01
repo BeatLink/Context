@@ -23,7 +23,7 @@ def _row(ctx, **kwargs) -> ContextRow:
         lambda c: calls.setdefault("close", []).append(c),
         is_open=kwargs.get("is_open", False),
         is_active=kwargs.get("is_active", False),
-        on_forget=lambda c: calls.setdefault("forget", []).append(c),
+        on_delete=lambda c: calls.setdefault("delete", []).append(c),
         on_add_app=lambda c: calls.setdefault("add_app", []).append(c),
     )
     row.calls = calls
@@ -85,7 +85,7 @@ def test_the_menu_offers_what_the_row_can_do(gtk_app, isolated_store):
     # Closing is only offered for something that is open.
     assert "close" in seen["open_row"]
     assert "close" not in seen["saved_row"]
-    assert {"open", "edit", "add-app", "forget"} <= set(seen["saved_row"])
+    assert {"open", "edit", "add-app", "delete"} <= set(seen["saved_row"])
     assert seen["edited"] is True
 
 
@@ -103,11 +103,11 @@ def test_forgetting_from_the_menu_asks_first(gtk_app, isolated_store):
         window.set_child(row)
         row.open_menu()
 
-        row.menu_items["forget"].emit("clicked")
+        row.menu_items["delete"].emit("clicked")
         seen["asked"] = row.menu_items["confirm"].get_visible()
-        seen["not_yet"] = row.calls.get("forget", [])
+        seen["not_yet"] = row.calls.get("delete", [])
         row.menu_items["confirm"].emit("clicked")
-        seen["forgotten"] = [c.title for c in row.calls.get("forget", [])]
+        seen["forgotten"] = [c.title for c in row.calls.get("delete", [])]
         window.destroy()
         app.quit()
 

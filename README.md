@@ -146,8 +146,8 @@ searchable, filtered by kind and ordered the same four ways. Click a row to add
 it to the layout; add one twice to give it two windows, and the row says how
 many it has put there.
 
-**Details.** The context's name, an ephemeral toggle, an isolated toggle, and a
-Forget button.
+**Details.** The context's name, an ephemeral toggle and an isolated toggle.
+Deleting is in the header, beside Cancel.
 
 Layouts are stored as fractions of the monitor, so they carry between displays.
 The preview is drawn at the shape of the screen the launcher is on.
@@ -267,11 +267,12 @@ them into a workspace of their own, captures where they landed, and opens the
 editor to name what they have become.
 
 **Closing** a context shuts its windows but keeps the context itself, so opening
-it again rebuilds it. **Forgetting** a context deletes the definition and lives
-in the editor and in a context's own menu, behind a confirmation either way.
+it again rebuilds it. **Deleting** a context removes the definition; it is in the
+editor's header and in a context's own menu, behind a confirmation either way,
+and the windows it opened are left alone.
 
 Right-clicking a context in the sidebar opens its menu: open it, open an app
-inside it, edit it, close it, or forget it. "Open app here" shows the same
+inside it, edit it, close it, or delete it. "Open app here" shows the same
 application catalogue the overview and the editor do; what you pick joins that
 context and opens in it.
 

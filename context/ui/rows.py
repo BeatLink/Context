@@ -92,7 +92,7 @@ class ContextRow(widgets.ActionRow):
         is_open=False,
         is_active=False,
         is_drifted=False,
-        on_forget=None,
+        on_delete=None,
         on_add_app=None,
         on_save=None,
         on_restore=None,
@@ -105,7 +105,7 @@ class ContextRow(widgets.ActionRow):
         self.on_open = on_open
         self.on_edit = on_edit
         self.on_close = on_close
-        self.on_forget = on_forget
+        self.on_delete = on_delete
         self.on_add_app = on_add_app
         self.on_save = on_save
         self.on_restore = on_restore
@@ -238,12 +238,12 @@ class ContextRow(widgets.ActionRow):
             item("restore", "Put the windows back", self._menu(self.on_restore))
         if self.is_open and self.on_close is not None:
             item("close", "Close", self._menu(self.on_close))
-        if self.on_forget is not None:
+        if self.on_delete is not None:
             # Two steps, the way the editor asks: the menu is deliberate, but
             # one click either side of "Close" should not lose the context.
-            forget = item("forget", "Forget…", lambda: None, destructive=True)
+            forget = item("delete", "Delete…", lambda: None, destructive=True)
             confirm = item(
-                "confirm", "Really forget", self._menu(self.on_forget), destructive=True
+                "confirm", "Really delete", self._menu(self.on_delete), destructive=True
             )
             confirm.set_visible(False)
             keep = item("keep", "Keep", lambda: popover.popdown())

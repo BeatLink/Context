@@ -1,6 +1,6 @@
 """The editor window.
 
-Forgetting is the interesting part. It happened in a dialog once, and the
+Deleting is the interesting part. It happened in a dialog once, and the
 dialog needed an overlay the editor did not have — the button silently did
 nothing. The confirmation is inline now: the same row swaps its buttons, so
 there is nothing that can fail to appear.
@@ -31,7 +31,7 @@ def _build(app, ctx, seen):
     )
 
 
-def test_forget_asks_in_the_row_and_then_forgets(gtk_app, isolated_store):
+def test_delete_asks_in_the_header_and_then_deletes(gtk_app, isolated_store):
     from context.state.store import ContextStore
 
     store = ContextStore()
@@ -43,15 +43,15 @@ def test_forget_asks_in_the_row_and_then_forgets(gtk_app, isolated_store):
         page = window.page
         seen["before"] = (
             page.delete_button.get_visible(),
-            page.forget_button.get_visible(),
+            page.confirm_delete.get_visible(),
         )
         page.delete_button.emit("clicked")
         seen["asking"] = (
             page.delete_button.get_visible(),
             page.keep_button.get_visible(),
-            page.forget_button.get_visible(),
+            page.confirm_delete.get_visible(),
         )
-        page.forget_button.emit("clicked")
+        page.confirm_delete.emit("clicked")
         window.close()
         app.quit()
 
@@ -76,7 +76,7 @@ def test_keeping_puts_the_row_back(gtk_app, isolated_store):
         seen["after"] = (
             page.delete_button.get_visible(),
             page.keep_button.get_visible(),
-            page.forget_button.get_visible(),
+            page.confirm_delete.get_visible(),
         )
         window.close()
         app.quit()

@@ -459,6 +459,36 @@ class EditorPage(widgets.NavigationPage):
         cancel.connect("clicked", lambda _b: self.on_cancel())
         header.pack_start(cancel)
 
+        # Deleting lives up here rather than in the details below, where it was
+        # a row competing with the context's own settings for the same column
+        # the applications need. On the start side, beside Cancel: the two
+        # things that leave without saving belong together, and putting it next
+        # to Save would make the destructive button the misclick neighbour of
+        # the confirming one.
+        #
+        # The confirmation is these buttons swapping rather than a dialog —
+        # there is nowhere sensible for a popup on a full-screen overlay, and
+        # answers appearing where the click just landed cannot be missed.
+        if on_delete is not None and not is_new:
+            self.delete_button = Gtk.Button(label="Delete")
+            self.delete_button.add_css_class("destructive-action")
+            self.delete_button.set_tooltip_text(
+                "Remove this context. Windows it opened are left alone."
+            )
+            self.delete_button.connect("clicked", lambda _b: self._ask_to_delete(True))
+            header.pack_start(self.delete_button)
+
+            self.keep_button = Gtk.Button(label="Keep")
+            self.keep_button.set_visible(False)
+            self.keep_button.connect("clicked", lambda _b: self._ask_to_delete(False))
+            header.pack_start(self.keep_button)
+
+            self.confirm_delete = Gtk.Button(label="Really delete")
+            self.confirm_delete.add_css_class("destructive-action")
+            self.confirm_delete.set_visible(False)
+            self.confirm_delete.connect("clicked", lambda _b: self.on_delete(self.ctx))
+            header.pack_start(self.confirm_delete)
+
         self.done_button = Gtk.Button(label="Start" if is_new else "Save")
         self.done_button.add_css_class("suggested-action")
         self.done_button.connect("clicked", lambda _b: self._commit())
@@ -506,38 +536,6 @@ class EditorPage(widgets.NavigationPage):
         isolated_row.add_suffix(self.isolated_switch)
         isolated_row.set_activatable_widget(self.isolated_switch)
         details.append(isolated_row)
-
-        # Forgetting a context lives here rather than beside its launch button,
-        # so it takes opening the editor and a confirmation to lose one. The
-        # confirmation is the same row changing its buttons rather than a
-        # dialog: there is nowhere sensible for a popup on a full-screen
-        # overlay, and the answer buttons appearing where the click just
-        # landed cannot be missed.
-        if on_delete is not None and not is_new:
-            delete_row = widgets.ActionRow(
-                title="Forget this context",
-                subtitle="Removes the definition. Windows it opened are left alone.",
-            )
-            self.delete_button = Gtk.Button(label="Forget", valign=Gtk.Align.CENTER)
-            self.delete_button.add_css_class("destructive-action")
-            self.delete_button.connect("clicked", lambda _b: self._ask_to_forget(True))
-            delete_row.add_suffix(self.delete_button)
-
-            self.keep_button = Gtk.Button(label="Keep", valign=Gtk.Align.CENTER)
-            self.keep_button.set_visible(False)
-            self.keep_button.connect("clicked", lambda _b: self._ask_to_forget(False))
-            delete_row.add_suffix(self.keep_button)
-
-            self.forget_button = Gtk.Button(
-                label="Really forget", valign=Gtk.Align.CENTER
-            )
-            self.forget_button.add_css_class("destructive-action")
-            self.forget_button.set_visible(False)
-            self.forget_button.connect(
-                "clicked", lambda _b: self.on_delete(self.ctx)
-            )
-            delete_row.add_suffix(self.forget_button)
-            details.append(delete_row)
 
         content.append(details)
 
@@ -923,10 +921,10 @@ class EditorPage(widgets.NavigationPage):
 
     # -- commit --------------------------------------------------------------
 
-    def _ask_to_forget(self, asking: bool) -> None:
+    def _ask_to_delete(self, asking: bool) -> None:
         self.delete_button.set_visible(not asking)
         self.keep_button.set_visible(asking)
-        self.forget_button.set_visible(asking)
+        self.confirm_delete.set_visible(asking)
 
     def _commit_cancel(self) -> None:
         self.on_cancel()

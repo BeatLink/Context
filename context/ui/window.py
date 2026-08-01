@@ -944,7 +944,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             is_open=is_open,
             is_active=is_active,
             is_drifted=virtual or ctx.id in self._live.drifted_ids,
-            on_forget=None if virtual else self._delete,
+            on_delete=None if virtual else self._delete,
             on_add_app=None if virtual else self._add_app_to_context,
             on_save=self._save,
             on_restore=self._restore,
