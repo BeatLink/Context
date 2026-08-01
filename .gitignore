@@ -3,6 +3,7 @@ __pycache__/
 .direnv/
 result
 result-*
+TODO.md
 
 # points at a sibling checkout outside this repo
 Context.code-workspace
