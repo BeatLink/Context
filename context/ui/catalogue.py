@@ -139,7 +139,10 @@ class AppCatalogue(Gtk.Box):
         self._rows = {}
         for title, apps in sections:
             if title:
-                label = Gtk.Label(label=title, xalign=0.0)
+                # The count belongs on the heading rather than only on the
+                # total above: grouped by kind or by letter, how many are in
+                # each is what the grouping is for.
+                label = Gtk.Label(label=f"{title} · {len(apps)}", xalign=0.0)
                 label.add_css_class("heading")
                 label.add_css_class("dim-label")
                 self.sections.append(label)

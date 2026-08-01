@@ -25,11 +25,14 @@ def _tiles(window):
 
 
 def _headings(window) -> list[str]:
+    """The group names, without their counts — these tests are about which
+    groups appear and in what order. `test_headings_count...` covers the rest.
+    """
     out = []
     child = window.catalogue.sections.get_first_child()
     while child is not None:
         if isinstance(child, Gtk.Label):
-            out.append(child.get_label())
+            out.append(child.get_label().rsplit(" · ", 1)[0])
         child = child.get_next_sibling()
     return out
 
@@ -582,3 +585,46 @@ def test_enter_reaches_the_search_box(gtk_app, isolated_store, backend, fake_app
 
     run_app(gtk_app, body)
     assert seen["opened"] == ["KiCad"]
+
+
+@needs_display
+def test_headings_count_what_is_under_them(gtk_app, isolated_store, backend, monkeypatch):
+    """Grouped by kind or by letter, how many are in each group is what the
+    grouping is for — the total at the top cannot say it."""
+    from context.ui import catalogue
+    from context.system.apps import App
+    from context.state.store import ContextStore
+
+    apps = [
+        App(id="a.desktop", name="Ardour", description="", icon=None,
+            categories=("AudioVideo",)),
+        App(id="b.desktop", name="Bard", description="", icon=None,
+            categories=("AudioVideo",)),
+        App(id="c.desktop", name="Cargo", description="", icon=None,
+            categories=("Development",)),
+    ]
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        window.catalogue._on_sort(window.catalogue.sort_keys.index("kind"))
+        seen["raw"] = [
+            child.get_label()
+            for child in _labels(window.catalogue.sections)
+        ]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert "Media · 2" in seen["raw"]
+    assert "Development · 1" in seen["raw"]
+
+
+def _labels(box):
+    out = []
+    child = box.get_first_child()
+    while child is not None:
+        if isinstance(child, Gtk.Label):
+            out.append(child)
+        child = child.get_next_sibling()
+    return out

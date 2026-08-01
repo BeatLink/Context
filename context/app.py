@@ -603,7 +603,7 @@ class ContextApplication(Gtk.Application):
         if window is None:
             return
         picker = switcher.SwitcherWindow(self, self.store, switcher.CONTEXTS)
-        picker.set_title(f"Move “{window.title or window.app_id}” to")
+        picker.set_heading(f"Move “{window.title or window.app_id}” to")
         picker.on_context = lambda ctx: self._finish_move(window, ctx)
         self._show_picker(picker)
 

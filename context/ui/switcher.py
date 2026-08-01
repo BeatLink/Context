@@ -65,9 +65,18 @@ class SwitcherWindow(Gtk.ApplicationWindow):
         toolbar.add_css_class("ctx-surface")
         toolbar.add_css_class("ctx-solid")
         toolbar.set_overflow(Gtk.Overflow.HIDDEN)
-        header = widgets.HeaderBar()
+        self.header = widgets.HeaderBar()
+        header = self.header
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
+
+        # Every other full-screen overlay has one; this was the exception, so
+        # the only way out of the move picker was knowing about Escape.
+        self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
+        self.back_button.add_css_class("flat")
+        self.back_button.set_tooltip_text("Back")
+        self.back_button.connect("clicked", lambda _b: self._dismiss())
+        header.pack_start(self.back_button)
 
         self.scope_button: Gtk.Button | None = None
         if mode == WINDOWS:
@@ -123,6 +132,16 @@ class SwitcherWindow(Gtk.ApplicationWindow):
         self.refresh()
 
     # -- contents ------------------------------------------------------------
+
+    def set_heading(self, text: str) -> None:
+        """Name what the picker is for, on the window and in its header.
+
+        `set_title` alone names the window, which on a layer-shell overlay
+        nothing draws — so a picker opened to move a window said nothing about
+        what picking would do.
+        """
+        self.set_title(text)
+        self.header.set_title(text)
 
     def toggle_scope(self) -> None:
         self.scope_all = not self.scope_all

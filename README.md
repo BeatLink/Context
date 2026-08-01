@@ -39,6 +39,9 @@ beside it rather than underneath.
 - **Saved** — everything else, in a section below. It is expanded when nothing
   is open and folds away once something is, one click from opening again.
 
+Every group says how many are in it, and the scratchpad folds away like the
+saved group does.
+
 <kbd>Down</kbd> moves from the search bar into the list. <kbd>Esc</kbd> clears
 the search and hands the keyboard back.
 
