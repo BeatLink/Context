@@ -63,3 +63,39 @@ def test_the_null_backend_has_no_home():
     from context.system.backends import NullBackend
 
     assert NullBackend().home_handle() is None
+
+
+def test_the_overview_is_pinned_to_home_by_a_window_rule(monkeypatch):
+    """Placement cannot be an ordering the caller arranges: present() returns
+    long before the surface is committed, and the sidebar handing the keyboard
+    back in between moved the active workspace out from under the map — which
+    is how the overview ended up in whatever context you came from.
+
+    The 0.56 syntax is `match:` with a space before the value. `class:foo` is
+    answered "invalid field class:foo: missing a value", so a rule written the
+    old way is accepted by nothing and silently places nothing.
+    """
+    from context.system.backends.hyprland import HOME_HANDLE, HyprlandBackend
+
+    wm = HyprlandBackend()
+    sent = []
+
+    class Result:
+        returncode = 0
+
+    monkeypatch.setattr(wm, "_run", lambda *a: sent.append(a) or Result())
+
+    assert wm.bind_to_home("io.beatlink.Context", "Overview") is True
+    rule = sent[0][2]
+    assert sent[0][:2] == ("keyword", "windowrule")
+    assert rule.startswith(f"workspace name:{HOME_HANDLE} silent,")
+    assert "match:class io.beatlink.Context" in rule
+    assert "match:title Overview" in rule
+    # `silent`, so installing the rule and rebuilding the window after a
+    # restart does not drag you to home.
+    assert "silent" in rule
+
+    # Nothing to pin without both halves; a rule matching every window of the
+    # class would send the launcher itself to home.
+    assert wm.bind_to_home("io.beatlink.Context", "") is False
+    assert wm.bind_to_home("", "Overview") is False

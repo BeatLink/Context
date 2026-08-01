@@ -2637,6 +2637,51 @@ def test_the_overview_itself_does_not_block_going_home(gtk_app, isolated_store):
     assert seen["opened"] == 1
 
 
+def test_home_is_pinned_before_its_window_exists(gtk_app, isolated_store, backend):
+    """The rule has to be in place before the window is built, not after: a
+    window mapped before it maps wherever you happened to be, and present()
+    is the thing that races. Order, not merely presence."""
+    from context.app import ContextApplication, OVERVIEW_TITLE
+
+    seen = {}
+
+    from context.state.scratchpad import NoteStore
+    from context.state.store import ContextStore
+
+    def body(app):
+        # The real application, carrying the state ensure_overview reads: a
+        # window needs a GApplication that has actually started.
+        app.log = __import__("logging").getLogger("test.prepare-home")
+        app.backend = backend
+        app.overview = None
+        app.store = ContextStore()
+        app.notes = NoteStore()
+        for name in (
+            "go_to_context", "edit_context", "close_context", "open_app_in_context",
+            "add_app_to_context", "edit_note", "restore_context", "leave_home",
+            "_on_overview_destroyed",
+        ):
+            setattr(app, name, lambda *a, **k: None)
+        backend.calls.clear()
+
+        window = ContextApplication.ensure_overview(app)
+        seen["bound"] = [c for c in backend.calls if c[0] == "bind-home"]
+        # The rule is in place before the window exists, not after it maps.
+        seen["bound_first"] = backend.calls[0][0] == "bind-home"
+        # Built once and kept — home cannot be left without its window.
+        seen["same"] = ContextApplication.ensure_overview(app) is window
+        window.permanent = False
+        window.destroy()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["bound"] == [
+        ("bind-home", gtk_app.get_application_id(), OVERVIEW_TITLE)
+    ]
+    assert seen["bound_first"] is True
+    assert seen["same"] is True
+
+
 def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypatch):
     """Same page, new home: its back button closes the screen rather than
     popping a stack that is not there."""

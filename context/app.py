@@ -40,6 +40,10 @@ from context.ui.window import LauncherWindow
 # tears the launchers down mid-change.
 MONITOR_SETTLE_MS = 400
 
+# The overview window's title. The compositor matches on it to place the window
+# on home, so it is one constant rather than a string in two places.
+OVERVIEW_TITLE = "Overview"
+
 
 # Commands a keybind can send to the running instance. `python3 -m context
 # switch-window` hands its command line over D-Bus rather than starting a
@@ -188,16 +192,22 @@ class ContextApplication(Gtk.Application):
         return False
 
     def ensure_overview(self):
-        """The overview window, built the first time home is visited.
+        """The overview window, built once and kept.
 
-        Built once and kept: it is the window that lives on the home workspace,
-        so throwing it away and making another would be leaving home empty.
-        Lazily, so a session that starts with contexts open does not pay for a
-        list of every installed application before it shows anything.
+        It is the window that lives on the home workspace, so throwing it away
+        and making another would be leaving home empty.
         """
         if self.overview is not None:
             return self.overview
         from context.ui.overview import OverviewWindow
+
+        # Before the window exists, because the rule is what decides where it
+        # maps. Arranging the switch first instead loses a race that cannot be
+        # won from here: `present()` returns long before the surface is
+        # committed, and the sidebar handing the keyboard back in between moves
+        # the active workspace out from under the map — which is exactly how
+        # the overview ended up mapped in whatever context you came from.
+        self.backend.bind_to_home(self.get_application_id(), OVERVIEW_TITLE)
 
         window = OverviewWindow(
             self, self.store, backend=self.backend, notes=self.notes
@@ -221,22 +231,34 @@ class ContextApplication(Gtk.Application):
     def _on_overview_destroyed(self, _window) -> None:
         self.overview = None
 
+    def prepare_home(self) -> None:
+        """Put the overview on home before anything asks for it.
+
+        Its window is what makes home a place rather than an empty workspace,
+        and it is built rather than mapped instantly — reading every installed
+        application takes long enough to be raced. Doing it at startup means
+        going home is only ever a workspace switch.
+
+        On idle rather than inline: the launcher should be on screen first, and
+        this costs the application list. The window rule carries `silent`, so it
+        maps on home without moving you off whatever you are working in.
+        """
+        window = self.ensure_overview()
+        window.present()
+
     def open_overview(self) -> None:
         """Go home: contexts one side, applications the other.
 
         A workspace switch, not a window being raised — so the same keybind
-        again does not put it away, because there is nothing to put away. The
-        window is presented after the switch so that a first visit maps it on
-        home rather than on the workspace being left.
+        again does not put it away, because there is nothing to put away.
         """
-        switched = go_home(backend=self.backend)
         window = self.ensure_overview()
         window.refresh()
-        window.present()
-        if not switched:
+        if not go_home(backend=self.backend):
             # No workspaces to switch between, so home is only a window. Under
             # the null backend that is the whole of what a context is too.
             self.log.debug("no home workspace; showing the overview as a window")
+        window.present()
 
     def leave_home(self) -> None:
         """Back to the context you came from, if it is still open.
@@ -633,6 +655,9 @@ class ContextApplication(Gtk.Application):
 
             self._build_launchers()
             self._watch_monitors()
+            # Home, ready before anything asks to go there. After the launchers
+            # so they are on screen first.
+            GLib.idle_add(self._prepare_home_once)
         for launcher_window in self.launchers:
             launcher_window.present()
         # Nothing running is the one moment Context has nothing to show, so it
@@ -640,6 +665,15 @@ class ContextApplication(Gtk.Application):
         # it is for.
         open_ids, _active = open_state(self.store.contexts, backend=self.backend)
         self.note_open_contexts(len(open_ids))
+
+    def _prepare_home_once(self) -> bool:
+        try:
+            self.prepare_home()
+        except Exception:
+            # Home not being ready must not take the launcher down with it;
+            # the next visit builds it the slow way.
+            self.log.exception("could not prepare home")
+        return GLib.SOURCE_REMOVE
 
     def _watch_monitors(self) -> None:
         """Rebuild the launchers when a monitor is plugged in or unplugged.

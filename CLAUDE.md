@@ -194,10 +194,24 @@ know how to show it.
 
 What holds it up:
 
-- **Switch to home, *then* present the window.** A window maps on the active
-  workspace, so this is the whole of the placement — no window rule, no matching
-  a mapped window by title, no moving it afterwards. Measured on 0.56: a window
-  presented after `dispatch workspace name:ctx-home` maps there, tiled.
+- **Placement is a window rule, not an ordering.** `bind_to_home()` installs
+  `windowrule = workspace name:ctx-home silent, match:class …, match:title …`
+  before the window is built. Switching to home and *then* presenting looks
+  like it works — it does in isolation, measured — but it loses a race that
+  cannot be won from here: `present()` returns long before the surface is
+  committed, and the sidebar's `hand_keyboard_back` focuses the last window in
+  between, taking the active workspace with it. The overview then mapped in
+  whatever context you came from, and `present()` cemented it, since raising a
+  window drags you to the workspace it is actually on. The rule takes the
+  question away from us. `silent`, so installing it does not drag you home.
+- **The 0.56 rule syntax is `match:` with a space before the value.**
+  `class:foo` is answered "invalid field class:foo: missing a value". Check any
+  change with `hyprctl keyword`, which names the bad field — and then check it
+  *applies*, since a `match:workspace` rule was once accepted and silently
+  ignored.
+- **Build the overview at startup**, on idle after the launchers. Reading every
+  installed application takes long enough to be raced, and home without its
+  window is an empty workspace.
 - **`close-request` returns True, and that really does refuse.** Also measured:
   `hyprctl dispatch closewindow` on a window whose handler returns True leaves it
   running. `restart` is the one exception and clears `permanent` first, because

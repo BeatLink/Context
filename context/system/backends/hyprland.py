@@ -93,6 +93,29 @@ class HyprlandBackend:
         return HOME_HANDLE
 
     @traced(log)
+    def bind_to_home(self, app_id: str, title: str) -> bool:
+        """A window rule pinning the overview to home, whatever is current.
+
+        `silent` so installing it — and rebuilding the window after a restart —
+        does not drag you to home. Measured on 0.56: the window maps on
+        `ctx-home` while the active workspace stays where it was.
+
+        The 0.56 syntax is `match:` prefixes with a space before the value;
+        `class:foo` is answered with "invalid field class:foo: missing a
+        value". Check any change to this line with `hyprctl keyword`, which
+        names the bad field rather than failing quietly.
+        """
+        if not app_id or not title:
+            return False
+        result = self._run(
+            "keyword",
+            "windowrule",
+            f"workspace name:{HOME_HANDLE} silent, "
+            f"match:class {app_id}, match:title {title}",
+        )
+        return result is not None and result.returncode == 0
+
+    @traced(log)
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace | None:
         name = handle or f"{HANDLE_PREFIX}{_sanitize(title)}"
         # A context called "Home" derives the overview's own handle, and the two

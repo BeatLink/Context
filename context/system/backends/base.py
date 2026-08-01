@@ -73,6 +73,16 @@ class Backend(Protocol):
     def available(self) -> bool:
         """Whether this backend can drive the running session."""
 
+    def bind_to_home(self, app_id: str, title: str) -> bool:
+        """Ask the compositor to map this window on home, wherever you are.
+
+        Placement has to be the compositor's decision at map time, not an
+        ordering the caller arranges: `present()` returns long before the
+        surface is committed, and anything that focuses another window in
+        between — the sidebar handing the keyboard back, say — moves the
+        active workspace out from under the map.
+        """
+
     def home_handle(self) -> str | None:
         """The workspace the overview lives on, or None where there is no such
         thing.
@@ -181,6 +191,9 @@ class NullBackend:
 
     def available(self) -> bool:
         return True
+
+    def bind_to_home(self, app_id: str, title: str) -> bool:
+        return False
 
     def home_handle(self) -> str | None:
         return None
