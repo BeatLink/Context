@@ -253,7 +253,9 @@ screen that was no longer there.
 ## The sidebar on home
 
 Home holds the sidebar open — expanded, with every part of it showing — for as
-long as it is the workspace on screen. `_sync_home_expansion` and `_sections`,
+long as it is the workspace on screen. It is not listed *in* the sidebar: it was
+a row for a while, alongside the contexts, and "New context" goes there instead
+now that starting a context means choosing an application. `_sync_home_expansion` and `_sections`,
 both driven from `LiveState.at_home`, which is why that is in the signature: the
 list has to rebuild on arriving and leaving.
 
@@ -271,6 +273,20 @@ list has to rebuild on arriving and leaving.
   is a different thing entirely.
 - **The scratchpad is the sidebar's alone.** It was in both, and with the
   sidebar standing open beside home it would have been on screen twice.
+
+## One catalogue, two questions
+
+`ui/catalogue.py` is the application list — search, category filter, ordering,
+grouped sections — and both places that offer applications draw it. Neither is
+*about* applications: the overview asks where one should open, the editor asks
+what a context should hold, and `row_for(app)` is the difference. The two had
+grown separately, and the editor's had a search box over a flow of tiles with no
+category filter and no ordering at all, so which controls you got for finding an
+application depended on which screen you were on.
+
+The editor refreshes **one row** after an add (`catalogue.row(app_id)`) rather
+than rebuilding: adding to a layout is done in runs, and a rebuild throws the
+scroll back to the top.
 
 ## One list per thing
 

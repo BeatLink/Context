@@ -33,29 +33,14 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from context.system import backends
-from context.ui import theme, widgets
-from context.state import settings, uistate
-from context.system.apps import MAIN_CATEGORIES, SORTS, App, arrange_apps, categories_of
-from context.system.apps import in_category, installed_apps, search_apps
+from context.ui import theme
+from context.system.apps import App
 from context.system.launcher import read_live_state
 from context.system.logging_setup import get_logger
+from context.ui.catalogue import AppCatalogue
 from context.ui.rows import AppRow, context_for_app
 
 log = get_logger("overview")
-
-# Enough for the longer of the two, so the controls line up under one another.
-LABEL_WIDTH = 74
-
-
-def _labelled(text: str, control: Gtk.Widget) -> Gtk.Box:
-    """One of the grid's controls, behind the word for what it decides."""
-    row = Gtk.Box(spacing=8)
-    label = Gtk.Label(label=text, xalign=0.0)
-    label.add_css_class("dim-label")
-    label.set_size_request(LABEL_WIDTH, -1)
-    row.append(label)
-    row.append(control)
-    return row
 
 
 class OverviewWindow(Gtk.ApplicationWindow):
@@ -72,17 +57,6 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.connect("close-request", lambda _w: self.permanent)
         self.store = store
         self.backend = backend or backends.detect()
-        self.apps = installed_apps()
-        # Which kind of application the grid is showing; "" is all of them.
-        # Not a setting: it is narrowing done in the moment, and an overview
-        # that opened filtered would look like half your applications had gone.
-        self.category = ""
-        # The order is a setting, so the overview opens the same way every time
-        # rather than however it was left. Where an application opens is not:
-        # each row asks, the way the sidebar's rows do.
-        live = settings.current()
-        self.sort = live.overview_sort if live.overview_sort in SORTS else next(iter(SORTS))
-        self.flows: list[Gtk.ListBox] = []
         self._live = read_live_state([], backend=self.backend)
 
         theme.install()
@@ -117,53 +91,10 @@ class OverviewWindow(Gtk.ApplicationWindow):
         ):
             getattr(content, setter)(18)
 
-        self.entry = widgets.SearchBar("Search applications")
-        self.entry.connect("search-changed", lambda _e: self.refresh())
-        self.entry.connect("activate", lambda _e: self._activate_first())
-        # A focused search entry consumes Escape as stop-search, so the
-        # window shortcut below never fires while typing — which is most of
-        # the time. stop-search is the entry's own Escape.
-        self.entry.connect("stop-search", lambda _e: self._escape())
-        content.append(self.entry)
-
-        self.apps_label = Gtk.Label(label="Apps", xalign=0.0)
-        self.apps_label.add_css_class("heading")
-        self.apps_label.add_css_class("dim-label")
-        content.append(self.apps_label)
-
-        # What is installed, by kind. Buttons rather than a dropdown — the
-        # editor that opens over this is an overlay, where a popover throws the
-        # click away — and only the categories something is actually filed
-        # under: an empty "Science" helps nobody.
-        self.categories = ["", *categories_of(self.apps)]
-        self.category_chooser = widgets.SegmentedChoice(self._on_category)
-        for key in self.categories:
-            self.category_chooser.add(MAIN_CATEGORIES.get(key, "All"))
-        # The categories outrun the window on a full desktop, so this one
-        # scrolls where the other row does not.
-        category_scroller = Gtk.ScrolledWindow(
-            propagate_natural_width=True, hexpand=True
-        )
-        category_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        category_scroller.set_child(self.category_chooser)
-        content.append(_labelled("Category", category_scroller))
-
-        # And in what order. Buttons again, for the same reason.
-        self.sort_keys = list(SORTS)
-        self.sort_chooser = widgets.SegmentedChoice(self._on_sort)
-        for key in self.sort_keys:
-            self.sort_chooser.add(SORTS[key])
-        self.sort_chooser.set_selected(self.sort_keys.index(self.sort), notify=False)
-        content.append(_labelled("Sort", self.sort_chooser))
-
-        # One section per group, each with its own list: a heading cannot sit
-        # inside a list, and the groups are the point of the ordering.
-        self.sections = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-
-        scroller = Gtk.ScrolledWindow(vexpand=True)
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_child(self.sections)
-        content.append(scroller)
+        # The same catalogue the editor draws, asked a different question:
+        # there a row adds a window to the layout, here it opens the app.
+        self.catalogue = AppCatalogue(self._app_row, counts=self._app_counts)
+        content.append(self.catalogue)
 
         # Fills the window, so the rounding and the inset ring `.ctx-surface`
         # draws are the window's own edge. Overflow hidden clips the lists to
@@ -194,50 +125,15 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.refresh()
 
     def focus_search(self) -> None:
-        self.entry.grab_focus()
+        self.catalogue.focus_search()
 
     # -- contents ------------------------------------------------------------
 
     def refresh(self) -> None:
-        query = self.entry.get_text().strip()
-        # Only for `current_id` — which context an application would join. The
-        # contexts themselves are listed in the sidebar.
+        # The live state is read for `current_id` alone — which context an
+        # application would join. The contexts themselves are the sidebar's.
         self._live = read_live_state(self.store.contexts, backend=self.backend)
-
-        within = in_category(self.apps, self.category)
-        matches = search_apps(within, query)
-        self._fill_sections(
-            arrange_apps(
-                matches,
-                self.sort,
-                times=uistate.app_times(),
-                counts=self._app_counts(),
-            )
-        )
-        kind = MAIN_CATEGORIES.get(self.category, "")
-        self.apps_label.set_label(f"{kind or 'Apps'} · {len(matches)}")
-
-    def _fill_sections(self, sections: list[tuple[str, list[App]]]) -> None:
-        child = self.sections.get_first_child()
-        while child is not None:
-            following = child.get_next_sibling()
-            self.sections.remove(child)
-            child = following
-
-        self.flows: list[Gtk.ListBox] = []
-        for heading, apps in sections:
-            if heading:
-                label = Gtk.Label(label=heading, xalign=0.0)
-                label.add_css_class("heading")
-                label.add_css_class("dim-label")
-                self.sections.append(label)
-            listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-            listbox.add_css_class("boxed-list")
-            listbox.set_valign(Gtk.Align.START)
-            for info in apps:
-                listbox.append(self._app_row(info))
-            self.sections.append(listbox)
-            self.flows.append(listbox)
+        self.catalogue.refresh()
 
     def _app_row(self, info: App) -> AppRow:
         """The sidebar's row, unchanged.
@@ -278,29 +174,15 @@ class OverviewWindow(Gtk.ApplicationWindow):
             return None
         return next((c for c in self.store.contexts if c.id == current), None)
 
-    def _on_sort(self, selected: int) -> None:
-        if 0 <= selected < len(self.sort_keys):
-            self.sort = self.sort_keys[selected]
-            log.debug("sorting apps by %s", self.sort)
-            self.refresh()
-
-    def _on_category(self, selected: int) -> None:
-        if 0 <= selected < len(self.categories):
-            self.category = self.categories[selected]
-            log.debug("category %s", self.category or "all")
-            self.refresh()
-
     def _activate_first(self) -> None:
         """Enter: open the first application the search matched.
 
         The answer that always works, the same one clicking a row takes — a
         context of its own, whether or not anything is open.
         """
-        for listbox in self.flows:
-            row = listbox.get_row_at_index(0)
-            if row is not None:
-                self._open_app(row.app_info)
-                return
+        row = self.catalogue.first()
+        if row is not None:
+            self._open_app(row.app_info)
 
     def _open_app(self, info: App) -> None:
         """A context grown around this app. What clicking the row does, since
@@ -325,8 +207,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         happen — so it does the two things left that mean "not this": undo the
         filtering, then go back where you came from.
         """
-        if self.entry.get_text():
-            self.entry.set_text("")
+        if self.catalogue.clear():
             return True
         return self._leave()
 

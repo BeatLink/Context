@@ -18,7 +18,7 @@ from context.ui import switcher
 from context.state.resources import Resource
 from context.system.backends import Workspace
 from context.system.launcher import active_context, adopt_loose, capture_arrangement, close_loose
-from context.system.launcher import current_context, go_home, is_home_context
+from context.system.launcher import current_context, go_home
 from context.system.launcher import restore_arrangement
 from context.system.launcher import open_state
 from context.system.launcher import has_drifted, is_no_context
@@ -576,11 +576,6 @@ class ContextApplication(Gtk.Application):
 
     def go_to_context(self, ctx: Context) -> None:
         """Switch to a context, launching it if its windows are gone."""
-        if is_home_context(ctx):
-            # Home has nothing to launch and no definition to visit: going
-            # there is the workspace switch, and the window is already on it.
-            self.open_overview()
-            return
         if is_no_context(ctx):
             # Nothing to launch — these windows are already open, and there is
             # no workspace of their own to switch to. Going there means going

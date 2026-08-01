@@ -32,10 +32,10 @@ beside it rather than underneath.
 
 - **Search bar** — type to filter, or type a new name and press <kbd>Enter</kbd>
   to create a context. A name matching an existing context opens it instead.
-- **Open** — the overview first, then the contexts running right now. The one
-  you are in is highlighted. Click a row to switch to it, the stop button to
-  close it, the pencil to edit. The overview has none of those: it is somewhere
-  to go and nothing else.
+- **New context** — with a name typed it starts that one; blank it goes to the
+  overview, where you pick the application to build it around.
+- **Open** — the contexts running right now. The one you are in is highlighted.
+  Click a row to switch to it, the stop button to close it, the pencil to edit.
 - **Saved** — everything else, in a section below. It is expanded when nothing
   is open and folds away once something is, one click from opening again.
 
@@ -122,7 +122,9 @@ works whether or not anything is open, and right-clicking says both in words.
 The applications filter by kind and group four ways: **Recent** by how long ago
 you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under letter
 headings, **By kind** under the categories the desktop entries claim, and **In
-contexts**, which splits what you actually work in from everything else.
+contexts**, which splits what you actually work in from everything else. The
+editor's app catalogue is the same one, asked a different question — there a row
+adds a window to the layout rather than opening the application.
 
 ## The editor
 
@@ -139,8 +141,10 @@ as the screen has are shown, so the row changes as apps are added; past what
 they cover, a generated grid is offered instead. The one your layout currently
 matches is ringed, and none is once you have dragged a window off it.
 
-**Apps.** Every installed application, searchable. Click a card to add it to the
-layout; add one twice to give it two windows.
+**Apps.** The same catalogue the overview shows — every installed application,
+searchable, filtered by kind and ordered the same four ways. Click a row to add
+it to the layout; add one twice to give it two windows, and the row says how
+many it has put there.
 
 **Details.** The context's name, an ephemeral toggle, an isolated toggle, and a
 Forget button.
@@ -337,7 +341,6 @@ make them; the few that need a restart say so.
 | Notifications | Report launches, closes and drift to the desktop |
 | Search | Show the sidebar's search box |
 | New context row | Show the row that starts a context |
-| Overview row | Show the overview in the sidebar's list of open contexts |
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |
 | Order contexts by | Most recently used, when they were made, or name |

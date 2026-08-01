@@ -133,9 +133,6 @@ rec {
       show_new_context = setting t.bool "true"
         "Show the row that starts a context.";
 
-      show_overview_row = setting t.bool "true"
-        "Show the overview in the sidebar's list of open contexts.";
-
       show_saved = setting t.bool "true"
         "Show saved contexts beneath the open ones.";
 

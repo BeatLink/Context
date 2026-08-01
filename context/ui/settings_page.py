@@ -435,12 +435,6 @@ class SettingsPage(widgets.NavigationPage):
                 "show_new_context",
             ),
             (
-                "Overview row",
-                "The overview, listed with the open contexts. It is a place "
-                "of its own, so it is where the places are.",
-                "show_overview_row",
-            ),
-            (
                 "Saved contexts",
                 "The group beneath the open ones, in the list and on the rail. "
                 "Open contexts are always listed.",

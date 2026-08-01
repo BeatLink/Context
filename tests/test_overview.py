@@ -20,19 +20,13 @@ pytestmark = needs_display
 
 
 def _tiles(window):
-    """Every app tile in the grid, in the order the sections show them."""
-    out = []
-    for flow in window.flows:
-        child = flow.get_first_child()
-        while child is not None:
-            out.append(child)
-            child = child.get_next_sibling()
-    return out
+    """Every app row, in the order the sections show them."""
+    return window.catalogue.rows()
 
 
 def _headings(window) -> list[str]:
     out = []
-    child = window.sections.get_first_child()
+    child = window.catalogue.sections.get_first_child()
     while child is not None:
         if isinstance(child, Gtk.Label):
             out.append(child.get_label())
@@ -42,13 +36,14 @@ def _headings(window) -> list[str]:
 
 @pytest.fixture
 def fake_apps(monkeypatch):
-    from context.ui import overview
+    # The catalogue reads them, not the overview: both views draw the same one.
+    from context.ui import catalogue
 
     apps = [
         App(id="firefox.desktop", name="Firefox", description="Browser", icon=None),
         App(id="kicad.desktop", name="KiCad", description="EDA", icon=None),
     ]
-    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
     return apps
 
 
@@ -83,7 +78,7 @@ def test_an_app_becomes_a_new_context_and_opens(gtk_app, isolated_store, backend
 
 
 def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatch):
-    from context.ui import overview
+    from context.ui import catalogue
     from context.system.apps import App
     from context.state.store import ContextStore
 
@@ -95,23 +90,23 @@ def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatc
         App(id="c.desktop", name="Cargo", description="", icon=None,
             categories=("Development", "Utility")),
     ]
-    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
     seen = {}
 
     def body(app):
         window = _build(app, ContextStore(), backend)
         seen["offered"] = [
-            b.get_label() for b in window.category_chooser._buttons
+            b.get_label() for b in window.catalogue.category_chooser._buttons
         ]
-        window._on_category(window.categories.index("Development"))
+        window.catalogue._on_category(window.catalogue.categories.index("Development"))
         seen["development"] = [t.app_info.name for t in _tiles(window)]
-        seen["heading"] = window.apps_label.get_label()
+        seen["heading"] = window.catalogue.label.get_label()
         # A search still applies inside the category.
-        window.entry.set_text("car")
+        window.catalogue.entry.set_text("car")
         window.refresh()
         seen["searched"] = [t.app_info.name for t in _tiles(window)]
-        window._on_category(0)
-        window.entry.set_text("")
+        window.catalogue._on_category(0)
+        window.catalogue.entry.set_text("")
         window.refresh()
         seen["all"] = len(_tiles(window))
         window.close()
@@ -129,7 +124,7 @@ def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatc
 def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch):
     """Three questions, three orders: the one I was just using, the one whose
     name I know, and the ones I actually work in."""
-    from context.ui import overview
+    from context.ui import catalogue
     from context.system.apps import App
     from context.state.resources import Resource
     from context.state.store import ContextStore
@@ -145,7 +140,7 @@ def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch
             categories=("Development",)),
         App(id="7.desktop", name="7-Zip", description="", icon=None),
     ]
-    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
     store = ContextStore()
     store.create("one", resources=[Resource(app_id="z.desktop")])
     store.create("two", resources=[Resource(app_id="z.desktop")])
@@ -162,11 +157,11 @@ def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch
         seen["default"] = [t.app_info.name for t in _tiles(window)]
         seen["default_headings"] = _headings(window)
 
-        window._on_sort(window.sort_keys.index("name"))
+        window.catalogue._on_sort(window.catalogue.sort_keys.index("name"))
         seen["by_name"] = [t.app_info.name for t in _tiles(window)]
         seen["letters"] = _headings(window)
 
-        window._on_sort(window.sort_keys.index("contexts"))
+        window.catalogue._on_sort(window.catalogue.sort_keys.index("contexts"))
         seen["by_use"] = [t.app_info.name for t in _tiles(window)]
         seen["split"] = _headings(window)
         window.close()
@@ -245,7 +240,7 @@ def test_there_is_nothing_to_add_to_without_a_context(
 
 
 def test_by_kind_groups_under_the_categories(gtk_app, isolated_store, backend, monkeypatch):
-    from context.ui import overview
+    from context.ui import catalogue
     from context.system.apps import App
     from context.state.store import ContextStore
 
@@ -256,12 +251,12 @@ def test_by_kind_groups_under_the_categories(gtk_app, isolated_store, backend, m
             categories=("Development", "Utility")),
         App(id="c.desktop", name="Chores", description="", icon=None),
     ]
-    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
     seen = {}
 
     def body(app):
         window = _build(app, ContextStore(), backend)
-        window._on_sort(window.sort_keys.index("kind"))
+        window.catalogue._on_sort(window.catalogue.sort_keys.index("kind"))
         seen["headings"] = _headings(window)
         seen["order"] = [t.app_info.name for t in _tiles(window)]
         window.close()
@@ -305,7 +300,7 @@ def test_the_overview_opens_with_the_keyboard_in_the_search_box(gtk_app, isolate
         # inside it, so `entry.has_focus()` is False even when it has it.
         # Asserting on the entry itself passes only when nothing works.
         seen["in_entry"] = focus is not None and (
-            focus is window.entry or focus.is_ancestor(window.entry)
+            focus is window.catalogue.entry or focus.is_ancestor(window.catalogue.entry)
         )
         seen["focus_type"] = type(focus).__name__ if focus is not None else None
         window.close()
@@ -353,9 +348,9 @@ def test_escape_clears_the_search_before_leaving(
     def body(app):
         window = _build(app, ContextStore(), backend)
         window.on_leave = lambda: seen.update(left=seen["left"] + 1)
-        window.entry.set_text("something")
+        window.catalogue.entry.set_text("something")
         window._escape()
-        seen["text"] = window.entry.get_text()
+        seen["text"] = window.catalogue.entry.get_text()
         seen["left_while_typing"] = seen["left"]
         window._escape()
         seen["left_when_empty"] = seen["left"]
@@ -472,7 +467,7 @@ def test_the_search_filters_the_grid_alone(gtk_app, isolated_store, backend, fak
     def body(app):
         window = _build(app, store, backend)
         seen["all"] = len(_tiles(window))
-        window.entry.set_text("fire")
+        window.catalogue.entry.set_text("fire")
         window.refresh()  # SearchEntry debounces search-changed
         seen["matched"] = [r.app_info.name for r in _tiles(window)]
         app.quit()
@@ -496,7 +491,7 @@ def test_enter_opens_the_first_application_matched(
     def body(app):
         window = _build(app, store, backend)
         window.on_context = lambda c: seen["opened"].append(c.title)
-        window.entry.set_text("kic")
+        window.catalogue.entry.set_text("kic")
         window.refresh()
         window._activate_first()
         app.quit()

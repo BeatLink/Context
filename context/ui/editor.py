@@ -9,13 +9,15 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gtk
 
 
-from context.system.apps import App, installed_apps, search_apps
+from context.system.apps import App
 from context.state import settings
 from context.system import isolation, monitors
 from context.ui import theme, widgets
 from context.system.logging_setup import get_logger
 from context.state.layout import PRESET_LABELS, PRESETS, Layout, Slot, preset_for, snap
+from context.ui.catalogue import AppCatalogue
 from context.ui.resource_page import ResourcePage
+from context.ui.rows import AddAppRow
 from context.state.resources import Resource
 from context.state.store import Context
 
@@ -416,77 +418,6 @@ def _icon_texture(icon, size: int):
     return paintable
 
 
-class AppTile(Gtk.FlowBoxChild):
-    """One app in the grid, with an explicit button to add it to the layout.
-
-    Following PowerToys Workspaces: the grid is a catalogue you add *from*, rather
-    than a set of checkboxes. Adding puts a window in the preview above; the count
-    badge shows how many copies of the app the context holds.
-    """
-
-    def __init__(self, app: App, count: int, on_add) -> None:
-        super().__init__()
-        self.app = app
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        box.set_size_request(104, 118)
-        # Without this a FlowBox stretches its children to fill the height, so a
-        # single row of apps grew to the full height of the grid.
-        box.set_valign(Gtk.Align.START)
-        box.set_vexpand(False)
-        box.add_css_class("ctx-tile")
-        self.box = box
-        box.set_margin_top(4)
-        box.set_margin_bottom(4)
-        box.set_margin_start(4)
-        box.set_margin_end(4)
-
-        image = (
-            Gtk.Image.new_from_gicon(app.icon)
-            if app.icon is not None
-            else Gtk.Image.new_from_icon_name("application-x-executable-symbolic")
-        )
-        image.set_pixel_size(40)
-        image.set_margin_top(8)
-        # The card is taller than its content so that two-line names fit, and a
-        # box stacks from the top — which left the icon riding high over dead
-        # space. The icon and the badge soak up the slack from either end, so
-        # the cluster sits centred whatever the name's line count.
-        image.set_vexpand(True)
-        image.set_valign(Gtk.Align.END)
-        box.append(image)
-
-        name = Gtk.Label(label=app.name, wrap=True, lines=2, justify=Gtk.Justification.CENTER)
-        name.set_ellipsize(3)  # Pango.EllipsizeMode.END
-        name.add_css_class("caption")
-        box.append(name)
-
-        # No add button: the whole card is the target. Windows are configured
-        # from the layout above, where the edit control sits on the window it
-        # applies to, so the card only has one job.
-        self.set_tooltip_text(f"Add {app.name} to the layout")
-        click = Gtk.GestureClick()
-        click.connect("released", lambda *_a: on_add(app))
-        box.add_controller(click)
-
-        self.badge = Gtk.Label()
-        self.badge.add_css_class("caption")
-        self.badge.add_css_class("dim-label")
-        self.badge.set_vexpand(True)
-        self.badge.set_valign(Gtk.Align.START)
-        box.append(self.badge)
-
-        self.set_child(box)
-        self.refresh(count, None)
-
-    def refresh(self, count: int, resource: Resource | None) -> None:
-        self.badge.set_label(f"{count} in layout" if count else "")
-        if count:
-            self.box.add_css_class("ctx-chosen")
-        else:
-            self.box.remove_css_class("ctx-chosen")
-
-
 class EditorPage(widgets.NavigationPage):
     """Full-screen page for creating or editing a context."""
 
@@ -500,7 +431,6 @@ class EditorPage(widgets.NavigationPage):
         self.on_delete = on_delete
         self.is_new = is_new
         theme.install()
-        self.apps = installed_apps()
         # An ordered list rather than a set: a context may hold two terminals, and
         # position in this list is what maps a resource to a layout slot.
         self.entries: list[Resource] = [
@@ -510,6 +440,12 @@ class EditorPage(widgets.NavigationPage):
             Layout(slots=list(ctx.layout.slots))
             if ctx.layout.slots
             else preset_for(len(self.entries))
+        )
+        # Built here rather than where it is placed: it reads every installed
+        # application, and the layout previews below need that list to label
+        # their windows. Parented further down, once the column exists.
+        self.catalogue = AppCatalogue(
+            self._app_row, placeholder="Search apps…", heading="Apps"
         )
 
         toolbar = widgets.ToolbarView()
@@ -668,32 +604,16 @@ class EditorPage(widgets.NavigationPage):
         layout_column.append(self.screens_box)
         self._build_previews()
 
-        # --- the app grid, on the left ----------------------------------------
-        apps_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        # --- the app catalogue, on the left -----------------------------------
+        # The same one the overview draws. It had a search box over a flow of
+        # tiles here and search, category and ordering there, so which controls
+        # you got for finding an application depended on which screen you were
+        # looking at.
         self.count_label = Gtk.Label(xalign=0.0, hexpand=True)
         self.count_label.add_css_class("heading")
-        apps_header.append(self.count_label)
+        apps_column.append(self.count_label)
 
-        self.search = widgets.SearchBar("Search apps…")
-        self.search.set_size_request(240, -1)
-        self.search.connect("search-changed", lambda _e: self.refresh_apps())
-        apps_header.append(self.search)
-        apps_column.append(apps_header)
-
-        self.flow = Gtk.FlowBox(
-            selection_mode=Gtk.SelectionMode.NONE,
-            homogeneous=True,
-            min_children_per_line=3,
-            max_children_per_line=8,
-            row_spacing=4,
-            column_spacing=4,
-            valign=Gtk.Align.START,
-        )
-        scroller = Gtk.ScrolledWindow(vexpand=True)
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_size_request(-1, 240)
-        scroller.set_child(self.flow)
-        apps_column.append(scroller)
+        apps_column.append(self.catalogue)
 
         columns.append(apps_column)
         columns.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
@@ -779,6 +699,12 @@ class EditorPage(widgets.NavigationPage):
 
     def _ordered_resources(self) -> list[Resource]:
         return list(self.entries)
+
+    @property
+    def apps(self) -> list[App]:
+        """Every installed application, as the catalogue read them — one pass
+        for the two, since reading every desktop entry is not free."""
+        return self.catalogue.apps
 
     def _preview_entries(self) -> list[tuple[object, str]]:
         """(icon, name) per window, for the preview to draw and label."""
@@ -905,28 +831,22 @@ class EditorPage(widgets.NavigationPage):
 
     # -- apps ----------------------------------------------------------------
 
-    def visible_tiles(self) -> list[AppTile]:
-        tiles = []
-        child = self.flow.get_first_child()
-        while child is not None:
-            if isinstance(child, AppTile):
-                tiles.append(child)
-            child = child.get_next_sibling()
-        return tiles
+    def _app_row(self, info: App) -> AddAppRow:
+        return AddAppRow(info, self._on_add, count=self._count_of(info.id))
+
+    def visible_tiles(self) -> list:
+        """Every application row on show, in the order the sections list them."""
+        return self.catalogue.rows()
 
     def refresh_apps(self) -> None:
-        matches = search_apps(self.apps, self.search.get_text())
-        self.flow.remove_all()
-        for app in matches[:200]:
-            self.flow.append(
-                AppTile(app, self._count_of(app.id), self._on_add)
-            )
+        self.catalogue.refresh()
 
     def _refresh_tile(self, app_id: str) -> None:
-        latest = next((r for r in reversed(self.entries) if r.app_id == app_id), None)
-        for tile in self.visible_tiles():
-            if tile.app.id == app_id:
-                tile.refresh(self._count_of(app_id), latest)
+        """Just the one row's count. Rebuilding the whole catalogue would lose
+        the scroll position, and adding to the layout is done in runs."""
+        row = self.catalogue.row(app_id)
+        if row is not None:
+            row.refresh(self._count_of(app_id))
 
     def _on_add(self, app: App) -> None:
         log.debug("adding %s to the layout", app.id)

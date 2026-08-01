@@ -1,9 +1,12 @@
-"""The pieces the sidebar and the overview both show.
+"""The rows the views share.
 
-They are two views of the same thing — the contexts you have and the apps you
-could start one from — so a context has to look and behave the same in both.
-Keeping the rows here is what stops the two drifting into different feature
-sets, which is exactly what happened while the overview grew its own.
+`ContextRow` is the sidebar's, which is the only place contexts are listed now.
+The application rows are drawn in three: the sidebar's search results, the
+overview's catalogue and the editor's. They differ only in what one row *does*
+— open it somewhere, or add it to a layout — so the question each asks is a
+row here rather than a grid reinvented per view. The overview and the editor
+had separately grown catalogues, one with a category filter and an ordering and
+one with neither.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from context.ui import widgets
 from context.system.apps import App
 from context.state.layout import preset_for
 from context.state.resources import Resource
-from context.system.launcher import is_home_context, is_no_context
+from context.system.launcher import is_no_context
 from context.state.store import Context, ContextStore
 
 
@@ -113,12 +116,7 @@ class ContextRow(widgets.ActionRow):
         self.set_activatable(True)
 
         self.is_virtual = is_no_context(ctx)
-        self.is_home = is_home_context(ctx)
-        if self.is_home:
-            # No age and no app count: home is not a context that was made at
-            # some point and holds things, it is the place that is always there.
-            subtitle = ["everything you can open, on one screen"]
-        elif self.is_virtual:
+        if self.is_virtual:
             count = len(getattr(ctx, "windows", []))
             subtitle = [
                 f"{count} window{'s' if count != 1 else ''} in no context",
@@ -134,12 +132,8 @@ class ContextRow(widgets.ActionRow):
                 subtitle.append("ephemeral")
         self.set_subtitle(" · ".join(subtitle))
 
-        # The grid the overview draws, for home. The running marker would be a
-        # lie on the one row that is never not there.
         icon = Gtk.Image.new_from_icon_name(
-            "view-grid-symbolic"
-            if self.is_home
-            else "dialog-question-symbolic"
+            "dialog-question-symbolic"
             if self.is_virtual
             else ("media-playback-start-symbolic" if is_open else "view-grid-symbolic")
         )
@@ -353,6 +347,56 @@ class AppRow(widgets.ActionRow):
         self.menu = popover
         popover.popup()
         return popover
+
+
+class AddAppRow(widgets.ActionRow):
+    """An application in the editor's catalogue: activating it adds a window.
+
+    The same row the overview lists, with the one answer the editor has. There
+    the question is *where* an application should open and a row carries two
+    buttons; here the context is the one being edited, so the whole row is the
+    target and what it needs to say back is how many windows it has already
+    put in the layout.
+    """
+
+    def __init__(self, info: App, on_add, count: int = 0) -> None:
+        super().__init__()
+        self.app_info = info
+        self.on_add = on_add
+        self.set_title(info.name)
+        self.set_subtitle(info.description or "")
+        self.set_activatable(True)
+
+        icon = (
+            Gtk.Image.new_from_gicon(info.icon)
+            if info.icon is not None
+            else Gtk.Image.new_from_icon_name("application-x-executable-symbolic")
+        )
+        self.add_prefix(icon)
+
+        # How many windows of this app the layout holds, which is the only
+        # thing the editor's copy of a row has to report. Blank at zero rather
+        # than "0 in layout": every row would otherwise carry a count of
+        # nothing, and the ones that matter would stop standing out.
+        self.badge = Gtk.Label()
+        self.badge.add_css_class("caption")
+        self.badge.add_css_class("dim-label")
+        self.add_suffix(self.badge)
+
+        self.add = Gtk.Button(icon_name="list-add-symbolic", valign=Gtk.Align.CENTER)
+        self.add.set_tooltip_text(f"Add {info.name} to the layout")
+        self.add.connect("clicked", lambda _b: on_add(info))
+        self.add_suffix(self.add)
+
+        self.connect("activated", lambda _r: on_add(info))
+        self.refresh(count)
+
+    def refresh(self, count: int) -> None:
+        self.badge.set_label(f"{count} in layout" if count else "")
+        if count:
+            self.add_css_class("ctx-chosen")
+        else:
+            self.remove_css_class("ctx-chosen")
 
 
 # What the two ways of opening an application look like, wherever it is drawn.

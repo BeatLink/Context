@@ -16,7 +16,6 @@ from context.ui import rail, sidebar, theme, widgets
 from context.system.apps import App, installed_apps, search_apps
 from context.ui.editor_window import EditorWindow
 from context.system.launcher import LiveState, hand_keyboard_back, is_no_context
-from context.system.launcher import home_context, is_home_context
 from context.system.launcher import loose_context, read_live_state
 from context.state.layout import Layout
 from context.system.logging_setup import get_logger
@@ -160,20 +159,22 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # No Start button: Enter is the trigger, and the row below is the
         # clickable path — a button that mirrored the row said the same thing
         # twice in half the sidebar's width. No Overview button either: the
-        # overview is a place now, so it is in the list of places rather than a
-        # control above it.
+        # row below goes there, since choosing an application is how a context
+        # starts.
         self.top_row = Gtk.Box()
         self.top_row.add_css_class("linked")
         self.top_row.append(self.entry)
         content.append(self.top_row)
 
         # A built-in way to start something new, always in the list. With a
-        # name typed it starts that; blank, it opens the editor to be named.
+        # name typed it starts that context; blank, it goes to the overview to
+        # pick an application — which is the same trip a blank editor was, with
+        # the step where you stare at an empty layout taken out.
         self.create_row = widgets.ActionRow(title="New context")
         self.create_row.set_activatable(True)
         self.create_row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
         self.create_row.connect("activated", lambda _r: self._create_from_entry())
-        self.create_row.set_subtitle("Name it in the editor")
+        self.create_row.set_subtitle("Choose an app in the overview")
         self.create_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.create_list.add_css_class("boxed-list")
         self.create_list.append(self.create_row)
@@ -693,7 +694,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
         return live.replace(
             show_search=True,
             show_new_context=True,
-            show_overview_row=True,
             show_saved=True,
             show_apps=True,
             show_notes=True,
@@ -831,14 +831,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
             return
 
         self.open_listbox.remove_all()
-        # Home, first in the open group and always in it: it is where you are
-        # when nothing else is, so it cannot be closed and cannot be absent.
-        # Not filtered by the search — the same reason the no-context is not.
-        home = home_context() if live.show_overview_row and not searching else None
-        if home is not None:
-            self.open_listbox.append(
-                self._context_row(home, is_open=True, is_active=self._live.at_home)
-            )
         for ctx in opened:
             self.open_listbox.append(
                 self._context_row(
@@ -889,8 +881,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.notes_label.set_visible(notes_shown)
         self.scratchpad_box.set_visible(notes_shown)
 
-        self.open_label.set_visible(bool(opened or loose or home))
-        self.open_listbox.set_visible(bool(opened or loose or home))
+        self.open_label.set_visible(bool(opened or loose))
+        self.open_listbox.set_visible(bool(opened or loose))
         self.open_label.set_label("Open")
 
         self.saved_expander.set_visible(bool(saved) and live.show_saved)
@@ -940,12 +932,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.empty_state.set_description(description)
 
     def _context_row(self, ctx: Context, is_open: bool, is_active: bool = False):
-        # Home is only somewhere to go: there is nothing to edit, close, forget
-        # or keep about it, so it carries the one handle a row always has.
-        if is_home_context(ctx):
-            return ContextRow(
-                ctx, self._open, None, None, is_open=is_open, is_active=is_active
-            )
         # The no-context has no definition to edit, forget or add an app to
         # until it has been saved as one; what it does have is windows, so it
         # can be closed and it always offers to be kept.
@@ -1227,13 +1213,20 @@ class LauncherWindow(Gtk.ApplicationWindow):
     def _create_from_entry(self) -> None:
         """The list's built-in row: what Enter does, clickable.
 
-        With nothing typed there is nothing to name it by, so the editor opens
-        on a blank context and the name is chosen there.
+        With nothing typed there is nothing to name it by, so it goes to the
+        overview. A blank context opened the editor on an empty layout, which
+        is a screen asking which applications this is going to be — and that is
+        what the overview already is, for every context rather than only a new
+        one. Starting from an application names the context after it, so the
+        trip through a blank editor was a naming step that answered itself.
         """
         if self.entry.get_text().strip():
             self._on_entry_activate(self.entry)
-        else:
-            self._pick_apps(self.store.create("New context"))
+            return
+        self._release_keyboard()
+        app = self.get_application()
+        if app is not None and hasattr(app, "open_overview"):
+            app.open_overview()
 
     def _pick_apps(self, ctx: Context) -> None:
         """Editor for a context that was just created; committing launches it."""
@@ -1346,15 +1339,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def _open(self, ctx: Context) -> None:
         log.info("opening context %s", ctx.title)
-        if is_home_context(ctx):
-            # Not a launch and not a visit: home is always there, so going to
-            # it is only a workspace switch and it plays no part in the alt-tab
-            # order — coming back from it has to land where you actually were.
-            self._release_keyboard()
-            app = self.get_application()
-            if app is not None and hasattr(app, "open_overview"):
-                app.open_overview()
-            return
         if is_no_context(ctx):
             # Nothing to launch: its windows are already open, so this is a
             # jump to them rather than an opening of anything.

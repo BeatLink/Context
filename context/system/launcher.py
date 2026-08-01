@@ -192,25 +192,11 @@ def is_no_context(ctx) -> bool:
     return getattr(ctx, "id", None) == NO_CONTEXT_ID
 
 
-# Home: the overview's own place. Like the no-context it is a `Context` that is
-# never stored, so the lists and rows already know how to show and act on it —
-# but where the no-context exists only while something is homeless, this one is
-# always there. It is what a desktop with nothing open looks like.
-HOME_ID = "virtual:home"
+# Home: the overview's own place. A workspace Context owns and no context
+# claims — not a `Context` itself. It was one for a while, so the sidebar could
+# list it with the same row it lists everything else; the row is gone and what
+# is left is a place you switch to.
 HOME_TITLE = "Overview"
-
-
-def is_home_context(ctx) -> bool:
-    return getattr(ctx, "id", None) == HOME_ID
-
-
-def home_context() -> Context:
-    """Home, as something a list can show.
-
-    It carries no resources and is never written to the file: there is nothing
-    to launch, and switching to it is a workspace switch rather than a launch.
-    """
-    return Context(title=HOME_TITLE, id=HOME_ID)
 
 
 def is_home(handle: str | None, backend: Backend | None = None) -> bool:

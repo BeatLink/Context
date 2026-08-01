@@ -261,3 +261,84 @@ def test_only_the_arrangements_that_fit_are_offered(gtk_app, isolated_store):
     # Past what the named arrangements cover, the generated grid is the offer.
     assert seen["six"] == ["Grid of 6"]
     assert seen["six_slots"] == 6
+
+
+def test_the_editor_draws_the_same_catalogue_as_the_overview(
+    gtk_app, isolated_store, monkeypatch
+):
+    """It had a search box over a flow of tiles here and search, category and
+    ordering there, so which controls you got for finding an application
+    depended on which screen you were looking at."""
+    from context.ui import catalogue
+    from context.system.apps import App
+    from context.state.store import Context
+    from context.ui.editor import EditorPage
+    from context.ui.rows import AddAppRow
+
+    apps = [
+        App(id="a.desktop", name="Ardour", description="", icon=None,
+            categories=("AudioVideo",)),
+        App(id="b.desktop", name="Builder", description="", icon=None,
+            categories=("Development",)),
+    ]
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
+    seen = {}
+
+    def body(app):
+        page = EditorPage(Context(title="work"), lambda *_a: None, lambda: None)
+        # The same three controls the overview has, not just a search box.
+        seen["controls"] = (
+            page.catalogue.entry is not None,
+            page.catalogue.category_chooser is not None,
+            page.catalogue.sort_chooser is not None,
+        )
+        seen["rows"] = [type(r).__name__ for r in page.catalogue.rows()]
+
+        # Adding is the one answer the editor has, and the row says so.
+        row = page.catalogue.row("b.desktop")
+        seen["before"] = row.badge.get_label()
+        row.emit("activated")
+        seen["after"] = page.catalogue.row("b.desktop").badge.get_label()
+        seen["entries"] = [r.app_id for r in page.entries]
+
+        # Narrowing by kind reaches the editor's copy too.
+        page.catalogue._on_category(page.catalogue.categories.index("Development"))
+        seen["development"] = [r.app_info.name for r in page.catalogue.rows()]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["controls"] == (True, True, True)
+    assert set(seen["rows"]) == {"AddAppRow"}
+    assert seen["before"] == ""
+    assert seen["after"] == "1 in layout"
+    assert seen["entries"] == ["b.desktop"]
+    assert seen["development"] == ["Builder"]
+
+
+def test_adding_keeps_the_scroll_by_refreshing_one_row(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Rebuilding the whole catalogue on every add would throw the list back to
+    the top, and adding to a layout is done in runs."""
+    from context.ui import catalogue
+    from context.system.apps import App
+    from context.state.store import Context
+    from context.ui.editor import EditorPage
+
+    apps = [App(id="a.desktop", name="Ardour", description="", icon=None)]
+    monkeypatch.setattr(catalogue, "installed_apps", lambda: apps)
+    seen = {}
+
+    def body(app):
+        page = EditorPage(Context(title="work"), lambda *_a: None, lambda: None)
+        row = page.catalogue.row("a.desktop")
+        row.emit("activated")
+        row.emit("activated")
+        # The same widget throughout, with its count moved on.
+        seen["same"] = page.catalogue.row("a.desktop") is row
+        seen["badge"] = row.badge.get_label()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["same"] is True
+    assert seen["badge"] == "2 in layout"

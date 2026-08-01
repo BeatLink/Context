@@ -19,19 +19,12 @@ from tests.conftest import needs_display, run_app
 pytestmark = needs_display
 
 
-def rows(listbox, home: bool = False):
-    """The context rows in a list.
-
-    Home is skipped unless asked for: it is first in the open group and always
-    there, so every test counting or indexing contexts would otherwise be about
-    the row in front of them. `test_home_is_first...` below asks for it.
-    """
-    from context.system.launcher import is_home_context
-
+def rows(listbox):
+    """The context rows in a list."""
     out = []
     child = listbox.get_first_child()
     while child is not None:
-        if hasattr(child, "ctx") and (home or not is_home_context(child.ctx)):
+        if hasattr(child, "ctx"):
             out.append(child)
         child = child.get_next_sibling()
     return out
@@ -1951,65 +1944,48 @@ def test_focusing_does_not_steal_from_what_was_clicked(
     assert seen["focused"] is seen["button"]
 
 
-def test_home_is_first_in_the_open_list_and_goes_to_the_overview(
-    gtk_app, isolated_store
-):
-    """The overview is a place, so it is listed with the places rather than
-    sitting on a button above them — first, and always there."""
+def test_new_context_goes_to_the_overview(gtk_app, isolated_store):
+    """A blank context opened the editor on an empty layout, which is a screen
+    asking which applications this is going to be — and the overview already is
+    that. Starting from an app names the context after it, so the trip through
+    a blank editor was a naming step that answered itself."""
     from context.state.store import ContextStore
-    from context.system.launcher import is_home_context
     from context.ui.window import LauncherWindow
 
     store = ContextStore()
-    store.create("alpha")
     seen = {"overview": 0}
 
     def body(app):
         app.open_overview = lambda: seen.update(overview=seen["overview"] + 1)
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        window.refresh()
-        listed = rows(window.open_listbox, home=True)
-        seen["first"] = is_home_context(listed[0].ctx)
-        seen["title"] = listed[0].ctx.title
-        # Nothing to close, edit or forget about the one place always there.
-        seen["closable"] = listed[0].close.get_visible()
-        seen["editable"] = listed[0].edit.get_visible()
-        listed[0].emit("activated")
+        window.create_row.emit("activated")
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["first"] is True
-    assert seen["title"] == "Overview"
-    assert seen["closable"] is False
-    assert seen["editable"] is False
     assert seen["overview"] == 1
-    # Going home creates nothing: it is somewhere that already exists.
-    assert [c.title for c in store.contexts] == ["alpha"]
+    # Nothing is created on the way: what the context becomes is chosen there.
+    assert store.contexts == []
 
 
-def test_the_overview_row_can_be_switched_off(gtk_app, isolated_store, monkeypatch):
-    """The setting the Overview button used to carry, pointed at the row."""
-    from context.state import settings
+def test_a_typed_name_still_starts_that_context(gtk_app, isolated_store):
+    """The row means two things by what is in the search box, and only the
+    blank half moved."""
     from context.state.store import ContextStore
     from context.ui.window import LauncherWindow
 
-    _mode(monkeypatch, isolated_store, show_overview_row=False)
     store = ContextStore()
-    store.create("alpha")
-    seen = {}
+    seen = {"overview": 0, "opened": []}
 
     def body(app):
-        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        window.refresh()
-        seen["off"] = len(rows(window.open_listbox, home=True))
-        settings.update(show_overview_row=True)
-        window.refresh()
-        seen["on"] = len(rows(window.open_listbox, home=True))
+        app.open_overview = lambda: seen.update(overview=seen["overview"] + 1)
+        window = LauncherWindow(app, store, seen["opened"].append, lambda c: None)
+        window.entry.set_text("plan the week")
+        window.create_row.emit("activated")
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["off"] == 0
-    assert seen["on"] == 1
+    assert seen["overview"] == 0
+    assert [c.title for c in store.contexts] == ["plan the week"]
 
 
 def test_a_grazed_edge_does_not_snap_the_sidebar_shut(gtk_app, isolated_store, monkeypatch):
@@ -2167,14 +2143,10 @@ def test_an_app_from_the_sidebar_becomes_a_context_and_opens(
 
 
 def _list_rows(listbox) -> list:
-    """Every row in a list, minus home — see `rows` for why."""
-    from context.system.launcher import is_home_context
-
     found = []
     row = listbox.get_first_child()
     while row is not None:
-        if not is_home_context(getattr(row, "ctx", None)):
-            found.append(row)
+        found.append(row)
         row = row.get_next_sibling()
     return found
 
@@ -2494,7 +2466,6 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         isolated_store,
         show_search=False,
         show_new_context=False,
-        show_overview_row=False,
         show_saved=False,
         show_apps=False,
     )
@@ -2505,7 +2476,7 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         window.refresh()
         seen["search"] = window.entry.get_visible()
         seen["create"] = window.create_list.get_visible()
-        seen["overview"] = bool(rows(window.open_listbox, home=True))
+        seen["overview"] = bool(rows(window.open_listbox))
         seen["saved"] = window.saved_expander.get_visible()
         window.entry.set_text("fire")
         window.refresh()
@@ -3087,7 +3058,6 @@ def test_home_shows_every_part_of_the_sidebar(gtk_app, isolated_store, monkeypat
         collapse_mode="none",
         show_search=False,
         show_new_context=False,
-        show_overview_row=False,
         show_saved=False,
     )
     seen = {}
@@ -3104,7 +3074,6 @@ def test_home_shows_every_part_of_the_sidebar(gtk_app, isolated_store, monkeypat
             window.entry.get_visible(),
             window.create_list.get_visible(),
             window.saved_expander.get_visible(),
-            bool(rows(window.open_listbox, home=True)),
         )
 
         window._live = LiveState(at_home=True)
@@ -3113,15 +3082,14 @@ def test_home_shows_every_part_of_the_sidebar(gtk_app, isolated_store, monkeypat
             window.entry.get_visible(),
             window.create_list.get_visible(),
             window.saved_expander.get_visible(),
-            bool(rows(window.open_listbox, home=True)),
         )
         app.quit()
 
     store = ContextStore()
     store.create("alpha")
     run_app(gtk_app, body)
-    assert seen["away"] == (False, False, False, False)
-    assert seen["home"] == (True, True, True, True)
+    assert seen["away"] == (False, False, False)
+    assert seen["home"] == (True, True, True)
 
 
 def test_the_scratchpad_master_switch_still_holds_on_home(

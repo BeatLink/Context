@@ -613,16 +613,6 @@ def test_going_home_switches_to_the_overviews_workspace(backend):
     assert [c[0] for c in backend.calls] == ["ensure", "switch"]
 
 
-def test_home_is_a_context_that_is_never_stored():
-    home = launcher.home_context()
-
-    assert launcher.is_home_context(home) is True
-    assert home.resources == []
-    # Neither of the two virtual contexts is the other.
-    assert launcher.is_no_context(home) is False
-    assert launcher.is_home_context(launcher.loose_context([{"app_id": "a"}])) is False
-
-
 def test_on_home_an_action_means_the_context_you_came_from(backend, isolated_store):
     """`active_context` is None on home, which is exactly when "open this app
     here" is asked. Only an open one: adding to a closed context would launch
