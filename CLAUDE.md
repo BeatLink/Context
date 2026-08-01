@@ -250,14 +250,42 @@ work on: the editor, the pickers and the note editor are still overlays and now
 simply stack on top of it. Everything the overview did used to come back to a
 screen that was no longer there.
 
-## Two views of the same thing
+## The sidebar on home
 
-The sidebar and the overview list the same contexts and the same applications,
-so they share their pieces rather than each growing their own — `rows.py` holds
-`ContextRow`, `AppRow`, `app_tile` and `context_for_app`, and both views build
-from them. They drifted apart once: the overview could open a context but not
-edit, close or forget one, and its Enter key did nothing where the sidebar's
-started something. **A new handle on a context goes in the row, not in a view.**
+Home holds the sidebar open — expanded, with every part of it showing — for as
+long as it is the workspace on screen. `_sync_home_expansion` and `_sections`,
+both driven from `LiveState.at_home`, which is why that is in the signature: the
+list has to rebuild on arriving and leaving.
+
+- **Nothing is stored.** It is a peek the *place* is holding open, the way the
+  pointer holds one. Writing it would mean leaving home restored whatever home
+  needed rather than what was chosen — and the collapsed flag is one value
+  shared by every launcher, so it would also have leaked across screens.
+- **Collapsing is not offered there, rather than refused.** The button is hidden
+  while home is up and `toggle_collapsed` returns early, because a button that
+  presses and springs back on the next refresh is worse than no button. Same
+  rule as the pin: no control may do the opposite of what it looks like.
+- **`_sections()` forces the `show_*` parts, not the features.** `show_notes` is
+  where the scratchpad appears — a sidebar part. `scratchpad` is whether the
+  feature exists, and turning a feature on because of where the user is standing
+  is a different thing entirely.
+- **The scratchpad is the sidebar's alone.** It was in both, and with the
+  sidebar standing open beside home it would have been on screen twice.
+
+## One list per thing
+
+**The sidebar lists contexts. The overview lists applications.** Both did both,
+which was defensible while the overview was an overlay you summoned over a
+context — but home holds the sidebar open beside it, so the same contexts with
+the same handles were on the screen twice. The sidebar kept them because it is
+there from every workspace rather than only from that one; the scratchpad moved
+the same way and for the same reason.
+
+`rows.py` still holds `ContextRow`, `AppRow`, `app_tile` and `context_for_app`,
+and `AppRow` is genuinely shared — the sidebar's search results and the
+overview's grid are the same row. **A new handle on a context goes in the row,
+not in a view**, which is what stopped the two drifting when both listed them:
+the overview could once open a context but not edit, close or forget one.
 
 Neither view owns the editor. It is a layer-shell overlay holding the keyboard
 exclusively, and so are the overview and the pickers — stacked, the top one is

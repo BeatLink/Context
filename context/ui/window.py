@@ -83,6 +83,9 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # Installed applications, read on the first search rather than at start.
         self._apps: list[App] | None = None
         self._auto_expanded = False
+        # Whether home is holding the sidebar open. Not stored: it is where you
+        # are standing, not something chosen.
+        self._home_expanded = False
         self._auto_expand_source: int | None = None
         # A pending collapse, waiting out the grace period after a leave.
         self._collapse_source: int | None = None
@@ -403,8 +406,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
             else:
                 self.collapsed = False
                 uistate.save(collapsed=False)
-        if self.collapse_button is not None:
-            self.collapse_button.set_visible(self.collapses)
+        # Visibility is `_sync_collapse_button`'s, which also knows the button
+        # is not offered on home; `_apply_collapsed` calls it.
         self._apply_collapsed()
         self._apply_sections()
         self.refresh()
@@ -566,7 +569,47 @@ class LauncherWindow(Gtk.ApplicationWindow):
                     return monitor
         return next((m for m in found if m.focused), found[0])
 
+    def _sync_home_expansion(self) -> None:
+        """Stand open while home is on screen, whatever else has been asked.
+
+        Home is the screen you go to to find what to do next, and the sidebar
+        beside it is half of that: collapsed to a rail or hidden to a sliver it
+        is the half that is missing. So this is not a default a setting can
+        turn off, nor a peek the pointer can end — it holds for as long as you
+        are there, and the button that would collapse it is not offered.
+
+        Nothing is stored. Leaving goes back to whatever was chosen for the
+        narrow column the sidebar is everywhere else, rather than to whatever
+        home needed.
+        """
+        if not self.is_sidebar:
+            return
+        at_home = bool(self._live.at_home)
+        if at_home:
+            self._home_expanded = True
+            # Every refresh, not only on arrival: anything that collapsed it
+            # while you stand here has to be undone rather than merely
+            # forestalled.
+            if self.collapsed or self._auto_expanded:
+                self._end_hover_peek()
+                self.collapsed = False
+                self._apply_collapsed()
+            return
+        if not self._home_expanded:
+            return
+        self._home_expanded = False
+        wanted = bool(self.collapses and uistate.get("collapsed", False))
+        if wanted != self.collapsed:
+            self.collapsed = wanted
+            self._apply_collapsed()
+
     def toggle_collapsed(self) -> None:
+        if self._home_expanded:
+            # The button is hidden here, so this is the keybind. Saying so
+            # beats collapsing for the moment it takes the next refresh to
+            # undo it.
+            log.info("the sidebar stays open on home")
+            return
         if not self.collapses:
             log.info("collapsing is switched off")
             return
@@ -584,10 +627,13 @@ class LauncherWindow(Gtk.ApplicationWindow):
         else:
             self.set_collapsed(wanted)
 
-    def set_collapsed(self, collapsed: bool) -> None:
-        """Collapse or expand this launcher, without touching the others."""
-        # A deliberate toggle ends any hover peek, so the state that gets saved
-        # is the one the user chose rather than the one hovering produced.
+    def _end_hover_peek(self) -> None:
+        """Forget that the pointer is holding the sidebar open.
+
+        Both a deliberate toggle and arriving on home decide the width for a
+        reason of their own, and a peek still running underneath would retract
+        it a moment later.
+        """
         self._auto_expanded = False
         if self._auto_expand_source is not None:
             GLib.source_remove(self._auto_expand_source)
@@ -596,6 +642,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
             GLib.source_remove(self._collapse_source)
             self._collapse_source = None
         self._left_zone_at = None
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Collapse or expand this launcher, without touching the others."""
+        # A deliberate toggle ends any hover peek, so the state that gets saved
+        # is the one the user chose rather than the one hovering produced.
+        self._end_hover_peek()
         # Collapsing happens with the pointer on the button, which is inside
         # the sidebar — so hover would expand it again a moment later and the
         # button would appear to do nothing. Hovering is suppressed until the
@@ -621,9 +673,35 @@ class LauncherWindow(Gtk.ApplicationWindow):
         """
         return settings.current().collapse_mode == "hidden"
 
+    def _sections(self) -> settings.Settings:
+        """Which parts of the sidebar are on, right now.
+
+        The settings, except on home, where every part is shown whatever they
+        say. Home is the screen you go to *to* find something, and the sidebar
+        beside it is half of that — a session that keeps the search box or the
+        saved group switched off for the narrow column it usually is would
+        arrive there with the tools missing.
+
+        `scratchpad` is deliberately not forced: `show_notes` is where the
+        scratchpad appears, which is a sidebar part, while `scratchpad` is
+        whether the feature exists at all. Turning a feature on because of
+        where you are standing is a different thing entirely.
+        """
+        live = settings.current()
+        if not self._live.at_home:
+            return live
+        return live.replace(
+            show_search=True,
+            show_new_context=True,
+            show_overview_row=True,
+            show_saved=True,
+            show_apps=True,
+            show_notes=True,
+        )
+
     def _apply_sections(self) -> None:
         """Show only the parts of the sidebar that are switched on."""
-        live = settings.current()
+        live = self._sections()
         self.entry.set_visible(live.show_search)
         self.create_list.set_visible(live.show_new_context)
         self.top_row.set_visible(live.show_search)
@@ -639,6 +717,10 @@ class LauncherWindow(Gtk.ApplicationWindow):
         """
         if self.collapse_button is None:
             return
+        # Not offered on home, where it could only do nothing: the sidebar is
+        # held open for as long as you are there. A button that presses and
+        # springs back is worse than no button.
+        self.collapse_button.set_visible(self.collapses and not self._home_expanded)
         collapse_icon = SIDEBAR_ICONS[sidebar.configured_edge()]
         if not self._pins:
             self.collapse_button.set_icon_name(collapse_icon)
@@ -712,7 +794,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
         you want then — but stays one click away rather than hidden behind a
         search.
         """
-        live = settings.current()
+        # Before anything reads the width or the sections: arriving on home
+        # opens the sidebar and turns every part of it on, and both have to be
+        # settled before the rail path below decides it is drawing a rail.
+        self._sync_home_expansion()
+        live = self._sections()
+        self._apply_sections()
         query = self.entry.get_text().strip()
         searching = bool(query)
         matches = self.store.search(query)

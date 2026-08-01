@@ -253,8 +253,6 @@ class Settings:
     # it was left. It is reached to do one thing and dismissed, so what it
     # remembers between openings is a setting rather than a habit it picks up.
     overview_sort: str = "recent"
-    # Whether the overview shows the scratchpad beneath the contexts.
-    overview_scratchpad: bool = True
     # Notes, kept as an append-only history. The master switch; with it off the
     # notes are still on disk and nothing lists them.
     scratchpad: bool = True
@@ -357,7 +355,6 @@ class Settings:
                 if self.overview_sort.strip().lower() in OVERVIEW_SORTS
                 else "recent"
             ),
-            overview_scratchpad=bool(self.overview_scratchpad),
             scratchpad=bool(self.scratchpad),
             scratchpad_global=bool(self.scratchpad_global),
             scratchpad_per_context=bool(self.scratchpad_per_context),

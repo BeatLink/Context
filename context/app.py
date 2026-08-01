@@ -214,16 +214,12 @@ class ContextApplication(Gtk.Application):
         # must not go anywhere.
         self.backend.hide_titlebar(app_id, OVERVIEW_TITLE)
 
-        window = OverviewWindow(
-            self, self.store, backend=self.backend, notes=self.notes
-        )
+        window = OverviewWindow(self, self.store, backend=self.backend)
+        # Three, where there were seven: everything a *context* can be asked to
+        # do — edit, close, forget, save, restore, take an app — is the
+        # sidebar's now, and the sidebar stands open beside home.
         window.on_context = self.go_to_context
-        window.on_edit = self.edit_context
-        window.on_close = self.close_context
-        window.on_add_app = self.open_app_in_context
         window.on_app_into = self.add_app_to_context
-        window.on_note = self.edit_note
-        window.on_restore = self.restore_context
         window.on_leave = self.leave_home
         # Only if something destroys it anyway — `restart` does, by dropping
         # `permanent` first. Anything else that manages it means home has no
@@ -264,6 +260,10 @@ class ContextApplication(Gtk.Application):
             # the null backend that is the whole of what a context is too.
             self.log.debug("no home workspace; showing the overview as a window")
         window.present()
+        # After the switch, so the launchers read the workspace they are now
+        # on: the sidebar stands open on home, and waiting for the next poll to
+        # notice would have it widen a second or two after you arrived.
+        self.refresh_all()
 
     def leave_home(self) -> None:
         """Back to the context you came from, if it is still open.

@@ -218,7 +218,6 @@ def test_the_overview_sorts_match_the_grid():
 def test_the_overview_opens_the_same_way_every_time():
     live = Settings().validated()
     assert live.overview_sort == "recent"
-    assert live.overview_scratchpad is True
 
     odd = Settings(overview_sort="sideways").validated()
     assert odd.overview_sort == "recent"

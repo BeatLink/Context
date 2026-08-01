@@ -538,14 +538,9 @@ class SettingsPage(widgets.NavigationPage):
             ),
             (
                 "Show in the sidebar",
-                "The scratchpad in the launcher's narrow column.",
+                "The scratchpad in the launcher's column. It is the only place "
+                "it appears; on home the sidebar stands open beside it.",
                 "show_notes",
-            ),
-            (
-                "Show in the overview",
-                "The scratchpad beneath the contexts, with the room the "
-                "overview has and the sidebar does not.",
-                "overview_scratchpad",
             ),
         ):
             row = _row_switch(

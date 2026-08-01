@@ -89,10 +89,9 @@ switches to all of them from its header.
 
 ## The overview
 
-Everything you can open, on one screen: one search over the contexts you have —
-open ones first, with the same handles the sidebar gives them — and the
-applications installed. Contexts and applications are the same cards the sidebar
-lists, so everything they do there they do here.
+Every application installed, on one screen: a search over them, filtered by kind
+and grouped by how they are ordered. Contexts are not here — the sidebar lists
+those, and it stands open beside this.
 
 **It is a place, not a panel.** The overview has a workspace of its own, and
 going to it is a switch like any other. It cannot be closed, so there is always
@@ -103,13 +102,21 @@ always, and the sidebar sits beside it the way it sits beside anything else.
 It wears no titlebar, its own or the compositor's. There is nothing to close and
 nowhere for it to go.
 
-<kbd>Esc</kbd> clears the search, and again goes back to the context you came
-from. Editing a context, picking an app or writing a note opens over the
-overview and leaves it where it was.
+**The sidebar stands open beside it**, and is where the contexts are. However
+the launcher is set to collapse, it is expanded for as long as home is on
+screen, with every part of it showing — the search box, the saved group, the
+scratchpad — whatever the sidebar settings say for the narrow column it is
+everywhere else. Collapsing is only offered outside home, and leaving goes back
+to however you had it. The two together are the whole screen: what you could
+run on one side, what you are already doing on the other.
 
-An application card offers both answers: open it in a context of its own, or in
+<kbd>Esc</kbd> clears the search, and again goes back to the context you came
+from. <kbd>Enter</kbd> opens the first application matched. Editing a context or
+picking an app opens over the overview and leaves it where it was.
+
+An application row offers both answers: open it in a context of its own, or in
 the context you came from — named, since standing on the overview "here" would
-mean the overview. Clicking the card takes the first, since it is the one that
+mean the overview. Clicking the row takes the first, since it is the one that
 works whether or not anything is open, and right-clicking says both in words.
 
 The applications filter by kind and group four ways: **Recent** by how long ago
@@ -335,8 +342,7 @@ make them; the few that need a restart say so.
 | Apps | Show matching applications under the search results |
 | Order contexts by | Most recently used, when they were made, or name |
 | Sort applications by | How the overview's application list is ordered when it opens |
-| Scratchpad (overview) | Show the scratchpad in the overview |
-| Scratchpad | Somewhere to type in the sidebar and the overview |
+| Scratchpad | Somewhere to type in the sidebar |
 | Global scratchpad | The one that is there wherever you are |
 | Context scratchpads | One for each context, shown while you are in it |
 | Scratchpad in the sidebar | Show it in the narrow list |

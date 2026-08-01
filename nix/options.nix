@@ -151,11 +151,8 @@ rec {
       overview_sort = setting (t.enum [ "recent" "name" "kind" "contexts" ]) "`recent`"
         "How the overview's application grid is ordered each time it opens.";
 
-      overview_scratchpad = setting t.bool "true"
-        "Show the scratchpad in the overview, beneath the contexts.";
-
       scratchpad = setting t.bool "true"
-        "Somewhere to type in the sidebar and the overview.";
+        "Somewhere to type in the sidebar.";
 
       scratchpad_global = setting t.bool "true"
         "One scratchpad that is there wherever you are.";

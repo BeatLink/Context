@@ -1,4 +1,9 @@
-"""The overview: contexts one side, apps the other, one search over both."""
+"""The overview: every installed application, searchable.
+
+Contexts moved to the sidebar, which stands open beside home — the two listed
+the same rows on the same screen. Their tests went with them, to
+`test_window.py`; what is left here is the grid.
+"""
 
 from __future__ import annotations
 
@@ -12,16 +17,6 @@ from context.system.apps import App
 from tests.conftest import needs_display, run_app
 
 pytestmark = needs_display
-
-
-def _rows(listbox):
-    out = []
-    row = listbox.get_first_child()
-    while row is not None:
-        if hasattr(row, "ctx"):
-            out.append(row)
-        row = row.get_next_sibling()
-    return out
 
 
 def _tiles(window):
@@ -64,69 +59,6 @@ def _build(app, store, backend):
     return window
 
 
-def test_contexts_split_into_open_and_saved(gtk_app, isolated_store, backend, fake_apps):
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    running = store.create("running")
-    running.set_handle("fake", "ctx-running")
-    store.create("parked")
-    backend.workspaces["ctx-running"] = 1
-    seen = {}
-
-    def body(app):
-        window = _build(app, store, backend)
-        seen["open"] = [r.ctx.title for r in _rows(window.open_list)]
-        seen["saved"] = [r.ctx.title for r in _rows(window.saved_list)]
-        seen["apps"] = len(_tiles(window))
-        window.close()
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["open"] == ["running"]
-    assert seen["saved"] == ["parked"]
-    assert seen["apps"] == 2
-
-
-def test_one_search_filters_both_sides(gtk_app, isolated_store, backend, fake_apps):
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    store.create("surf reddit")
-    store.create("pay bills")
-    seen = {}
-
-    def body(app):
-        window = _build(app, store, backend)
-        window.entry.set_text("fire")
-        window.refresh()  # SearchEntry debounces search-changed; refresh directly
-        seen["saved"] = [r.ctx.title for r in _rows(window.saved_list)]
-        seen["apps"] = len(_tiles(window))
-        window.close()
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["saved"] == []
-    assert seen["apps"] == 1  # Firefox
-
-
-def test_a_context_row_routes_to_the_launcher(gtk_app, isolated_store, backend, fake_apps):
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    ctx = store.create("alpha")
-    seen = {"opened": []}
-
-    def body(app):
-        window = _build(app, store, backend)
-        window.on_context = lambda c: seen["opened"].append(c)
-        _rows(window.saved_list)[0].emit("activated")
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["opened"] == [ctx]
-
-
 def test_an_app_becomes_a_new_context_and_opens(gtk_app, isolated_store, backend, fake_apps):
     """The point of the grid: one click from an installed app to working in it."""
     from context.state.store import ContextStore
@@ -148,104 +80,6 @@ def test_an_app_becomes_a_new_context_and_opens(gtk_app, isolated_store, backend
     # Persisted, so it is a real context and not a one-off launch.
     fresh = __import__("context.state.store", fromlist=["ContextStore"]).ContextStore()
     assert "KiCad" in [c.title for c in fresh.contexts]
-
-
-def test_a_row_offers_the_same_handles_as_the_sidebar(
-    gtk_app, isolated_store, backend, fake_apps
-):
-    """Editing and closing were sidebar-only, so the overview could show a
-    context but not do anything with it beyond opening."""
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    ctx = store.create("running")
-    ctx.set_handle("fake", "ctx-running")
-    backend.workspaces["ctx-running"] = 1
-    seen = {"edited": [], "closed": []}
-
-    def body(app):
-        window = _build(app, store, backend)
-        window.on_edit = lambda c, is_new=False: seen["edited"].append((c, is_new))
-        window.on_close = seen["closed"].append
-        dismissed = []
-        window.close = lambda: dismissed.append(True)
-        row = _rows(window.open_list)[0]
-        row.close.emit("clicked")
-        row.edit.emit("clicked")
-        seen["still_up"] = dismissed == []
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["closed"] == [ctx]
-    # Editing hands over to the launcher, which owns the editor overlay — and
-    # the overview stays where it is now that it is a place rather than an
-    # overlay of its own. It used to close first, so everything done through it
-    # came back to a screen that was no longer there.
-    assert seen["edited"] == [(ctx, False)]
-    assert seen["still_up"] is True
-
-
-def test_enter_starts_a_context_by_the_name_typed(gtk_app, isolated_store, fake_apps, backend):
-    """The sidebar starts one; the overview used to do nothing at all."""
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    seen = {"edited": []}
-
-    def body(app):
-        window = _build(app, store, backend)
-        window.on_edit = lambda c, is_new=False: seen["edited"].append((c.title, is_new))
-        window.entry.set_text("plan the week")
-        window.refresh()
-        window._activate_first()
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["edited"] == [("plan the week", True)]
-
-
-def test_the_built_in_row_says_what_it_will_do(gtk_app, isolated_store, fake_apps, backend):
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    store.create("alpha")
-    seen = {}
-
-    def body(app):
-        window = _build(app, store, backend)
-        seen["blank"] = window.create_row.get_subtitle()
-        window.entry.set_text("alpha")
-        window.refresh()
-        seen["existing"] = window.create_row.get_subtitle()
-        window.entry.set_text("something new")
-        window.refresh()
-        seen["new"] = window.create_row.get_subtitle()
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["blank"] == "Name it in the editor"
-    assert seen["existing"] == "Open “alpha”"
-    assert seen["new"] == "Start “something new”"
-
-
-def test_opening_an_app_into_a_context_hands_over(
-    gtk_app, isolated_store, backend, fake_apps
-):
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    ctx = store.create("alpha")
-    seen = {"asked": []}
-
-    def body(app):
-        window = _build(app, store, backend)
-        window.on_add_app = seen["asked"].append
-        _rows(window.saved_list)[0].open_menu()
-        _rows(window.saved_list)[0].menu_items["add-app"].emit("clicked")
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["asked"] == [ctx]
 
 
 def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatch):
@@ -290,43 +124,6 @@ def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatc
     assert seen["heading"].startswith("Development · 2")
     assert seen["searched"] == ["Cargo"]
     assert seen["all"] == 3
-
-
-def test_the_no_context_is_listed_with_the_open_ones(
-    gtk_app, isolated_store, backend, fake_apps
-):
-    """Windows outside every context are a context until they are given one."""
-    from context.system.launcher import NO_CONTEXT_ID
-    from context.state.store import ContextStore
-
-    store = ContextStore()
-    backend.geometry["stray"] = [
-        {"id": "0x1", "app_id": "firefox.desktop", "x": 0, "y": 0,
-         "width": 1920, "height": 1080},
-    ]
-    seen = {"saved": [], "closed": []}
-
-    def body(app):
-        window = _build(app, store, backend)
-        window.on_save = seen["saved"].append
-        window.on_close = seen["closed"].append
-        rows = _rows(window.open_list)
-        seen["titles"] = [r.ctx.title for r in rows]
-        row = rows[0]
-        seen["can_edit"] = row.edit.get_visible()
-        seen["offers_save"] = row.save.get_visible()
-        window.close = lambda: None
-        row.save.emit("clicked")
-        row.close.emit("clicked")
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["titles"] == ["No context"]
-    # Nothing to edit until it has been saved as a context of its own.
-    assert seen["can_edit"] is False
-    assert seen["offers_save"] is True
-    assert [c.id for c in seen["saved"]] == [NO_CONTEXT_ID]
-    assert [c.id for c in seen["closed"]] == [NO_CONTEXT_ID]
 
 
 def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch):
@@ -660,3 +457,75 @@ def test_the_overview_carries_no_titlebar(gtk_app, isolated_store, backend, fake
     run_app(gtk_app, body)
     assert seen["decorated"] is False
     assert seen["titlebar"] is None
+
+
+@needs_display
+def test_the_search_filters_the_grid_alone(gtk_app, isolated_store, backend, fake_apps):
+    """One search over contexts and apps was the point when both were here.
+    Contexts are the sidebar's now, which has a search of its own."""
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    store.create("Firefox stuff")
+    seen = {}
+
+    def body(app):
+        window = _build(app, store, backend)
+        seen["all"] = len(_tiles(window))
+        window.entry.set_text("fire")
+        window.refresh()  # SearchEntry debounces search-changed
+        seen["matched"] = [r.app_info.name for r in _tiles(window)]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["all"] == 2
+    # The context named "Firefox stuff" is not the grid's business.
+    assert seen["matched"] == ["Firefox"]
+
+
+@needs_display
+def test_enter_opens_the_first_application_matched(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    """The answer that always works, the same one clicking a row takes."""
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    seen = {"opened": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_context = lambda c: seen["opened"].append(c.title)
+        window.entry.set_text("kic")
+        window.refresh()
+        window._activate_first()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["opened"] == ["KiCad"]
+
+
+@needs_display
+def test_the_overview_lists_no_contexts(gtk_app, isolated_store, backend, fake_apps):
+    """They were here and in the sidebar at once — the same contexts, the same
+    handles, twice on one screen. The sidebar is the one that is there from
+    every workspace rather than only from this one."""
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    store.create("alpha")
+    seen = {}
+
+    def body(app):
+        window = _build(app, store, backend)
+        seen["has_lists"] = any(
+            hasattr(window, name)
+            for name in ("open_list", "saved_list", "create_row")
+        )
+        # Every row on the screen is an application.
+        seen["rows"] = [type(r).__name__ for r in _tiles(window)]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["has_lists"] is False
+    assert set(seen["rows"]) == {"AppRow"}

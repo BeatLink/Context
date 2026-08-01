@@ -3015,3 +3015,145 @@ def test_the_apps_switch_needs_the_search_box(gtk_app, isolated_store, monkeypat
     run_app(gtk_app, body)
     assert seen["without_search"] is False
     assert seen["with_search"] is True
+
+
+def test_the_sidebar_stands_open_on_home(gtk_app, isolated_store, monkeypatch):
+    """Home is the screen you go to to choose what to do next, and the sidebar
+    beside it is half of that — hidden to a sliver it is the missing half. So
+    it is not a default a setting turns off: it holds while you are there,
+    whatever the collapse mode says, and the button that would shrink it is not
+    offered. Leaving goes back to what was chosen, which is never written."""
+    from context.state import uistate
+    from context.ui import sidebar
+    from context.system.launcher import LiveState
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="hidden", auto_expand=False)
+    uistate.save(collapsed=True)
+    seen = {}
+
+    def body(app):
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._live = LiveState()
+        window.refresh()
+        seen["away"] = window.collapsed
+        seen["button_away"] = window.collapse_button.get_visible()
+
+        window._live = LiveState(at_home=True)
+        window.refresh()
+        seen["home"] = window.collapsed
+        seen["button_home"] = window.collapse_button.get_visible()
+
+        # The keybind reaches it even with the button gone; it must not shrink.
+        window.toggle_collapsed()
+        seen["after_toggle"] = window.collapsed
+        # Nothing written: leaving has to find what was chosen, not what home
+        # needed.
+        seen["stored"] = uistate.get("collapsed")
+
+        window._live = LiveState()
+        window.refresh()
+        seen["back"] = window.collapsed
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["away"] is True
+    assert seen["button_away"] is True
+    assert seen["home"] is False
+    assert seen["button_home"] is False
+    assert seen["after_toggle"] is False
+    assert seen["stored"] is True
+    assert seen["back"] is True
+
+
+def test_home_shows_every_part_of_the_sidebar(gtk_app, isolated_store, monkeypatch):
+    """A session that keeps the search box and the saved group switched off for
+    the narrow column the sidebar usually is would arrive on home with the
+    tools missing. The parts are on there whatever the settings say."""
+    from context.ui import sidebar
+    from context.system.launcher import LiveState
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    _mode(
+        monkeypatch,
+        isolated_store,
+        collapse_mode="none",
+        show_search=False,
+        show_new_context=False,
+        show_overview_row=False,
+        show_saved=False,
+    )
+    seen = {}
+
+    def body(app):
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+
+        window._live = LiveState()
+        window.refresh()
+        seen["away"] = (
+            window.entry.get_visible(),
+            window.create_list.get_visible(),
+            window.saved_expander.get_visible(),
+            bool(rows(window.open_listbox, home=True)),
+        )
+
+        window._live = LiveState(at_home=True)
+        window.refresh()
+        seen["home"] = (
+            window.entry.get_visible(),
+            window.create_list.get_visible(),
+            window.saved_expander.get_visible(),
+            bool(rows(window.open_listbox, home=True)),
+        )
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    run_app(gtk_app, body)
+    assert seen["away"] == (False, False, False, False)
+    assert seen["home"] == (True, True, True, True)
+
+
+def test_the_scratchpad_master_switch_still_holds_on_home(
+    gtk_app, isolated_store, monkeypatch
+):
+    """`show_notes` is where the scratchpad appears, which is a sidebar part.
+    `scratchpad` is whether the feature exists at all — turning a feature on
+    because of where you are standing is a different thing entirely."""
+    from context.ui import sidebar
+    from context.system.launcher import LiveState
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    _mode(
+        monkeypatch, isolated_store,
+        collapse_mode="none", scratchpad=False, show_notes=False,
+    )
+    seen = {}
+
+    def body(app):
+        monkeypatch.setattr(sidebar, "available", lambda: True)
+        monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window._live = LiveState(at_home=True)
+        window.refresh()
+        seen["shown"] = window.scratchpad_box.get_visible()
+        seen["forced"] = window._sections().show_notes
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    # The placement is forced on; the feature being off still wins.
+    assert seen["forced"] is True
+    assert seen["shown"] is False
