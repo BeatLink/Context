@@ -12,22 +12,24 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gdk, Gio, GLib, Gtk
 
-from . import backends, notify, switcher, uistate
-from .resources import Resource
-from .backends import Workspace
-from .launcher import active_context, adopt_loose, capture_arrangement, close_loose
-from .launcher import open_state
-from .launcher import has_drifted, is_no_context
-from .launcher import move_window_to_context, move_window_to_screen
-from .launcher import unmanaged_windows
-from .launcher import close_context as close_ctx
-from .launcher import context_is_open, launch_resource
-from .launcher import hand_keyboard_back
-from .launcher import launch_context as launch_ctx
-from .launcher import reconnect
-from .store import Context, ContextStore
-from .logging_setup import configure, get_logger
-from .window import LauncherWindow
+from context.state import uistate
+from context.system import backends, notify
+from context.ui import switcher
+from context.state.resources import Resource
+from context.system.backends import Workspace
+from context.system.launcher import active_context, adopt_loose, capture_arrangement, close_loose
+from context.system.launcher import open_state
+from context.system.launcher import has_drifted, is_no_context
+from context.system.launcher import move_window_to_context, move_window_to_screen
+from context.system.launcher import unmanaged_windows
+from context.system.launcher import close_context as close_ctx
+from context.system.launcher import context_is_open, launch_resource
+from context.system.launcher import hand_keyboard_back
+from context.system.launcher import launch_context as launch_ctx
+from context.system.launcher import reconnect
+from context.state.store import Context, ContextStore
+from context.system.logging_setup import configure, get_logger
+from context.ui.window import LauncherWindow
 
 
 # How long to wait for monitor hot-plug to settle before rebuilding. Enabling a
@@ -179,7 +181,7 @@ class ContextApplication(Gtk.Application):
 
         The same keybind again puts it away rather than stacking another.
         """
-        from .overview import OverviewWindow
+        from context.ui.overview import OverviewWindow
 
         existing = self.switcher
         if isinstance(existing, OverviewWindow):
@@ -205,7 +207,7 @@ class ContextApplication(Gtk.Application):
 
         The same keybind again puts it away, the way the overview does.
         """
-        from .settings_window import SettingsWindow
+        from context.ui.settings_window import SettingsWindow
 
         existing = self.switcher
         if isinstance(existing, SettingsWindow):
@@ -222,7 +224,7 @@ class ContextApplication(Gtk.Application):
         context that forgets it the moment it is closed would have to be told
         again every time.
         """
-        from .app_picker import AppGridWindow
+        from context.ui.app_picker import AppGridWindow
 
         picker = AppGridWindow(
             self,
@@ -386,7 +388,7 @@ class ContextApplication(Gtk.Application):
             self.log.info("every window already belongs to a context")
             notify.send(self, "adopt", "Nothing to adopt", "Every window is in a context")
             return
-        from .adopt import AdoptWindow
+            from context.ui.adopt import AdoptWindow
 
         picker = AdoptWindow(self, self.store, loose, self.backend)
         self._show_picker(picker)
@@ -442,7 +444,7 @@ class ContextApplication(Gtk.Application):
         asks when that is the moment the user chose, so the setting is honoured
         without every caller having to check it.
         """
-        from . import settings
+        from context.state import settings
 
         wanted = settings.current().save_prompt
         if wanted == "never" or wanted != moment:
@@ -544,7 +546,7 @@ class ContextApplication(Gtk.Application):
         from one screen to every screen is the same operation as a cable being
         plugged in.
         """
-        from . import monitors
+        from context.system import monitors
 
         wanted = [getattr(m, "name", None) for m in monitors.docks_on(self.backend)]
         if wanted == [w.monitor for w in self.launchers]:
@@ -571,7 +573,7 @@ class ContextApplication(Gtk.Application):
         the store, so they show the same contexts and stay in step through
         `refresh_all`.
         """
-        from . import monitors
+        from context.system import monitors
 
         docks = monitors.docks_on(self.backend)
         for index, monitor in enumerate(docks):

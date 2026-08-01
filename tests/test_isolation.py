@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from context import isolation
-from context.adapters import base
-from context.resources import Resource
-from context.store import Context
+from context.system import isolation
+from context.system.adapters import base
+from context.state.resources import Resource
+from context.state.store import Context
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +102,7 @@ def test_child_env_isolates_only_inside_the_block(monkeypatch):
 
 
 def _decide(ctx, resource, available=True, monkeypatch=None):
-    from context import launcher
+    from context.system import launcher
 
     monkeypatch.setattr(isolation, "available", lambda: available)
     return launcher._isolation_for(ctx, resource)
@@ -135,7 +135,7 @@ def test_isolation_is_skipped_when_unavailable(monkeypatch):
 
 
 def test_the_context_flag_round_trips(isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("work")

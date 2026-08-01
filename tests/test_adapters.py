@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from context.adapters import adapter_for, configurable, describe, supports_profiles
-from context.adapters.base import GenericAdapter, child_env
-from context.adapters.firefox import FirefoxAdapter, profiles_root
-from context.resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource
+from context.system.adapters import adapter_for, configurable, describe, supports_profiles
+from context.system.adapters.base import GenericAdapter, child_env
+from context.system.adapters.firefox import FirefoxAdapter, profiles_root
+from context.state.resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource
 
 
 def test_firefox_resources_route_to_the_firefox_adapter():
@@ -212,14 +212,14 @@ def test_teardown_removes_a_dedicated_profile(isolated_store):
 
 
 def test_vscode_resources_route_to_the_vscode_adapter():
-    from context.adapters.vscode import VSCodeAdapter
+    from context.system.adapters.vscode import VSCodeAdapter
 
     assert isinstance(adapter_for(Resource(app_id="codium.desktop")), VSCodeAdapter)
     assert isinstance(adapter_for(Resource(app_id="code.desktop")), VSCodeAdapter)
 
 
 def test_vscode_offers_a_path_not_a_profile():
-    from context.adapters import supports_paths
+    from context.system.adapters import supports_paths
 
     resource = Resource(app_id="codium.desktop")
     assert supports_paths(resource)
@@ -228,7 +228,7 @@ def test_vscode_offers_a_path_not_a_profile():
 
 def test_target_kind_distinguishes_the_three_forms(tmp_path):
     """The CLI infers folder/file/workspace from the path; so must the UI."""
-    from context.adapters.vscode import target_kind
+    from context.system.adapters.vscode import target_kind
 
     folder = tmp_path / "project"
     folder.mkdir()
@@ -258,7 +258,7 @@ def test_vscode_describe_names_the_target(tmp_path):
 
 
 def test_vscode_passes_the_path_and_a_new_window(tmp_path, monkeypatch):
-    from context.adapters.vscode import VSCodeAdapter
+    from context.system.adapters.vscode import VSCodeAdapter
 
     adapter = VSCodeAdapter()
     commands: list[list[str]] = []
@@ -276,7 +276,7 @@ def test_vscode_passes_the_path_and_a_new_window(tmp_path, monkeypatch):
 def test_vscode_rejects_a_missing_path(tmp_path, monkeypatch):
     """Opening a path that is gone gives an empty window, which looks like the
     context failing to restore rather than a bad path."""
-    from context.adapters.vscode import VSCodeAdapter
+    from context.system.adapters.vscode import VSCodeAdapter
 
     adapter = VSCodeAdapter()
     monkeypatch.setattr(adapter, "executable", lambda: "/bin/codium")
@@ -291,7 +291,7 @@ def test_vscode_rejects_a_missing_path(tmp_path, monkeypatch):
 
 
 def test_terminal_resources_route_to_the_terminal_adapter():
-    from context.adapters.terminal import TerminalAdapter
+    from context.system.adapters.terminal import TerminalAdapter
 
     assert isinstance(
         adapter_for(Resource(app_id="com.gexperts.Tilix.desktop")), TerminalAdapter
@@ -299,7 +299,7 @@ def test_terminal_resources_route_to_the_terminal_adapter():
 
 
 def test_terminal_offers_a_path_and_a_command():
-    from context.adapters import supports_command, supports_paths
+    from context.system.adapters import supports_command, supports_paths
 
     resource = Resource(app_id="com.gexperts.Tilix.desktop")
     assert supports_paths(resource)
@@ -313,7 +313,7 @@ def test_tilix_is_told_to_make_a_new_window(tmp_path, monkeypatch):
     Without --action=app-new-window a context including a terminal silently
     gets no terminal.
     """
-    from context.adapters.terminal import TerminalAdapter
+    from context.system.adapters.terminal import TerminalAdapter
 
     adapter = TerminalAdapter()
     commands: list[list[str]] = []
@@ -330,7 +330,7 @@ def test_tilix_is_told_to_make_a_new_window(tmp_path, monkeypatch):
 def test_single_instance_suppresses_the_new_window_flag(tmp_path, monkeypatch):
     """Asking a single-instance app for a new window either fails or is
     ignored, so the switch turns it off."""
-    from context.adapters.terminal import TerminalAdapter
+    from context.system.adapters.terminal import TerminalAdapter
 
     adapter = TerminalAdapter()
     commands: list[list[str]] = []
@@ -349,7 +349,7 @@ def test_single_instance_suppresses_the_new_window_flag(tmp_path, monkeypatch):
 
 
 def test_force_new_window_off_suppresses_it_too(monkeypatch):
-    from context.adapters.terminal import TerminalAdapter
+    from context.system.adapters.terminal import TerminalAdapter
 
     adapter = TerminalAdapter()
     commands: list[list[str]] = []
@@ -364,7 +364,7 @@ def test_force_new_window_off_suppresses_it_too(monkeypatch):
 
 def test_terminal_command_comes_last(tmp_path, monkeypatch):
     """Most terminals treat everything after the command flag as the command."""
-    from context.adapters.terminal import TerminalAdapter
+    from context.system.adapters.terminal import TerminalAdapter
 
     adapter = TerminalAdapter()
     commands: list[list[str]] = []
@@ -381,7 +381,7 @@ def test_terminal_command_comes_last(tmp_path, monkeypatch):
 
 
 def test_terminal_rejects_a_path_that_is_not_a_directory(tmp_path, monkeypatch):
-    from context.adapters.terminal import TerminalAdapter
+    from context.system.adapters.terminal import TerminalAdapter
 
     adapter = TerminalAdapter()
     monkeypatch.setattr(adapter, "executable", lambda: "/bin/tilix")
@@ -530,7 +530,7 @@ def test_child_env_keeps_the_rest_of_the_environment(monkeypatch):
 
 def test_the_launch_context_unsets_rather_than_only_setting(monkeypatch):
     """Gio copies the process environment, so removal has to be explicit."""
-    from context.adapters import base
+    from context.system.adapters import base
 
     monkeypatch.setenv("ELECTRON_RUN_AS_NODE", "1")
     unset: list[str] = []
@@ -554,8 +554,8 @@ def test_the_launch_context_unsets_rather_than_only_setting(monkeypatch):
 
 
 def test_codium_resolves_to_the_vscode_adapter():
-    from context.adapters import adapter_for
-    from context.adapters.vscode import VSCodeAdapter
+    from context.system.adapters import adapter_for
+    from context.system.adapters.vscode import VSCodeAdapter
 
     assert isinstance(adapter_for(Resource(app_id="codium.desktop")), VSCodeAdapter)
 
@@ -563,7 +563,7 @@ def test_codium_resolves_to_the_vscode_adapter():
 def test_vscode_always_asks_for_a_new_window(monkeypatch):
     """With or without a path — otherwise a running instance answers with a
     tab in whichever window happened to be focused."""
-    from context.adapters.vscode import VSCodeAdapter
+    from context.system.adapters.vscode import VSCodeAdapter
 
     adapter = VSCodeAdapter()
     monkeypatch.setattr(adapter, "executable", lambda: "/bin/codium")

@@ -382,25 +382,35 @@ do to work well inside a context.
 
 ## Layout
 
+Three packages, split by what the code answers to:
+
 | Path | Purpose |
 | --- | --- |
-| `context/app.py` | Application entry point |
-| `context/window.py` | The launcher sidebar |
-| `context/editor.py` | The editor: layout preview and app grid |
-| `context/editor_window.py` | Hosts the editor full screen |
-| `context/resource_page.py` | What an app opens |
-| `context/apps.py` | Installed-app discovery |
-| `context/store.py` | Contexts, saved to disk |
-| `context/layout.py` | Slots, presets, and layout repair |
-| `context/launcher.py` | Opening and closing contexts |
-| `context/theme.py` | Colours |
-| `context/logging_setup.py` | Logging |
-| `context/sidebar.py` | Docking the launcher to a screen edge |
-| `context/monitors.py` | Which output things happen on |
-| `context/arrangement.py` | How a context spreads across screens |
-| `context/switcher.py` | Context and window pickers |
-| `context/settings.py` | User settings |
-| `context/settings_page.py` | The settings page |
-| `context/uistate.py` | Interface state that survives a restart |
-| `context/adapters/` | How each app opens what it is given |
-| `context/backends/` | How each window manager is driven |
+| `context/app.py` | Application entry point and command routing |
+| `context/state/` | What Context remembers |
+| `context/state/store.py` | Contexts, saved to disk; declared contexts |
+| `context/state/settings.py` | User settings |
+| `context/state/uistate.py` | Interface state that survives a restart |
+| `context/state/resources.py` | What a context holds |
+| `context/state/layout.py` | Slots, presets, and layout repair |
+| `context/state/arrangement.py` | How a context spreads across screens |
+| `context/system/` | Dealings with the rest of the system |
+| `context/system/launcher.py` | Opening, closing and switching contexts |
+| `context/system/backends/` | How each window manager is driven |
+| `context/system/adapters/` | How each app opens what it is given |
+| `context/system/apps.py` | Installed-app discovery, grouping, search |
+| `context/system/monitors.py` | Which output things happen on |
+| `context/system/isolation.py` | Private session buses |
+| `context/system/notify.py` | The notification daemon |
+| `context/system/logging_setup.py` | Logging |
+| `context/ui/` | Everything drawn |
+| `context/ui/window.py` | The launcher sidebar |
+| `context/ui/rail.py` | The collapsed sidebar |
+| `context/ui/rows.py` | The rows and tiles both views share |
+| `context/ui/overview.py` | Everything on one screen |
+| `context/ui/editor.py` | The editor: layout preview and app grid |
+| `context/ui/switcher.py` | Context and window pickers |
+| `context/ui/settings_page.py` | The settings screen's page |
+| `context/ui/sidebar.py` | Layer-shell: docking, overlays, keyboard |
+| `context/ui/theme.py` | Colours and the style.css contract |
+| `context/ui/widgets.py` | Plain-GTK stand-ins for libadwaita |

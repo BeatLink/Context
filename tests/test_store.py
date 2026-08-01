@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from context.layout import Layout, Slot
-from context.resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource
-from context.store import Context, ContextStore
+from context.state.layout import Layout, Slot
+from context.state.resources import PROFILE_DEDICATED, PROFILE_MAIN, Resource
+from context.state.store import Context, ContextStore
 
 
 def test_round_trip(isolated_store):
@@ -119,7 +119,7 @@ def test_declared_contexts_are_taken_in_once(tmp_path, monkeypatch):
     """
     import json
 
-    from context.store import ContextStore, declared_id
+    from context.state.store import ContextStore, declared_id
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -160,7 +160,7 @@ def test_declared_contexts_are_taken_in_once(tmp_path, monkeypatch):
 
 
 def test_a_broken_declaration_is_ignored(tmp_path, monkeypatch):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

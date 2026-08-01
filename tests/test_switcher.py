@@ -12,8 +12,9 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk
 
-from context import switcher, uistate
-from context.backends.base import WindowInfo
+from context.state import uistate
+from context.ui import switcher
+from context.system.backends.base import WindowInfo
 from tests.conftest import needs_display, run_app
 
 pytestmark = needs_display
@@ -31,7 +32,7 @@ def _rows(window):
 
 @pytest.fixture
 def store_with_contexts(isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     store.create("alpha")
@@ -180,7 +181,7 @@ def test_choosing_a_window_focuses_it(gtk_app, store_with_contexts, backend):
 
 
 def test_an_empty_list_says_so(gtk_app, isolated_store, backend):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 

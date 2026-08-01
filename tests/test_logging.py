@@ -7,7 +7,7 @@ what you read to debug a live session, and fixture names in it are misleading.
 
 from __future__ import annotations
 
-from context import logging_setup
+from context.system import logging_setup
 
 
 def test_the_log_follows_the_state_directory(tmp_path, monkeypatch):
@@ -45,7 +45,7 @@ def test_only_one_file_handler_is_ever_attached(tmp_path, monkeypatch):
 
 
 def test_ui_state_round_trips(tmp_path, monkeypatch):
-    from context import uistate
+    from context.state import uistate
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     assert uistate.get("collapsed", False) is False
@@ -54,7 +54,7 @@ def test_ui_state_round_trips(tmp_path, monkeypatch):
 
 
 def test_ui_state_merges_rather_than_replaces(tmp_path, monkeypatch):
-    from context import uistate
+    from context.state import uistate
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     uistate.save(collapsed=True)
@@ -64,7 +64,7 @@ def test_ui_state_merges_rather_than_replaces(tmp_path, monkeypatch):
 
 
 def test_broken_ui_state_is_ignored(tmp_path, monkeypatch):
-    from context import uistate
+    from context.state import uistate
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     path = uistate.state_path()

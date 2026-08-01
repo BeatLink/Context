@@ -20,11 +20,15 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from context import logging_setup, settings, theme  # noqa: E402
+from context.state import settings  # noqa: E402
+
+from context.system import logging_setup
+
+from context.ui import theme
 from dataclasses import replace  # noqa: E402
 
-from context.backends.base import MonitorInfo, WindowInfo, Workspace  # noqa: E402
-from context.layout import Slot  # noqa: E402
+from context.system.backends.base import MonitorInfo, WindowInfo, Workspace  # noqa: E402
+from context.state.layout import Slot  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

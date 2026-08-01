@@ -30,12 +30,20 @@ from this repo or pass absolute paths. Scripts run from elsewhere need
 
 ## Architecture
 
+Three packages, by what the code answers to: `state/` is what Context
+remembers (store, settings, uistate, resources, layout, arrangement),
+`system/` is its dealings with everything else (launcher, backends, adapters,
+apps, monitors, isolation, notify, logging), `ui/` is everything drawn.
+`app.py` stays at the top as the glue. Imports are absolute
+(`from context.state import settings`), so a module can move without its
+imports lying about where things are.
+
 Two extension points, both the same shape — a Protocol plus a registry with
 `detect()`, and a Null implementation so calling code never branches on absence:
 
-- **`backends/`** — where a context lives (workspace create/find/switch).
+- **`system/backends/`** — where a context lives (workspace create/find/switch).
   Hyprland is the only one; anything else falls back to `NullBackend`.
-- **`adapters/`** — how an app opens to a resource. Firefox, VS Code and
+- **`system/adapters/`** — how an app opens to a resource. Firefox, VS Code and
   terminals are adapted; everything else uses `GenericAdapter`.
 
 Isolation cuts across adapters rather than being one: `adapters.isolating()` is
@@ -44,7 +52,7 @@ a context manager the launcher wraps each launch in, and `child_env()` /
 new adapter gets isolation without knowing it exists — and not a module global,
 because launches run on worker threads and two contexts can start at once.
 
-When adding either, follow `backends/base.py`: a Protocol, a null/generic fallback,
+When adding either, follow `system/backends/base.py`: a Protocol, a null/generic fallback,
 and registration in `__init__.py`.
 
 **Hyprland is the only backend, deliberately.** Cinnamon was dropped rather than

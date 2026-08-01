@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from context.arrangement import Arrangement
-from context.layout import Layout, Slot
-from context.store import Context
-from context.resources import Resource
+from context.state.arrangement import Arrangement
+from context.state.layout import Layout, Slot
+from context.state.store import Context
+from context.state.resources import Resource
 
 
 def test_a_new_arrangement_is_one_screen():

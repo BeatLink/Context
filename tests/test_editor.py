@@ -20,7 +20,7 @@ pytestmark = needs_display
 
 
 def _build(app, ctx, seen):
-    from context.editor_window import EditorWindow
+    from context.ui.editor_window import EditorWindow
 
     return EditorWindow(
         app,
@@ -32,7 +32,7 @@ def _build(app, ctx, seen):
 
 
 def test_forget_asks_in_the_row_and_then_forgets(gtk_app, isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("doomed")
@@ -62,7 +62,7 @@ def test_forget_asks_in_the_row_and_then_forgets(gtk_app, isolated_store):
 
 
 def test_keeping_puts_the_row_back(gtk_app, isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("kept")
@@ -89,8 +89,8 @@ def test_keeping_puts_the_row_back(gtk_app, isolated_store):
 def test_a_new_context_offers_no_forget(gtk_app, isolated_store):
     """Backing out of a new context deletes it anyway; a forget button there
     would be a second delete with different wording."""
-    from context.editor_window import EditorWindow
-    from context.store import ContextStore
+    from context.ui.editor_window import EditorWindow
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("fresh")
@@ -122,10 +122,10 @@ def test_the_preview_edit_hotspot_opens_the_resource_page(gtk_app, isolated_stor
     looked dead. And the handler read `entries[index]` directly, where index
     is the slot's position on its screen, not overall.
     """
-    from context.editor_window import EditorWindow
-    from context.resource_page import ResourcePage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.ui.editor_window import EditorWindow
+    from context.ui.resource_page import ResourcePage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("edit-me")
@@ -161,9 +161,9 @@ def test_choosing_an_arrangement_applies_it(gtk_app, isolated_store):
     never keeps what is clicked in it, so both layout dropdowns appeared to do
     nothing at all.
     """
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -198,10 +198,10 @@ def test_choosing_an_arrangement_applies_it(gtk_app, isolated_store):
 
 
 def test_a_hand_dragged_layout_matches_no_arrangement(gtk_app, isolated_store):
-    from context.editor import EditorPage
-    from context.layout import Layout, Slot
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.ui.editor import EditorPage
+    from context.state.layout import Layout, Slot
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -226,9 +226,9 @@ def test_only_the_arrangements_that_fit_are_offered(gtk_app, isolated_store):
     """A preset was padded or trimmed to the window count, so "Three columns"
     over two windows meant two thirds of a screen and a gap, and "Grid" meant
     the same thing as side by side."""
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     seen = {}
 

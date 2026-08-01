@@ -6,8 +6,8 @@ the null backend, where apps launch onto the current workspace.
 
 from __future__ import annotations
 
-from context import backends
-from context.backends import NullBackend
+from context.system import backends
+from context.system.backends import NullBackend
 
 
 def test_only_hyprland_and_none_are_offered():

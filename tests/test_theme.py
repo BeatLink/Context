@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from context import theme
-from context.theme import Theme
+from context.ui import theme
+from context.ui.theme import Theme
 
 from tests.conftest import needs_display, run_app
 
@@ -129,7 +129,7 @@ def test_a_legacy_theme_json_is_flagged(caplog):
     legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_text("{}")
 
-    with caplog.at_level("WARNING", logger="context.theme"):
+    with caplog.at_level("WARNING", logger="context.ui.theme"):
         Theme.load()
     assert any("theme.json" in message for message in caplog.messages)
 

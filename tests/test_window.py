@@ -12,7 +12,7 @@ import pytest
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from context import widgets
+from context.ui import widgets
 
 from tests.conftest import needs_display, run_app
 
@@ -31,8 +31,8 @@ def rows(listbox):
 
 @pytest.fixture
 def window_factory(gtk_app, isolated_store):
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
 
@@ -153,7 +153,7 @@ def test_exact_title_opens_rather_than_duplicating(gtk_app, window_factory):
     opened = []
 
     def body(app):
-        from context.window import LauncherWindow
+        from context.ui.window import LauncherWindow
 
         window = LauncherWindow(app, store, lambda c: opened.append(c.title), None)
         window.entry.set_text("ALPHA")
@@ -167,9 +167,9 @@ def test_exact_title_opens_rather_than_duplicating(gtk_app, window_factory):
 
 def test_urls_are_editable_rows_not_a_text_box(gtk_app, isolated_store):
     """Each URL is separately removable, rather than lines in one box."""
-    from context.apps import App
-    from context.resource_page import ResourcePage
-    from context.resources import Resource
+    from context.system.apps import App
+    from context.ui.resource_page import ResourcePage
+    from context.state.resources import Resource
 
     resource = Resource(
         app_id="firefox.desktop", urls=["https://a.com", "https://b.com"]
@@ -198,9 +198,9 @@ def test_urls_are_editable_rows_not_a_text_box(gtk_app, isolated_store):
 
 
 def test_path_apps_get_a_picker_not_a_url_list(gtk_app, isolated_store):
-    from context.apps import App
-    from context.resource_page import ResourcePage
-    from context.resources import Resource
+    from context.system.apps import App
+    from context.ui.resource_page import ResourcePage
+    from context.state.resources import Resource
 
     resource = Resource(app_id="codium.desktop")
     app_info = App(id="codium.desktop", name="VSCodium", description="", icon=None)
@@ -229,8 +229,8 @@ def test_a_launched_context_moves_from_saved_to_open(gtk_app, isolated_store):
     A launch that blocked the main loop meant the poll never fired and the
     context stayed under Saved even though its windows were up.
     """
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     ctx = store.create("work")
@@ -255,8 +255,8 @@ def test_a_launched_context_moves_from_saved_to_open(gtk_app, isolated_store):
 
 def test_refresh_open_state_rereads_the_backend(gtk_app, isolated_store, monkeypatch):
     """A finished launch refreshes the list instead of waiting for the poll."""
-    from context.store import ContextStore
-    from context import window as window_module
+    from context.state.store import ContextStore
+    from context.ui import window as window_module
 
     store = ContextStore()
     ctx = store.create("work")
@@ -264,7 +264,7 @@ def test_refresh_open_state_rereads_the_backend(gtk_app, isolated_store, monkeyp
 
     def body(app):
         win = window_module.LauncherWindow(app, store, lambda c: None, lambda c: None)
-        from context.launcher import LiveState
+        from context.system.launcher import LiveState
 
         monkeypatch.setattr(
             window_module,
@@ -284,8 +284,8 @@ def test_refresh_open_state_rereads_the_backend(gtk_app, isolated_store, monkeyp
 
 
 def test_the_sidebar_starts_expanded(gtk_app, isolated_store):
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("alpha")
@@ -308,8 +308,8 @@ def test_collapsing_swaps_to_the_rail(gtk_app, isolated_store):
     Search and titles have nowhere to go at rail width, so the content is
     swapped out and the header — which carries both — is hidden.
     """
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("alpha")
@@ -346,8 +346,8 @@ def _rail_buttons(window) -> int:
 
 def test_the_rail_ignores_the_search_box(gtk_app, isolated_store):
     """There is no search bar at rail width to explain a filtered list."""
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("alpha")
@@ -366,8 +366,8 @@ def test_the_rail_ignores_the_search_box(gtk_app, isolated_store):
 
 
 def test_a_rail_button_opens_its_context(gtk_app, isolated_store):
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("alpha")
@@ -384,9 +384,9 @@ def test_a_rail_button_opens_its_context(gtk_app, isolated_store):
 
 
 def test_the_collapsed_state_survives_a_restart(gtk_app, isolated_store, monkeypatch):
-    from context import uistate
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import uistate
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("alpha")
@@ -404,7 +404,7 @@ def test_the_collapsed_state_survives_a_restart(gtk_app, isolated_store, monkeyp
         second = LauncherWindow(app, store, lambda c: None, lambda c: None)
         second.is_sidebar = True
         second.collapsed = bool(__import__(
-            "context.uistate", fromlist=["get"]
+            "context.state.uistate", fromlist=["get"]
         ).get("collapsed", False))
         seen["remembered"] = second.collapsed
         app.quit()
@@ -432,8 +432,8 @@ def test_the_rail_keeps_the_open_and_saved_grouping(gtk_app, isolated_store):
     There is no room for headings at rail width, so the divider is what says
     these are two groups rather than one ordered list.
     """
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     running = store.create("running")
@@ -460,8 +460,8 @@ def test_the_rail_keeps_the_open_and_saved_grouping(gtk_app, isolated_store):
 
 
 def test_the_rail_has_no_divider_without_both_groups(gtk_app, isolated_store):
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("idle")
@@ -479,8 +479,8 @@ def test_the_rail_has_no_divider_without_both_groups(gtk_app, isolated_store):
 
 def test_the_active_context_outranks_merely_being_open(gtk_app, isolated_store):
     """Three states, three appearances — the one you are in is not just 'open'."""
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     here = store.create("here")
@@ -509,8 +509,8 @@ def test_the_active_context_outranks_merely_being_open(gtk_app, isolated_store):
 def test_settings_open_as_a_screen_of_their_own(gtk_app, isolated_store):
     """They outgrew the sidebar: twenty-odd controls in a 380px column meant
     scrolling past three groups to reach the fourth."""
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     opened = []
@@ -529,9 +529,10 @@ def test_settings_open_as_a_screen_of_their_own(gtk_app, isolated_store):
 
 def test_changing_a_width_resizes_without_a_restart(gtk_app, isolated_store, monkeypatch):
     """The widths are the settings most worth seeing applied immediately."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -558,9 +559,9 @@ def test_hover_expansion_does_not_change_the_saved_state(
     gtk_app, isolated_store, monkeypatch
 ):
     """Peeking is not a decision — the rail is still what it goes back to."""
-    from context import uistate
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import uistate
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("alpha")
@@ -591,8 +592,8 @@ def test_hover_expansion_does_not_change_the_saved_state(
 
 
 def test_forgetting_removes_the_context(gtk_app, isolated_store):
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     ctx = store.create("doomed")
@@ -617,8 +618,8 @@ def test_the_rail_folds_saved_the_same_way_the_list_does(gtk_app, isolated_store
     The saved group is behind an accordion when expanded; the rail obeys the
     same answer rather than always showing everything.
     """
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     running = store.create("running")
@@ -652,8 +653,8 @@ def test_the_rail_folds_saved_the_same_way_the_list_does(gtk_app, isolated_store
 
 def test_the_rail_shows_saved_when_nothing_is_open(gtk_app, isolated_store):
     """With nothing running the saved list is the whole rail."""
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     store.create("idle")
@@ -689,9 +690,10 @@ def _rail_toggle(window):
 
 def test_hiding_gives_back_all_the_space(gtk_app, isolated_store, monkeypatch):
     """Hidden collapses to a sliver, not to the rail width."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -723,9 +725,10 @@ def test_hiding_always_reveals_on_hover(gtk_app, isolated_store, monkeypatch):
     With nothing on screen but a sliver, hover is the only way back short of a
     keybind — so it works whether or not expand-on-hover is switched on.
     """
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -761,7 +764,7 @@ def test_hiding_always_reveals_on_hover(gtk_app, isolated_store, monkeypatch):
 
 def _instant_collapse(monkeypatch) -> None:
     """No collapse delay, for the tests that are about something else."""
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setattr(
         settings, "_current", settings.current().replace(collapse_delay_ms=0)
@@ -770,7 +773,7 @@ def _instant_collapse(monkeypatch) -> None:
 
 def _catch_notifications(monkeypatch) -> list:
     """Collect what would have gone to the notification daemon."""
-    from context import notify
+    from context.system import notify
 
     sent = []
 
@@ -783,7 +786,7 @@ def _catch_notifications(monkeypatch) -> list:
 
 
 def _mode(monkeypatch, isolated_store, **changes):
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -791,9 +794,9 @@ def _mode(monkeypatch, isolated_store, **changes):
 
 
 def test_never_collapse_hides_the_button(gtk_app, isolated_store, monkeypatch):
-    from context import sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="none")
     seen = {}
@@ -824,9 +827,10 @@ def test_never_collapse_hides_the_button(gtk_app, isolated_store, monkeypatch):
 
 def test_switching_collapsing_off_expands_it_again(gtk_app, isolated_store, monkeypatch):
     """Otherwise the sidebar is left shrunk with no button to grow it."""
-    from context import settings, sidebar, uistate
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings, uistate
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail")
     seen = {}
@@ -857,9 +861,9 @@ def test_switching_collapsing_off_expands_it_again(gtk_app, isolated_store, monk
 def test_a_stored_collapse_is_ignored_when_collapsing_is_off(
     gtk_app, isolated_store, monkeypatch
 ):
-    from context import uistate
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import uistate
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="none")
     uistate.save(collapsed=True)
@@ -878,9 +882,9 @@ def test_a_stored_collapse_is_ignored_when_collapsing_is_off(
 
 def test_rail_and_never_collapse_stay_pinned(gtk_app, isolated_store, monkeypatch):
     """Only hiding unpins. A rail and never-collapse both reserve space."""
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail")
     seen = {}
@@ -903,10 +907,10 @@ def test_rail_and_never_collapse_stay_pinned(gtk_app, isolated_store, monkeypatc
 
 def test_settings_rows_hide_when_they_do_nothing(gtk_app, isolated_store, monkeypatch):
     """A width that applies to no mode is noise, not a setting."""
-    from context import settings
-    from context.settings_page import SettingsPage
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui.settings_page import SettingsPage
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail", auto_expand=False)
     seen = {}
@@ -947,10 +951,10 @@ def test_the_launcher_width_is_not_a_collapsing_setting(gtk_app, isolated_store,
     Collapsing only decides what the launcher shrinks *to*, so that width sits
     with the collapse mode and this one sits with the rest of the appearance.
     """
-    from context import settings
-    from context.settings_page import SettingsPage
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui.settings_page import SettingsPage
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="none")
     seen = {}
@@ -987,9 +991,9 @@ def _row_titles(page) -> list[str]:
 
 def test_a_restart_setting_offers_the_restart(gtk_app, isolated_store, monkeypatch):
     """Saying "applies on restart" is only useful with a way to do it."""
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail")
     seen = {}
@@ -1057,10 +1061,10 @@ def test_dragging_a_window_off_a_preview_moves_it_to_the_next_screen(
     It reported success at every step while doing nothing: the arrangement had
     one screen, so `assign` clamped the target back to where it started.
     """
-    from context import settings
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.state import settings
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1102,10 +1106,10 @@ def test_dragging_a_window_off_a_preview_moves_it_to_the_next_screen(
 
 
 def test_a_lone_preview_has_nowhere_to_drag_to(gtk_app, isolated_store, monkeypatch):
-    from context import settings
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.state import settings
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1137,10 +1141,10 @@ def test_the_edited_screen_mode_survives_done(gtk_app, isolated_store, monkeypat
     Arranging two screens and pressing Done left the context exactly as it
     was — the arrangement was never given to anything that saves.
     """
-    from context import settings
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.state import settings
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1174,10 +1178,10 @@ def test_the_edited_screen_mode_survives_done(gtk_app, isolated_store, monkeypat
 def test_switching_screen_mode_rebuilds_the_previews(
     gtk_app, isolated_store, monkeypatch
 ):
-    from context import settings
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.state import settings
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1204,10 +1208,10 @@ def test_switching_mode_keeps_what_the_other_mode_had(
     gtk_app, isolated_store, monkeypatch
 ):
     """Each screen mode is a separate layout; editing one must not clear another."""
-    from context import settings
-    from context.editor import EditorPage
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.state import settings
+    from context.ui.editor import EditorPage
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1242,7 +1246,7 @@ def test_the_sidebar_is_focusable_on_demand(gtk_app, isolated_store, monkeypatch
     a dropdown sends the sidebar a pointer-leave, the keyboard was dropped, and
     the popover dismissed itself a frame later.
     """
-    from context import sidebar
+    from context.ui import sidebar
 
     modes = []
 
@@ -1306,7 +1310,7 @@ def test_releasing_focus_returns_to_on_demand(gtk_app, isolated_store, monkeypat
     Staying on NONE would leave the sidebar unclickable for the rest of the
     session.
     """
-    from context import sidebar
+    from context.ui import sidebar
 
     modes = []
 
@@ -1335,9 +1339,10 @@ def test_releasing_focus_returns_to_on_demand(gtk_app, isolated_store, monkeypat
 
 def test_hovering_no_longer_touches_the_keyboard(gtk_app, isolated_store, monkeypatch):
     """Hover is only about expanding a collapsed sidebar now."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1368,8 +1373,8 @@ def test_clicking_a_row_opens_its_context(gtk_app, isolated_store):
     nothing, so clicking a context silently did nothing while the row's
     buttons kept working.
     """
-    from context.window import ContextRow
-    from context.store import Context
+    from context.ui.window import ContextRow
+    from context.state.store import Context
 
     opened = []
     seen = {}
@@ -1411,7 +1416,7 @@ def test_the_compositor_sees_the_release(gtk_app, isolated_store, monkeypatch):
     inside one commit collapses to no change at all, and the release never
     happened as far as the compositor is concerned.
     """
-    from context import sidebar
+    from context.ui import sidebar
 
     modes = []
 
@@ -1478,10 +1483,10 @@ def test_releasing_hands_the_keyboard_to_the_last_window(
     enter, so the window is focused explicitly — the recovery that clicking
     another window and coming back performs, done automatically.
     """
-    from context import sidebar
-    from context.backends.base import WindowInfo
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.system.backends.base import WindowInfo
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
     backend.open_windows = [
@@ -1508,10 +1513,10 @@ def test_leaving_with_the_keyboard_hands_it_back(
 ):
     """Clicking the sidebar then clicking back into the window is the report
     this exists to fix: the keyboard stayed here and typing went nowhere."""
-    from context import sidebar
-    from context.backends.base import WindowInfo
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.system.backends.base import WindowInfo
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     released = []
     monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
@@ -1543,10 +1548,10 @@ def test_a_popover_keeps_the_keyboard_until_it_closes(
     then still happens if the pointer stayed outside."""
     from gi.repository import GLib
 
-    from context import sidebar
-    from context.backends.base import WindowInfo
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.system.backends.base import WindowInfo
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     released = []
     monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
@@ -1580,9 +1585,9 @@ def test_leaving_without_the_keyboard_releases_nothing(
     gtk_app, isolated_store, monkeypatch, backend
 ):
     """Passing the pointer through the sidebar must not touch focus."""
-    from context import sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     released = []
     monkeypatch.setattr(sidebar, "release_focus", lambda _w: released.append(True))
@@ -1608,10 +1613,10 @@ def test_opening_a_context_hands_the_keyboard_over(
     gtk_app, isolated_store, monkeypatch, backend
 ):
     """The windows being opened should get the keyboard, not the launcher."""
-    from context import sidebar
-    from context.backends.base import WindowInfo
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.system.backends.base import WindowInfo
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(sidebar, "release_focus", lambda _w: None)
     backend.open_windows = [WindowInfo(id="0xrecent", title="editor", app_id="editor")]
@@ -1661,9 +1666,10 @@ def test_collapsing_applies_to_every_launcher(gtk_app, isolated_store, monkeypat
     Collapsing one and leaving the other expanded meant whichever restarted
     last decided what the setting had been.
     """
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1697,9 +1703,10 @@ def test_collapsing_applies_to_every_launcher(gtk_app, isolated_store, monkeypat
 
 
 def test_every_launcher_shows_the_rail(gtk_app, isolated_store, monkeypatch):
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1730,9 +1737,10 @@ def test_the_rail_reaches_the_width_it_was_set_to(gtk_app, isolated_store, monke
     The rail came out at 44px when set to 32, because a fixed icon size and the
     expand button's own minimum were both larger than the rail.
     """
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1762,7 +1770,8 @@ def test_the_rail_reaches_the_width_it_was_set_to(gtk_app, isolated_store, monke
 
 
 def test_the_rail_icon_fits_the_rail(isolated_store, monkeypatch):
-    from context import settings, window as window_module
+    from context.ui import window as window_module
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1783,9 +1792,10 @@ def test_collapsing_is_not_undone_by_the_pointer_still_being_there(
     — which had not moved — expanded it again a moment later, so the button
     appeared to do nothing at all.
     """
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1821,9 +1831,10 @@ def test_a_pending_hover_expand_is_cancelled_by_collapsing(
     gtk_app, isolated_store, monkeypatch
 ):
     """A queued expand must not fire after a deliberate collapse."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1863,9 +1874,9 @@ def test_clicking_into_the_sidebar_focuses_the_search(
     Asserted on the focused widget rather than on the keyboard mode, because
     the mode was already right while the bug was live.
     """
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1903,9 +1914,9 @@ def test_focusing_does_not_steal_from_what_was_clicked(
     The search box is only a fallback for a click that landed on nothing; a
     sidebar that grabbed focus back unconditionally would undo every click.
     """
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_store / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -1933,8 +1944,8 @@ def test_focusing_does_not_steal_from_what_was_clicked(
 def test_the_new_context_button_opens_the_overview(gtk_app, isolated_store):
     """The header's + opens the overview, and creates nothing by itself —
     what the new context becomes is chosen there."""
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     seen = {"overview": 0}
@@ -1954,9 +1965,10 @@ def test_a_grazed_edge_does_not_snap_the_sidebar_shut(gtk_app, isolated_store, m
     """Auto-collapse waits out a grace period, so the leave/enter pair the
     expand's own resize produces — or a pointer grazing the floating gap —
     does not close the sidebar under the pointer."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(sidebar, "available", lambda: True)
     monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
@@ -1998,9 +2010,9 @@ def test_the_hover_zone_holds_the_sidebar_open(
     """Once hover expands the sidebar, its zone — size plus margins from the
     docked edge — is what keeps it open. The gap between the trigger and the
     surface sends pointer-leave while the cursor never left the zone."""
-    from context import sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(sidebar, "available", lambda: True)
     monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
@@ -2043,10 +2055,10 @@ def test_the_hover_zone_holds_the_sidebar_open(
 
 def test_searching_finds_apps_as_well_as_contexts(gtk_app, isolated_store, monkeypatch):
     """Parity with the overview: the sidebar can start something new too."""
-    from context import window as window_module
-    from context.apps import App
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import window as window_module
+    from context.system.apps import App
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     apps = [
         App(id="firefox.desktop", name="Firefox", description="Browser", icon=None),
@@ -2080,10 +2092,10 @@ def test_searching_finds_apps_as_well_as_contexts(gtk_app, isolated_store, monke
 def test_an_app_from_the_sidebar_becomes_a_context_and_opens(
     gtk_app, isolated_store, monkeypatch
 ):
-    from context import window as window_module
-    from context.apps import App
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import window as window_module
+    from context.system.apps import App
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     apps = [App(id="kicad.desktop", name="KiCad", description="EDA", icon=None)]
     monkeypatch.setattr(window_module, "installed_apps", lambda: apps)
@@ -2118,9 +2130,11 @@ def test_the_rail_is_inset_from_its_card(gtk_app, isolated_store, monkeypatch):
     Everything in the expanded sidebar is inset from the edge; collapsed, the
     buttons were flush against it.
     """
-    from context import settings, sidebar, window as window_module
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import window as window_module
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail", rail_width=56)
     monkeypatch.setattr(sidebar, "available", lambda: True)
@@ -2150,9 +2164,11 @@ def test_the_sidebar_waits_out_the_collapse_delay(
     and retracting on the first frame outside it made the sidebar feel like it
     was running away.
     """
-    from context import settings, sidebar, window as window_module
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import window as window_module
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(sidebar, "available", lambda: True)
     monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
@@ -2219,10 +2235,10 @@ def test_what_the_launcher_reports_goes_to_the_desktop(
 ):
     """A toast over the sidebar is invisible while it is a rail, which is most
     of the time. The desktop's notification daemon is where these belong."""
-    from context.launcher import CloseResult, LaunchResult
-    from context.resources import Resource
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.system.launcher import CloseResult, LaunchResult
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     seen = {}
 
@@ -2245,7 +2261,8 @@ def test_what_the_launcher_reports_goes_to_the_desktop(
 
 
 def test_notifications_can_be_switched_off(gtk_app, isolated_store, monkeypatch):
-    from context import notify, settings
+    from context.state import settings
+    from context.system import notify
 
     monkeypatch.setattr(
         settings, "_current", settings.current().replace(notifications=False)
@@ -2277,10 +2294,10 @@ def test_notifications_can_be_switched_off(gtk_app, isolated_store, monkeypatch)
 def test_a_drifted_context_offers_to_be_saved(gtk_app, isolated_store, backend):
     """The prompt is the button's presence: it is there while there is
     something to keep, and gone once there is not."""
-    from context.layout import Layout, Slot
-    from context.resources import Resource
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state.layout import Layout, Slot
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     ctx = store.create(
@@ -2326,9 +2343,9 @@ def test_a_drifted_context_offers_to_be_saved(gtk_app, isolated_store, backend):
 
 
 def test_windows_in_no_context_are_listed_as_one(gtk_app, isolated_store, backend):
-    from context.launcher import NO_CONTEXT_ID
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.system.launcher import NO_CONTEXT_ID
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     store = ContextStore()
     seen = {"opened": [], "saved": []}
@@ -2364,9 +2381,10 @@ def test_the_collapse_button_pins_when_the_sidebar_opens_itself(
 ):
     """"Collapse" is the wrong word for a sidebar the pointer is holding open —
     and pressing it while peeking used to close it under the pointer."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail", auto_expand=True)
     monkeypatch.setattr(sidebar, "available", lambda: True)
@@ -2405,10 +2423,11 @@ def test_the_collapse_button_pins_when_the_sidebar_opens_itself(
 def test_the_sidebar_shows_only_what_is_switched_on(
     gtk_app, isolated_store, monkeypatch
 ):
-    from context import settings, window as window_module
-    from context.apps import App
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import window as window_module
+    from context.state import settings
+    from context.system.apps import App
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(
         window_module,
@@ -2531,9 +2550,9 @@ def test_nothing_opens_over_an_editor(gtk_app, isolated_store):
 def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypatch):
     """Same page, new home: its back button closes the screen rather than
     popping a stack that is not there."""
-    from context.settings_window import SettingsWindow
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui.settings_window import SettingsWindow
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     seen = {}
 
@@ -2559,9 +2578,9 @@ def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypat
 def test_the_top_row_joins_search_and_overview(gtk_app, isolated_store, monkeypatch):
     """Both on, they share a row and the button folds to its icon; the button
     alone takes the full width and says what it opens."""
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, show_search=True, show_overview_button=True)
     seen = {}
@@ -2595,9 +2614,9 @@ def test_the_empty_state_never_points_at_a_hidden_control(
 ):
     """"Type a name above" with the search box switched off pointed at
     nothing; "no contexts yet" over hidden saved contexts was a lie."""
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, show_search=False, show_new_context=False)
     seen = {}
@@ -2629,9 +2648,10 @@ def test_the_rail_hides_saved_contexts_with_the_list(
     gtk_app, isolated_store, monkeypatch
 ):
     """A rail that kept showing them disagreed with what it expands into."""
-    from context import settings, sidebar
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, collapse_mode="rail", show_saved=False)
     monkeypatch.setattr(sidebar, "available", lambda: True)
@@ -2662,9 +2682,9 @@ def test_a_horizontal_sidebar_gets_a_horizontal_rail(
 ):
     """Docked to the top, the rail is a row along the strip. Built as a column
     regardless, it overflowed a 56px-tall bar after two icons."""
-    from context import rail as rail_module
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import rail as rail_module
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, sidebar_edge="top", collapse_mode="rail")
     seen = {}
@@ -2685,7 +2705,7 @@ def test_a_horizontal_sidebar_gets_a_horizontal_rail(
 
 
 def test_search_matches_whatever_the_case(gtk_app, isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     store.create("Review Todos & Notes")
@@ -2701,10 +2721,11 @@ def test_an_app_from_search_can_join_the_current_context(
 ):
     """Where a searched app lands is a setting; without a context to add to,
     a new one is made whatever it says."""
-    from context import settings, window as window_module
-    from context.apps import App
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.ui import window as window_module
+    from context.state import settings
+    from context.system.apps import App
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     info = App(id="kicad.desktop", name="KiCad", description="", icon=None)
     monkeypatch.setattr(window_module, "installed_apps", lambda: [info])
@@ -2746,9 +2767,10 @@ def test_notifications_off_does_not_eat_the_drift_prompt(gtk_app, isolated_store
     out consumed the prompt without it ever appearing."""
     import logging
 
-    from context import notify, settings
+    from context.state import settings
+    from context.system import notify
     from context.app import ContextApplication
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -2786,9 +2808,9 @@ def test_the_restart_prompt_survives_notifications_being_off(
 ):
     """It is the only path to the restart the change needs: the setting
     silences reports, and a control is not a report."""
-    from context import settings
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     monkeypatch.setattr(
         settings, "_current", settings.current().replace(notifications=False)
@@ -2820,10 +2842,10 @@ def test_the_restart_prompt_survives_notifications_being_off(
 def test_the_apps_switch_needs_the_search_box(gtk_app, isolated_store, monkeypatch):
     """App results only ever appear while searching; a live switch with the
     search box off looked like a broken feature rather than a dependency."""
-    from context import settings
-    from context.settings_page import SettingsPage
-    from context.store import ContextStore
-    from context.window import LauncherWindow
+    from context.state import settings
+    from context.ui.settings_page import SettingsPage
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
 
     _mode(monkeypatch, isolated_store, show_search=False)
     seen = {}

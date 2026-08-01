@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from context import launcher
-from context.arrangement import Arrangement
-from context.backends.base import MonitorInfo, WindowInfo
-from context.resources import Resource
-from context.store import Context
+from context.system import launcher
+from context.state.arrangement import Arrangement
+from context.system.backends.base import MonitorInfo, WindowInfo
+from context.state.resources import Resource
+from context.state.store import Context
 
 
 @pytest.fixture
@@ -230,7 +230,7 @@ def test_screens_are_ordered_by_position_not_focus(backend):
 def test_a_windows_assigned_screen_is_honoured_whatever_is_focused(
     ctx, backend, monkeypatch
 ):
-    from context import adapters
+    from context.system import adapters
 
     launched: list[tuple[str, str]] = []
 
@@ -373,8 +373,8 @@ def test_a_context_with_no_workspace_has_not_drifted(ctx, backend):
 
 def test_the_no_context_is_everything_no_context_claims(backend):
     """One query answers open, focused, drifted and homeless together."""
-    from context import launcher
-    from context.store import ContextStore
+    from context.system import launcher
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("work")
@@ -402,7 +402,7 @@ def test_the_no_context_is_everything_no_context_claims(backend):
 
 
 def test_closing_the_no_context_closes_exactly_those_windows(backend):
-    from context import launcher
+    from context.system import launcher
 
     loose = [{"id": "0x2", "app_id": "b"}, {"id": "0x3", "app_id": "c"}]
     assert launcher.close_loose(loose, backend=backend) == 2
@@ -412,8 +412,8 @@ def test_closing_the_no_context_closes_exactly_those_windows(backend):
 def test_saving_the_no_context_gathers_its_windows_in(backend):
     """The windows are scattered across whatever workspaces they opened on, so
     saving them means moving them somewhere their positions mean something."""
-    from context import launcher
-    from context.store import ContextStore
+    from context.system import launcher
+    from context.state.store import ContextStore
 
     store = ContextStore()
     backend.place_windows("3", "b.desktop")
@@ -436,8 +436,8 @@ def test_saving_the_no_context_gathers_its_windows_in(backend):
 def test_the_context_you_are_in_is_open_even_with_no_windows(backend):
     """A context with no apps, or one whose windows you have just closed while
     standing in it, was listed as not running while you looked straight at it."""
-    from context import launcher
-    from context.store import ContextStore
+    from context.system import launcher
+    from context.state.store import ContextStore
 
     store = ContextStore()
     empty = store.create("blank")

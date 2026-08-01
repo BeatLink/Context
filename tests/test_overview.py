@@ -8,7 +8,7 @@ import pytest
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from context.apps import App
+from context.system.apps import App
 from tests.conftest import needs_display, run_app
 
 pytestmark = needs_display
@@ -47,7 +47,7 @@ def _headings(window) -> list[str]:
 
 @pytest.fixture
 def fake_apps(monkeypatch):
-    from context import overview
+    from context.ui import overview
 
     apps = [
         App(id="firefox.desktop", name="Firefox", description="Browser", icon=None),
@@ -58,14 +58,14 @@ def fake_apps(monkeypatch):
 
 
 def _build(app, store, backend):
-    from context.overview import OverviewWindow
+    from context.ui.overview import OverviewWindow
 
     window = OverviewWindow(app, store, backend=backend)
     return window
 
 
 def test_contexts_split_into_open_and_saved(gtk_app, isolated_store, backend, fake_apps):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     running = store.create("running")
@@ -89,7 +89,7 @@ def test_contexts_split_into_open_and_saved(gtk_app, isolated_store, backend, fa
 
 
 def test_one_search_filters_both_sides(gtk_app, isolated_store, backend, fake_apps):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     store.create("surf reddit")
@@ -111,7 +111,7 @@ def test_one_search_filters_both_sides(gtk_app, isolated_store, backend, fake_ap
 
 
 def test_a_context_row_routes_to_the_launcher(gtk_app, isolated_store, backend, fake_apps):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("alpha")
@@ -129,7 +129,7 @@ def test_a_context_row_routes_to_the_launcher(gtk_app, isolated_store, backend, 
 
 def test_an_app_becomes_a_new_context_and_opens(gtk_app, isolated_store, backend, fake_apps):
     """The point of the grid: one click from an installed app to working in it."""
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     seen = {"opened": []}
@@ -146,7 +146,7 @@ def test_an_app_becomes_a_new_context_and_opens(gtk_app, isolated_store, backend
     assert created.title == "KiCad"
     assert [r.app_id for r in created.resources] == ["kicad.desktop"]
     # Persisted, so it is a real context and not a one-off launch.
-    fresh = __import__("context.store", fromlist=["ContextStore"]).ContextStore()
+    fresh = __import__("context.state.store", fromlist=["ContextStore"]).ContextStore()
     assert "KiCad" in [c.title for c in fresh.contexts]
 
 
@@ -155,7 +155,7 @@ def test_a_row_offers_the_same_handles_as_the_sidebar(
 ):
     """Editing and closing were sidebar-only, so the overview could show a
     context but not do anything with it beyond opening."""
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("running")
@@ -187,7 +187,7 @@ def test_a_row_offers_the_same_handles_as_the_sidebar(
 
 def test_enter_starts_a_context_by_the_name_typed(gtk_app, isolated_store, fake_apps, backend):
     """The sidebar starts one; the overview used to do nothing at all."""
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     seen = {"edited": []}
@@ -205,7 +205,7 @@ def test_enter_starts_a_context_by_the_name_typed(gtk_app, isolated_store, fake_
 
 
 def test_the_built_in_row_says_what_it_will_do(gtk_app, isolated_store, fake_apps, backend):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     store.create("alpha")
@@ -231,7 +231,7 @@ def test_the_built_in_row_says_what_it_will_do(gtk_app, isolated_store, fake_app
 def test_opening_an_app_into_a_context_hands_over(
     gtk_app, isolated_store, backend, fake_apps
 ):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("alpha")
@@ -249,9 +249,9 @@ def test_opening_an_app_into_a_context_hands_over(
 
 
 def test_categories_narrow_the_grid(gtk_app, isolated_store, backend, monkeypatch):
-    from context import overview
-    from context.apps import App
-    from context.store import ContextStore
+    from context.ui import overview
+    from context.system.apps import App
+    from context.state.store import ContextStore
 
     apps = [
         App(id="a.desktop", name="Ardour", description="", icon=None,
@@ -296,8 +296,8 @@ def test_the_no_context_is_listed_with_the_open_ones(
     gtk_app, isolated_store, backend, fake_apps
 ):
     """Windows outside every context are a context until they are given one."""
-    from context.launcher import NO_CONTEXT_ID
-    from context.store import ContextStore
+    from context.system.launcher import NO_CONTEXT_ID
+    from context.state.store import ContextStore
 
     store = ContextStore()
     backend.geometry["stray"] = [
@@ -332,12 +332,12 @@ def test_the_no_context_is_listed_with_the_open_ones(
 def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch):
     """Three questions, three orders: the one I was just using, the one whose
     name I know, and the ones I actually work in."""
-    from context import overview
-    from context.apps import App
-    from context.resources import Resource
-    from context.store import ContextStore
+    from context.ui import overview
+    from context.system.apps import App
+    from context.state.resources import Resource
+    from context.state.store import ContextStore
 
-    from context import uistate
+    from context.state import uistate
 
     apps = [
         App(id="a.desktop", name="Ardour", description="", icon=None,
@@ -393,7 +393,7 @@ def test_an_app_can_go_into_the_context_you_are_in(
 ):
     """The grid answers two questions, and which one is a toggle rather than a
     different way in."""
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     store = ContextStore()
     ctx = store.create("work")
@@ -425,7 +425,7 @@ def test_an_app_can_go_into_the_context_you_are_in(
 def test_there_is_nothing_to_add_to_without_a_context(
     gtk_app, isolated_store, backend, fake_apps
 ):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -440,9 +440,9 @@ def test_there_is_nothing_to_add_to_without_a_context(
 
 
 def test_by_kind_groups_under_the_categories(gtk_app, isolated_store, backend, monkeypatch):
-    from context import overview
-    from context.apps import App
-    from context.store import ContextStore
+    from context.ui import overview
+    from context.system.apps import App
+    from context.state.store import ContextStore
 
     apps = [
         App(id="a.desktop", name="Ardour", description="", icon=None,

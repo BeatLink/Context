@@ -10,8 +10,8 @@ import json
 
 import pytest
 
-from context import settings
-from context.settings import Settings
+from context.state import settings
+from context.state.settings import Settings
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +84,7 @@ def test_update_leaves_other_values_alone(isolated_settings):
 
 
 def test_the_sidebar_reads_both_widths_from_settings(isolated_settings):
-    from context import sidebar
+    from context.ui import sidebar
 
     settings.update(sidebar_width=500, rail_width=72)
     assert sidebar.configured_width() == 500
@@ -93,7 +93,7 @@ def test_the_sidebar_reads_both_widths_from_settings(isolated_settings):
 
 def test_the_environment_still_wins(isolated_settings, monkeypatch):
     """A one-off override for a single run has to keep working."""
-    from context import sidebar
+    from context.ui import sidebar
 
     settings.update(sidebar_width=500, rail_width=72)
     monkeypatch.setenv("CONTEXT_SIDEBAR_WIDTH", "640")
@@ -122,7 +122,7 @@ def test_the_spin_control_is_left_to_the_theme(isolated_settings):
     alike. The rule reaches the entry but not the buttons, so the entry grows
     and the buttons do not.
     """
-    from context import theme
+    from context.ui import theme
 
     css = theme.Theme().css().decode()
     block = css[css.index(".ctx-spin"):]
@@ -131,7 +131,8 @@ def test_the_spin_control_is_left_to_the_theme(isolated_settings):
 
 def test_all_displays_is_a_monitor_choice(isolated_settings):
     """A layer surface belongs to one output, so this means one window each."""
-    from context import monitors, settings
+    from context.state import settings
+    from context.system import monitors
 
     settings.update(monitor=settings.ALL_MONITORS)
     assert monitors.everywhere()
@@ -141,8 +142,9 @@ def test_all_displays_is_a_monitor_choice(isolated_settings):
 
 
 def test_all_displays_asks_for_one_dock_per_screen(isolated_settings, backend):
-    from context import monitors, settings
-    from context.backends.base import MonitorInfo
+    from context.state import settings
+    from context.system import monitors
+    from context.system.backends.base import MonitorInfo
 
     backend.outputs = [
         MonitorInfo(name="A", width=1920, height=1080),
@@ -153,8 +155,9 @@ def test_all_displays_asks_for_one_dock_per_screen(isolated_settings, backend):
 
 
 def test_one_monitor_asks_for_one_dock(isolated_settings, backend):
-    from context import monitors, settings
-    from context.backends.base import MonitorInfo
+    from context.state import settings
+    from context.system import monitors
+    from context.system.backends.base import MonitorInfo
 
     backend.outputs = [MonitorInfo(name="A", width=1920, height=1080)]
     settings.update(monitor="")
@@ -165,7 +168,8 @@ def test_all_displays_with_nothing_connected_still_gives_one_dock(
     isolated_settings, backend
 ):
     """Better one launcher the compositor places than none at all."""
-    from context import monitors, settings
+    from context.state import settings
+    from context.system import monitors
 
     backend.outputs = []
     settings.update(monitor=settings.ALL_MONITORS)
@@ -190,7 +194,7 @@ def test_every_save_moment_is_accepted():
 
 
 def test_the_hover_delays_and_notifications_are_settings():
-    from context.settings import Settings
+    from context.state.settings import Settings
 
     live = Settings().validated()
     assert live.collapse_delay_ms > live.auto_expand_delay_ms

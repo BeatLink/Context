@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from context import launcher
-from context.layout import Layout, Slot, preset_for
-from context.launcher import close_context, context_is_open, launch_context
-from context.resources import Resource
-from context.store import Context
+from context.system import launcher
+from context.state.layout import Layout, Slot, preset_for
+from context.system.launcher import close_context, context_is_open, launch_context
+from context.state.resources import Resource
+from context.state.store import Context
 
 
 @pytest.fixture
@@ -147,7 +147,7 @@ def test_a_context_with_no_layout_gets_one(backend, stub_adapters):
 
 def test_a_broken_layout_is_repaired_on_launch(backend, stub_adapters):
     """A hand-edited contexts.json should not stop a context opening."""
-    from context.layout import Layout, Slot
+    from context.state.layout import Layout, Slot
 
     ctx = Context(
         title="broken",
@@ -282,7 +282,7 @@ def test_open_state_reports_an_empty_workspace_as_closed(backend):
 
 
 def _two_screens(backend):
-    from context.backends.base import MonitorInfo
+    from context.system.backends.base import MonitorInfo
 
     backend.outputs = [
         MonitorInfo(name="eDP-1", width=1920, height=1080, focused=True),
@@ -292,7 +292,7 @@ def _two_screens(backend):
 
 
 def test_a_context_gets_a_workspace_per_screen(ctx, backend, stub_adapters):
-    from context.arrangement import Arrangement
+    from context.state.arrangement import Arrangement
 
     _two_screens(backend)
     ctx.set_arrangement(2, Arrangement.spread(2, 2))
@@ -306,7 +306,7 @@ def test_a_context_gets_a_workspace_per_screen(ctx, backend, stub_adapters):
 def test_each_screen_gets_its_own_workspace_on_its_own_monitor(
     ctx, backend, stub_adapters
 ):
-    from context.arrangement import Arrangement
+    from context.state.arrangement import Arrangement
 
     _two_screens(backend)
     ctx.set_arrangement(2, Arrangement.spread(2, 2))
@@ -321,7 +321,7 @@ def test_each_screen_gets_its_own_workspace_on_its_own_monitor(
 def test_windows_launch_onto_the_screen_they_are_assigned(
     ctx, backend, stub_adapters
 ):
-    from context.arrangement import Arrangement
+    from context.state.arrangement import Arrangement
 
     _two_screens(backend)
     ctx.set_arrangement(2, Arrangement.spread(2, 2))
@@ -342,7 +342,7 @@ def test_undocking_falls_back_to_the_single_screen_arrangement(
     ctx, backend, stub_adapters
 ):
     """A context laid out for two monitors still opens on one."""
-    from context.arrangement import Arrangement
+    from context.state.arrangement import Arrangement
 
     ctx.set_arrangement(2, Arrangement.spread(2, 2))
     # Only one output attached now.
@@ -354,7 +354,7 @@ def test_undocking_falls_back_to_the_single_screen_arrangement(
 
 
 def test_closing_shuts_every_screen(ctx, backend, stub_adapters):
-    from context.arrangement import Arrangement
+    from context.state.arrangement import Arrangement
 
     _two_screens(backend)
     ctx.set_arrangement(2, Arrangement.spread(2, 2))
@@ -408,7 +408,7 @@ def test_reconnect_drops_every_handle_when_nothing_is_live(ctx, backend):
 
 def test_the_launch_ends_on_the_primary_screen(ctx, backend, stub_adapters):
     """Opening a context should leave you looking at its main work."""
-    from context.arrangement import Arrangement
+    from context.state.arrangement import Arrangement
 
     _two_screens(backend)
     ctx.set_arrangement(2, Arrangement.spread(2, 2))
@@ -423,7 +423,7 @@ def test_the_launch_ends_on_the_primary_screen(ctx, backend, stub_adapters):
 def test_hand_keyboard_back_focuses_the_most_recent_window(backend):
     """Hyprland does not re-send the keyboard enter when a layer lets go, so
     the window it still counts as focused is focused again explicitly."""
-    from context.backends.base import WindowInfo
+    from context.system.backends.base import WindowInfo
 
     backend.open_windows = [
         WindowInfo(id="0xrecent", title="editor", app_id="editor"),
@@ -445,7 +445,7 @@ def test_closing_a_picker_hands_the_keyboard_back(backend):
     """Dismissing the switcher without choosing anything left typing dead:
     the overlay's unmap reported the window active without the keyboard."""
     from context.app import ContextApplication
-    from context.backends.base import WindowInfo
+    from context.system.backends.base import WindowInfo
 
     app = ContextApplication()
     app.backend = backend
@@ -462,7 +462,7 @@ def test_the_rest_of_a_resource_waits_for_its_window(backend, monkeypatch):
     Firefox's remaining tabs land in whatever window is focused, so delivering
     them before the new window exists sends them to the wrong one.
     """
-    from context import adapters
+    from context.system import adapters
 
     order = []
 
@@ -491,8 +491,8 @@ def test_a_raised_window_is_adopted_into_the_context(backend, monkeypatch):
     already has, somewhere else. Launching used to report success while the
     context stayed empty; the window the app raised is the answer, so it is
     moved in."""
-    from context import adapters
-    from context.backends.base import WindowInfo
+    from context.system import adapters
+    from context.system.backends.base import WindowInfo
 
     monkeypatch.setattr(launcher, "WINDOW_TIMEOUT", 0.3)
 
@@ -519,8 +519,8 @@ def test_a_raised_window_is_adopted_into_the_context(backend, monkeypatch):
 
 def test_an_unrelated_window_is_not_stolen(backend, monkeypatch):
     """Adoption is for the app that was launched, never for whatever exists."""
-    from context import adapters
-    from context.backends.base import WindowInfo
+    from context.system import adapters
+    from context.system.backends.base import WindowInfo
 
     monkeypatch.setattr(launcher, "WINDOW_TIMEOUT", 0.3)
 
@@ -546,7 +546,7 @@ def test_an_unrelated_window_is_not_stolen(backend, monkeypatch):
 def test_the_hand_back_does_not_move_the_pointer(backend):
     """It runs as the pointer leaves the sidebar; Hyprland's focus warp would
     snap the cursor into the window mid-gesture and collapse the sidebar."""
-    from context.backends.base import WindowInfo
+    from context.system.backends.base import WindowInfo
 
     backend.open_windows = [WindowInfo(id="0xrecent", title="e", app_id="e")]
 

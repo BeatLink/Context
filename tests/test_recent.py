@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from context import uistate
+from context.state import uistate
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +57,7 @@ def test_a_corrupt_history_is_ignored():
 
 
 def test_how_long_ago_reads_the_way_a_person_says_it():
-    from context.apps import DAY, HOUR, recency_heading
+    from context.system.apps import DAY, HOUR, recency_heading
 
     assert recency_heading(0) == "Just now"
     assert recency_heading(59 * 60) == "Just now"
@@ -75,8 +75,8 @@ def test_launching_an_app_is_what_makes_it_recent(tmp_path, monkeypatch):
     the same as one picked out of the grid."""
     import time
 
-    from context import uistate
-    from context.apps import App, arrange_apps
+    from context.state import uistate
+    from context.system.apps import App, arrange_apps
 
     monkeypatch.setenv("CONTEXT_UI_STATE", str(tmp_path / "ui.json"))
     now = time.time()
@@ -103,7 +103,7 @@ def test_an_order_without_times_is_not_guessed_at(tmp_path, monkeypatch):
     when those launches happened, so they are dropped rather than invented."""
     import json
 
-    from context import uistate
+    from context.state import uistate
 
     path = tmp_path / "ui.json"
     path.write_text(json.dumps({"recent_apps": ["a.desktop", "b.desktop"]}))

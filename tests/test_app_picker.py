@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from context.apps import App
+from context.system.apps import App
 from tests.conftest import needs_display, run_app
 
 pytestmark = needs_display
@@ -12,7 +12,7 @@ pytestmark = needs_display
 
 @pytest.fixture
 def fake_apps(monkeypatch):
-    from context import app_picker
+    from context.ui import app_picker
 
     apps = [
         App(id="firefox.desktop", name="Firefox", description="Browser", icon=None),
@@ -32,7 +32,7 @@ def _tiles(flow) -> list:
 
 
 def test_the_search_narrows_the_grid(gtk_app, isolated_store, fake_apps):
-    from context.app_picker import AppGridWindow
+    from context.ui.app_picker import AppGridWindow
 
     seen = {}
 
@@ -51,7 +51,7 @@ def test_the_search_narrows_the_grid(gtk_app, isolated_store, fake_apps):
 
 
 def test_enter_picks_the_first_match_and_leaves(gtk_app, isolated_store, fake_apps):
-    from context.app_picker import AppGridWindow
+    from context.ui.app_picker import AppGridWindow
 
     picked = []
 
@@ -77,7 +77,7 @@ def test_an_app_joins_the_context_and_launches_it(gtk_app, isolated_store, backe
     import logging
 
     from context.app import ContextApplication
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 

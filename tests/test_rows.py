@@ -7,8 +7,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from context.apps import App
-from context.rows import AppRow, ContextRow, app_tile, context_for_app
+from context.system.apps import App
+from context.ui.rows import AppRow, ContextRow, app_tile, context_for_app
 from tests.conftest import needs_display, run_app
 
 pytestmark = needs_display
@@ -36,7 +36,7 @@ def test_an_ampersand_in_a_title_is_shown_as_one(gtk_app, isolated_store):
     Only the current context's row parses markup — it is bolded — so every
     other row spelled the entities out: "Review todos &amp; notes".
     """
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -55,7 +55,7 @@ def test_an_ampersand_in_a_title_is_shown_as_one(gtk_app, isolated_store):
 
 
 def test_the_menu_offers_what_the_row_can_do(gtk_app, isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -91,7 +91,7 @@ def test_the_menu_offers_what_the_row_can_do(gtk_app, isolated_store):
 
 def test_forgetting_from_the_menu_asks_first(gtk_app, isolated_store):
     """One click either side of "Close" must not lose a context."""
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -118,7 +118,7 @@ def test_forgetting_from_the_menu_asks_first(gtk_app, isolated_store):
 
 
 def test_opening_an_app_here_routes_to_the_hook(gtk_app, isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 
@@ -168,7 +168,7 @@ def test_a_tile_carries_the_app_it_shows(gtk_app, isolated_store):
 
 
 def test_a_context_for_an_app_is_saved_with_a_layout(gtk_app, isolated_store):
-    from context.store import ContextStore
+    from context.state.store import ContextStore
 
     seen = {}
 

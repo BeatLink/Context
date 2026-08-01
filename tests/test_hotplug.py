@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import pytest
 
-from context import monitors, settings
+from context.state import settings
+from context.system import monitors
 from context.app import ContextApplication
-from context.backends.base import MonitorInfo
+from context.system.backends.base import MonitorInfo
 
 
 class FakeWindow:

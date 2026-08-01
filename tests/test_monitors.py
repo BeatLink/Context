@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from context import monitors
-from context.backends.base import MonitorInfo
+from context.system import monitors
+from context.system.backends.base import MonitorInfo
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def test_the_preview_uses_the_focused_monitor(two_screens):
 
 
 def test_the_preview_uses_the_configured_monitor(two_screens, monkeypatch, tmp_path):
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -54,7 +54,7 @@ def test_an_unplugged_monitor_falls_back_to_the_focused_one(
     two_screens, monkeypatch, tmp_path
 ):
     """A laptop configured for its dock spends most of its time away from it."""
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -89,7 +89,7 @@ def test_the_setting_is_not_validated_against_what_is_plugged_in(monkeypatch, tm
     Validating it away would mean configuring a docking station only while
     docked, and losing the setting every time the cable came out.
     """
-    from context.settings import Settings
+    from context.state.settings import Settings
 
     assert Settings(monitor="DP-9").validated().monitor == "DP-9"
     assert Settings(monitor="  DP-9  ").validated().monitor == "DP-9"
@@ -105,7 +105,7 @@ def test_screens_are_numbered_by_the_configured_order(two_screens, monkeypatch, 
     A context only ever says "screen 2", so moving a cable is a change here
     rather than an edit to every context that mentioned the old monitor.
     """
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -118,7 +118,7 @@ def test_screens_are_numbered_by_the_configured_order(two_screens, monkeypatch, 
 
 def test_an_unplugged_monitor_does_not_leave_a_gap(two_screens, monkeypatch, tmp_path):
     """Unplugging the middle screen should promote the next, not lose one."""
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -130,7 +130,7 @@ def test_an_unplugged_monitor_does_not_leave_a_gap(two_screens, monkeypatch, tmp
 def test_monitors_the_order_does_not_mention_keep_their_place(
     two_screens, monkeypatch, tmp_path
 ):
-    from context import settings
+    from context.state import settings
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -141,7 +141,8 @@ def test_monitors_the_order_does_not_mention_keep_their_place(
 
 def test_the_launcher_uses_the_configured_order(two_screens, monkeypatch, tmp_path):
     """Screen 1 must be the same monitor for the editor and the launcher."""
-    from context import launcher, settings
+    from context.state import settings
+    from context.system import launcher
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(settings, "_current", None)
@@ -152,7 +153,7 @@ def test_the_launcher_uses_the_configured_order(two_screens, monkeypatch, tmp_pa
 
 def test_screen_modes_are_bounded():
     """More than a handful and the editor stops being readable."""
-    from context.settings import MAX_SCREENS, MIN_SCREENS, Settings
+    from context.state.settings import MAX_SCREENS, MIN_SCREENS, Settings
 
     assert Settings(max_screens=99).validated().max_screens == MAX_SCREENS
     assert Settings(max_screens=0).validated().max_screens == MIN_SCREENS
@@ -160,7 +161,7 @@ def test_screen_modes_are_bounded():
 
 def test_the_screen_order_survives_a_round_trip(monkeypatch, tmp_path):
     """Naming a monitor that is unplugged has to persist, as with `monitor`."""
-    from context.settings import Settings
+    from context.state.settings import Settings
 
     live = Settings(screen_order=["DP-9", "eDP-1"]).validated()
     assert live.screen_order == ["DP-9", "eDP-1"]
