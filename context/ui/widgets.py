@@ -218,6 +218,24 @@ class ActionRow(Row):
     def add_suffix(self, widget: Gtk.Widget) -> None:
         self._suffixes.append(widget)
 
+    def link_suffixes(self) -> None:
+        """Draw the suffix buttons as one linked control rather than loose icons.
+
+        Call it once every suffix is on. `.linked` rounds by position among the
+        box's children, and `:first-child` is structural rather than visual, so
+        a button that is present but hidden would leave its neighbour square on
+        one side — only add the ones that are going to show.
+
+        The frame has to come back for the join to be visible at all, so `flat`
+        is dropped here rather than at each call site.
+        """
+        self._suffixes.set_spacing(0)
+        self._suffixes.add_css_class("linked")
+        child = self._suffixes.get_first_child()
+        while child is not None:
+            child.remove_css_class("flat")
+            child = child.get_next_sibling()
+
     def set_activatable_widget(self, widget: Gtk.Widget | None) -> None:
         """Clicking the row acts on this widget — usually a switch.
 
@@ -278,6 +296,24 @@ class EntryRow(Row):
 
     def add_suffix(self, widget: Gtk.Widget) -> None:
         self._suffixes.append(widget)
+
+    def link_suffixes(self) -> None:
+        """Draw the suffix buttons as one linked control rather than loose icons.
+
+        Call it once every suffix is on. `.linked` rounds by position among the
+        box's children, and `:first-child` is structural rather than visual, so
+        a button that is present but hidden would leave its neighbour square on
+        one side — only add the ones that are going to show.
+
+        The frame has to come back for the join to be visible at all, so `flat`
+        is dropped here rather than at each call site.
+        """
+        self._suffixes.set_spacing(0)
+        self._suffixes.add_css_class("linked")
+        child = self._suffixes.get_first_child()
+        while child is not None:
+            child.remove_css_class("flat")
+            child = child.get_next_sibling()
 
     def add_prefix(self, widget: Gtk.Widget) -> None:
         self._suffixes.prepend(widget)
@@ -371,7 +407,9 @@ class SegmentedChoice(Gtk.Box):
     """
 
     def __init__(self, on_change) -> None:
-        super().__init__(spacing=4)
+        # No spacing: `.linked` joins the buttons into one control, and a gap
+        # between them is exactly what stops that reading.
+        super().__init__(spacing=0)
         self.add_css_class("linked")
         self.on_change = on_change
         self._buttons: list[Gtk.ToggleButton] = []

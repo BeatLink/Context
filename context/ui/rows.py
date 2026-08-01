@@ -122,7 +122,6 @@ class ContextRow(widgets.ActionRow):
         )
         self.save.set_visible(bool(is_drifted and on_save is not None))
         self.save.connect("clicked", lambda _b: on_save and on_save(ctx))
-        self.add_suffix(self.save)
 
         self.close = Gtk.Button(
             icon_name="media-playback-stop-symbolic", valign=Gtk.Align.CENTER
@@ -135,7 +134,6 @@ class ContextRow(widgets.ActionRow):
         )
         self.close.set_visible(bool(is_open and on_close is not None))
         self.close.connect("clicked", lambda _b: on_close and on_close(ctx))
-        self.add_suffix(self.close)
 
         self.edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER)
         self.edit.add_css_class("flat")
@@ -144,7 +142,12 @@ class ContextRow(widgets.ActionRow):
         # context: it has no definition until it is saved as one.
         self.edit.set_visible(on_edit is not None)
         self.edit.connect("clicked", lambda _b: on_edit and on_edit(ctx))
-        self.add_suffix(self.edit)
+
+        # Only the ones that will show, then joined — see `link_suffixes`.
+        for button in (self.save, self.close, self.edit):
+            if button.get_visible():
+                self.add_suffix(button)
+        self.link_suffixes()
 
         self.connect("activated", lambda _r: on_open(ctx))
 
@@ -269,13 +272,16 @@ class AppRow(widgets.ActionRow):
         self.here.set_tooltip_text(f"Open “{info.name}” in this context")
         self.here.set_visible(on_current is not None)
         self.here.connect("clicked", lambda _b: on_current and on_current(info))
-        self.add_suffix(self.here)
 
         self.fresh = Gtk.Button(icon_name="list-add-symbolic", valign=Gtk.Align.CENTER)
         self.fresh.add_css_class("flat")
         self.fresh.set_tooltip_text(f"Open a new “{info.name}” context")
         self.fresh.connect("clicked", lambda _b: on_new(info))
-        self.add_suffix(self.fresh)
+
+        for button in (self.here, self.fresh):
+            if button.get_visible():
+                self.add_suffix(button)
+        self.link_suffixes()
 
         # Activating the row takes the answer that always works: with no context
         # open there is nothing to add to, so a new one is the only one of the

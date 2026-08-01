@@ -187,3 +187,52 @@ def test_a_context_for_an_app_is_saved_with_a_layout(gtk_app, isolated_store):
     assert seen["apps"] == ["kicad.desktop"]
     assert seen["slots"] == 1
     assert seen["stored"] == ["KiCad"]
+
+
+@needs_display
+def test_a_row_only_carries_the_buttons_it_will_show(gtk_app):
+    """`.linked` rounds by position among the box's children and `:first-child`
+    is structural, not visual — a button that is present but hidden would leave
+    its neighbour square on one side. So only the ones that show are added."""
+    from context.state.store import ContextStore
+    from context.ui.rows import ContextRow
+
+    seen = {}
+
+    def suffixes(row):
+        found, child = [], row._suffixes.get_first_child()
+        while child is not None:
+            found.append(child)
+            child = child.get_next_sibling()
+        return found
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create("work")
+
+        busy = ContextRow(
+            ctx,
+            lambda c: None,
+            lambda c: None,
+            lambda c: None,
+            is_open=True,
+            is_drifted=True,
+            on_save=lambda c: None,
+        )
+        seen["open"] = len(suffixes(busy))
+        seen["linked"] = busy._suffixes.has_css_class("linked")
+        seen["spacing"] = busy._suffixes.get_spacing()
+        # The frame has to come back or there is no join to see.
+        seen["flat"] = [b.has_css_class("flat") for b in suffixes(busy)]
+
+        # Saved and not drifted: only the pencil, so it is first and last at
+        # once and keeps a rounded corner on both sides.
+        seen["saved"] = len(suffixes(ContextRow(ctx, lambda c: None, lambda c: None, None)))
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["open"] == 3
+    assert seen["saved"] == 1
+    assert seen["linked"] is True
+    assert seen["spacing"] == 0
+    assert seen["flat"] == [False, False, False]

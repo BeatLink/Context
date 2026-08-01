@@ -281,6 +281,36 @@ popover > arrow {
     border-bottom: none;
 }
 
+/* `.linked` was libadwaita's too, and went the same way as the two above —
+   still on the search row, on every SegmentedChoice and on the settings tabs,
+   with nothing defining it. The buttons sat flush and each kept its own
+   rounded corners, so a joined control read as a row of separate ones with
+   the seams showing.
+
+   A GtkStackSwitcher gets the same treatment: it is a linked group that does
+   not carry the class, since GTK styles it by element name. */
+.linked > button,
+.linked > entry,
+stackswitcher > button {
+    border-radius: 0;
+}
+.linked > *:first-child,
+stackswitcher > button:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+.linked > *:last-child,
+stackswitcher > button:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+/* One border between neighbours rather than each drawing its own, which at
+   this size is the difference between a join and a gap. */
+.linked > *:not(:first-child),
+stackswitcher > button:not(:first-child) {
+    border-left-width: 0;
+}
+
 .dim-label {
     opacity: 0.7;
 }
