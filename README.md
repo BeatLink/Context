@@ -251,7 +251,7 @@ need a restart say so.
 | Ask to save | When to offer to keep a context's changes |
 | Notifications | Report launches, closes and drift to the desktop |
 | Search | Show the sidebar's search box and its "New context" row |
-| Overview button | Show the + in the sidebar's header |
+| Overview button | Show the Overview button at the top of the sidebar |
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |
 | Log level | How much detail is written to the log |

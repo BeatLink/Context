@@ -1941,7 +1941,7 @@ def test_the_new_context_button_opens_the_overview(gtk_app, isolated_store):
     def body(app):
         app.open_overview = lambda: seen.update(overview=seen["overview"] + 1)
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        window.new_button.emit("clicked")
+        window.overview_button.emit("clicked")
         app.quit()
 
     run_app(gtk_app, body)
@@ -2428,7 +2428,7 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
         seen["search"] = window.entry.get_visible()
         seen["create"] = window.create_list.get_visible()
-        seen["overview"] = window.new_button.get_visible()
+        seen["overview"] = window.overview_button.get_visible()
         seen["saved"] = window.saved_expander.get_visible()
         window.entry.set_text("fire")
         window.refresh()

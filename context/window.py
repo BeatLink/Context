@@ -109,12 +109,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.header.set_show_start_title_buttons(False)
             self.header.set_show_end_title_buttons(False)
 
-        self.new_button = Gtk.Button(icon_name="list-add-symbolic")
-        self.new_button.add_css_class("flat")
-        self.new_button.set_tooltip_text("New context")
-        self.new_button.connect("clicked", lambda _b: self._new_context())
-        self.header.pack_start(self.new_button)
-
         self.settings_button = Gtk.Button(icon_name="preferences-system-symbolic")
         self.settings_button.add_css_class("flat")
         self.settings_button.set_tooltip_text("Settings")
@@ -146,6 +140,21 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.entry.set_hexpand(True)
         self.entry.connect("changed", self._on_entry_changed)
         self.entry.connect("activate", self._on_entry_activate)
+
+        # Everything Context can open, on one screen. In the body rather than
+        # the header, and saying what it opens: as a + in the corner it read as
+        # "new context", which is the row below's job, and the overview is a
+        # bigger thing than an icon in a corner suggests.
+        self.overview_button = Gtk.Button(hexpand=True)
+        overview_face = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        overview_face.append(Gtk.Image.new_from_icon_name("view-grid-symbolic"))
+        overview_face.append(Gtk.Label(label="Overview"))
+        self.overview_button.set_child(overview_face)
+        self.overview_button.set_tooltip_text(
+            "Everything you can open, on one screen"
+        )
+        self.overview_button.connect("clicked", lambda _b: self._new_context())
+        content.append(self.overview_button)
 
         # No Start button: Enter is the trigger, and the row below is the
         # clickable path — a button that mirrored the row said the same thing
@@ -616,7 +625,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         live = settings.current()
         self.entry.set_visible(live.show_search)
         self.create_list.set_visible(live.show_search)
-        self.new_button.set_visible(live.show_overview_button)
+        self.overview_button.set_visible(live.show_overview_button)
 
     def _sync_collapse_button(self) -> None:
         """What the header's button means, which depends on how it collapses.
