@@ -149,6 +149,7 @@ class SettingsPage(widgets.NavigationPage):
         page = widgets.Page(max_width=760)
         page.add(self._appearance())
         page.add(self._sidebar_contents())
+        page.add(self._scratchpad())
         page.add(self._screens())
         page.add(self._behaviour())
         page.add(self._saving())
@@ -426,6 +427,61 @@ class SettingsPage(widgets.NavigationPage):
         self._sync_sidebar_rows()
         return group
 
+    def _scratchpad(self) -> widgets.Group:
+        live = settings.current()
+        group = widgets.Group(
+            title="Scratchpad",
+            description="Notes, kept as every version they have ever had. "
+            "Editing an old version adds a new one; nothing is overwritten and "
+            "nothing is thrown away.",
+        )
+        self.scratchpad_row = _row_switch(
+            "Notes",
+            "List notes in the sidebar and the overview, and let them be "
+            "written. Switching this off leaves what is written on disk.",
+            live.scratchpad,
+            lambda value: self._apply(scratchpad=value, resync=True),
+        )
+        group.add(self.scratchpad_row)
+
+        self.scratchpad_rows = []
+        for title, subtitle, field in (
+            (
+                "Global notes",
+                "Notes that stand outside any context, listed wherever you are.",
+                "scratchpad_global",
+            ),
+            (
+                "Context notes",
+                "Notes owned by a context, listed only while you are in it. A "
+                "note can be moved between the two in its editor.",
+                "scratchpad_per_context",
+            ),
+            (
+                "In the sidebar",
+                "The Notes section in the narrow list. The overview shows notes "
+                "either way.",
+                "show_notes",
+            ),
+        ):
+            row = _row_switch(
+                title,
+                subtitle,
+                getattr(live, field),
+                lambda value, name=field: self._apply(**{name: value}, resync=True),
+            )
+            group.add(row)
+            self.scratchpad_rows.append(row)
+        self._sync_scratchpad_rows()
+        return group
+
+    def _sync_scratchpad_rows(self) -> None:
+        # The three below are all about *which* notes are listed, which is not a
+        # question at all while the scratchpad is off.
+        live = settings.current()
+        for row in getattr(self, "scratchpad_rows", []):
+            row.set_sensitive(live.scratchpad)
+
     def _sync_sidebar_rows(self) -> None:
         # App results cannot appear without the search box that summons them;
         # a live switch here looked like a broken feature rather than a
@@ -438,6 +494,7 @@ class SettingsPage(widgets.NavigationPage):
         """Hide the settings that the current mode makes meaningless."""
         if hasattr(self, "apps_switch_row"):
             self._sync_sidebar_rows()
+        self._sync_scratchpad_rows()
         live = settings.current()
         collapses = live.collapse_mode != "none"
 

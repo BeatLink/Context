@@ -494,6 +494,33 @@ than to a toast over its own list, which nobody sees while it is a rail. The
 drift prompt's "Save layout" is a notification button, so the machinery has to
 carry actions, not only text. A `notifications` setting turns them off.
 
+### 24. The scratchpad — *done*
+
+Notes, in the sidebar and the overview, edited in an overlay. Kept as an
+append-only list of versions rather than a body with an undo stack: editing an
+old version appends a new one recording what it was written from, so nothing
+between it and the tip is lost. The history is a tree stored as a flat list.
+
+The append-only rule is the part to hold on to. An ordinary undo stack would be
+a smaller implementation and would quietly truncate the future the first time
+someone edited from history, which is exactly the thing a scratchpad must not
+do. `test_editing_from_history_keeps_the_versions_after_it` pins it.
+
+Formatting is line markers in the text (`- `, `- [ ] `, `- [x] `, two spaces per
+nesting level) rather than a rich-text model, so the file stays readable and the
+checklist view is a rendering rather than a second document.
+
+Notes belong to a context or to none, with a switch for each — `visible()` is
+the one place both are read, so the sidebar and the overview cannot disagree.
+
+What this revealed: a new always-on sidebar section suppressed the empty state,
+which is the only place that says how to make a first context. Sections have to
+count as content only when they *have* content.
+
+Left for later: no search across note bodies from the launcher's main search
+box (the notes list has its own filtering), no export, and the history has no
+pruning — a note edited daily for a year is a large JSON object.
+
 ## Next
 
 ### 11. Ephemeral teardown

@@ -123,6 +123,20 @@ class Settings:
     # What starting an app from the sidebar's search results does: grow a new
     # context around it, or add it to the context you are standing in.
     search_apps_target: str = "new"
+    # Notes, kept as an append-only history. The master switch; with it off the
+    # notes are still on disk and nothing lists them.
+    scratchpad: bool = True
+    # Notes that stand outside any context, always listed wherever you are.
+    scratchpad_global: bool = True
+    # Notes owned by a context, listed only while you are in it. The two are
+    # separate switches because they answer different questions — a scratchpad
+    # for the desk and a scratchpad for the job are both reasonable, and so is
+    # either one alone.
+    scratchpad_per_context: bool = True
+    # The Notes section in the sidebar's list. The overview shows notes
+    # whenever the scratchpad is on; this is only about the narrow view, where
+    # every section costs the others room.
+    show_notes: bool = True
     # How often the open list is re-checked against the compositor.
     poll_seconds: int = 2
     log_level: str = "info"
@@ -210,6 +224,10 @@ class Settings:
                 if self.search_apps_target.strip().lower() in APP_TARGETS
                 else "new"
             ),
+            scratchpad=bool(self.scratchpad),
+            scratchpad_global=bool(self.scratchpad_global),
+            scratchpad_per_context=bool(self.scratchpad_per_context),
+            show_notes=bool(self.show_notes),
             poll_seconds=_clamp(self.poll_seconds, 1, 60, 2),
             log_level=(
                 self.log_level.strip().lower()

@@ -17,6 +17,8 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
 from context.ui import widgets
+from context.state import scratchpad
+from context.state.scratchpad import Note
 from context.system.apps import App
 from context.state.layout import preset_for
 from context.state.resources import Resource
@@ -236,6 +238,116 @@ class ContextRow(widgets.ActionRow):
                 callback(self.ctx)
 
         return run
+
+
+class NoteRow(widgets.ActionRow):
+    """A note in a list, in the sidebar or the overview.
+
+    An untitled note shows its first line instead, because a scratchpad is
+    written into before it is named and a list of "Untitled" is no list at all.
+    """
+
+    def __init__(self, note: Note, on_open, on_delete=None) -> None:
+        super().__init__()
+        self.note = note
+        self.on_open = on_open
+        self.on_delete = on_delete
+
+        first = scratchpad.summary(note.body)
+        self.set_title(note.title or first or "Empty note")
+        self.set_activatable(True)
+
+        subtitle = [relative_time(note.updated_at)]
+        done, total = scratchpad.progress(note.body)
+        if total:
+            subtitle.append(f"{done} of {total} done")
+        elif note.title and first:
+            subtitle.append(first)
+        versions = len(note.versions)
+        if versions > 1:
+            subtitle.append(f"{versions} versions")
+        self.set_subtitle(" · ".join(subtitle))
+
+        self.add_prefix(
+            Gtk.Image.new_from_icon_name(
+                "checkbox-checked-symbolic" if total else "text-x-generic-symbolic"
+            )
+        )
+        if not note.is_global:
+            # Which notes belong to the context you are in is the whole point of
+            # having both kinds, and it is invisible otherwise: the two are
+            # listed together.
+            tag = Gtk.Label(label="context")
+            tag.add_css_class("caption")
+            tag.add_css_class("dim-label")
+            tag.set_valign(Gtk.Align.CENTER)
+            self.add_suffix(tag)
+
+        self.edit = Gtk.Button(
+            icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER
+        )
+        self.edit.add_css_class("flat")
+        self.edit.set_tooltip_text("Open this note")
+        self.edit.connect("clicked", lambda _b: on_open(note))
+        self.add_suffix(self.edit)
+
+        self.connect("activated", lambda _r: on_open(note))
+
+        secondary = Gtk.GestureClick()
+        secondary.set_button(Gdk.BUTTON_SECONDARY)
+        secondary.connect("pressed", lambda _g, _n, x, y: self.open_menu(x, y))
+        self.add_controller(secondary)
+
+    def open_menu(self, x: float = 0.0, y: float = 0.0) -> Gtk.Popover:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        popover = Gtk.Popover()
+        popover.set_has_arrow(False)
+        popover.set_halign(Gtk.Align.START)
+        popover.set_child(box)
+        popover.set_parent(self)
+        at = Gdk.Rectangle()
+        at.x, at.y, at.width, at.height = int(x), int(y), 1, 1
+        popover.set_pointing_to(at)
+        popover.connect("closed", lambda p: p.unparent())
+
+        self.menu_items: dict[str, Gtk.Button] = {}
+
+        def item(key: str, label: str, action, destructive: bool = False):
+            button = Gtk.Button(label=label)
+            button.set_has_frame(False)
+            button.get_child().set_xalign(0.0)
+            if destructive:
+                button.add_css_class("destructive-action")
+            button.connect("clicked", lambda _b: action())
+            box.append(button)
+            self.menu_items[key] = button
+            return button
+
+        item("open", "Open", lambda: (popover.popdown(), self.on_open(self.note)))
+        if self.on_delete is not None:
+            # The same two steps forgetting a context takes: one click either
+            # side of Open should not lose a note.
+            delete = item("delete", "Delete…", lambda: None, destructive=True)
+            confirm = item(
+                "confirm",
+                "Really delete",
+                lambda: (popover.popdown(), self.on_delete(self.note)),
+                destructive=True,
+            )
+            confirm.set_visible(False)
+            keep = item("keep", "Keep", lambda: popover.popdown())
+            keep.set_visible(False)
+
+            def ask() -> None:
+                delete.set_visible(False)
+                confirm.set_visible(True)
+                keep.set_visible(True)
+
+            delete.connect("clicked", lambda _b: ask())
+
+        self.menu = popover
+        popover.popup()
+        return popover
 
 
 class AppRow(widgets.ActionRow):

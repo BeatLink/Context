@@ -515,6 +515,20 @@ window.ctx-window checkbutton check:checked {
     box-shadow: inset 0 0 0 2px @ctx_accent;
 }
 
+/* A note's text. A bare GtkTextView paints the desktop theme's view colour,
+   which on a Context surface is the one place the palette does not reach. */
+.ctx-note-scroll {
+    background-color: @ctx_tile_background;
+    border: 1px solid @ctx_border;
+    border-radius: 10px;
+}
+.ctx-note-body,
+.ctx-note-body text {
+    background-color: transparent;
+    color: @ctx_on_surface;
+    padding: 10px;
+}
+
 .ctx-rail-button {
     background-color: @ctx_rail_background;
     border: 2px solid transparent;

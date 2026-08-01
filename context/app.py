@@ -27,6 +27,7 @@ from context.system.launcher import context_is_open, launch_resource
 from context.system.launcher import hand_keyboard_back
 from context.system.launcher import launch_context as launch_ctx
 from context.system.launcher import reconnect
+from context.state.scratchpad import NoteStore
 from context.state.store import Context, ContextStore
 from context.system.logging_setup import configure, get_logger
 from context.ui.window import LauncherWindow
@@ -76,6 +77,10 @@ class ContextApplication(Gtk.Application):
         configure()
         self.log = get_logger("app")
         self.store = ContextStore()
+        # One note store for every launcher and the overview, for the same
+        # reason the context store is shared: a note written on one screen has
+        # to be there on the others.
+        self.notes = NoteStore()
         self.backend = backends.detect()
         self.log.info("backend: %s", self.backend.name)
         # The primary launcher, and the extras when it is shown on every
@@ -188,12 +193,15 @@ class ContextApplication(Gtk.Application):
             existing.close()
             self.switcher = None
             return
-        picker = OverviewWindow(self, self.store, backend=self.backend)
+        picker = OverviewWindow(
+            self, self.store, backend=self.backend, notes=self.notes
+        )
         picker.on_context = self.go_to_context
         picker.on_edit = self.edit_context
         picker.on_close = self.close_context
         picker.on_add_app = self.open_app_in_context
         picker.on_app_into = self.add_app_to_context
+        picker.on_note = self.edit_note
         self._show_picker(picker)
 
     def edit_context(self, ctx: Context, is_new: bool = False) -> None:
@@ -201,6 +209,12 @@ class ContextApplication(Gtk.Application):
         window = self.ensure_window()
         if window is not None:
             window.edit_context(ctx, is_new=is_new)
+
+    def edit_note(self, note) -> None:
+        """Open a note's editor, whichever view asked for it."""
+        window = self.ensure_window()
+        if window is not None:
+            window._open_note(note)
 
     def open_settings(self) -> None:
         """The settings screen, replacing whatever picker is up.
@@ -583,6 +597,7 @@ class ContextApplication(Gtk.Application):
                 self.launch_context,
                 self.close_context,
                 monitor=getattr(monitor, "name", None),
+                notes=self.notes,
             )
             if index == 0:
                 self.window = window
