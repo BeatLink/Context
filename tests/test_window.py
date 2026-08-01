@@ -2719,17 +2719,17 @@ def test_search_matches_whatever_the_case(gtk_app, isolated_store):
 def test_an_app_from_search_can_join_the_current_context(
     gtk_app, isolated_store, monkeypatch
 ):
-    """Where a searched app lands is a setting; without a context to add to,
-    a new one is made whatever it says."""
+    """Where a searched app lands is asked on the row rather than set in
+    advance. Joining needs somewhere to join, so that button is only there while
+    a context is active — otherwise it would say something untrue."""
     from context.ui import window as window_module
-    from context.state import settings
     from context.system.apps import App
     from context.state.store import ContextStore
     from context.ui.window import LauncherWindow
 
     info = App(id="kicad.desktop", name="KiCad", description="", icon=None)
     monkeypatch.setattr(window_module, "installed_apps", lambda: [info])
-    _mode(monkeypatch, isolated_store, search_apps_target="current")
+    _mode(monkeypatch, isolated_store)
     seen = {"added": [], "opened": []}
 
     class Holder:
@@ -2744,22 +2744,37 @@ def test_an_app_from_search_can_join_the_current_context(
         holder = Holder()
         monkeypatch.setattr(window, "get_application", lambda: holder)
         monkeypatch.setattr(window, "_release_keyboard", lambda: None)
-        window.entry.set_text("kic")
-        _list_rows(window.apps_listbox)[0].emit("activated")
-        seen["first"] = (list(seen["added"]), [c.title for c in seen["opened"]])
 
-        # No active context: the holder starts refusing, and a new context is
-        # the fallback rather than a click that does nothing.
-        holder.add_app_to_active = lambda picked: False
+        ctx = store.create("work")
+        window._active_id = ctx.id
         window.entry.set_text("kic")
-        _list_rows(window.apps_listbox)[0].emit("activated")
+        row = _list_rows(window.apps_listbox)[0]
+        seen["here_offered"] = row.here.get_visible()
+        row.here.emit("clicked")
+        seen["joined"] = list(seen["added"])
+
+        # The other button always makes a new context, whatever is open.
+        window.entry.set_text("kic")
+        _list_rows(window.apps_listbox)[0].fresh.emit("clicked")
+        seen["new"] = [c.title for c in seen["opened"]]
+
+        # Nothing to join: the button is not offered, and activating the row
+        # still works because a new context is always available.
+        window._active_id = None
+        window.entry.set_text("kic")
+        row = _list_rows(window.apps_listbox)[0]
+        seen["here_hidden"] = row.here.get_visible()
+        row.emit("activated")
         seen["fallback"] = [c.title for c in seen["opened"]]
         app.quit()
 
     store = ContextStore()
     run_app(gtk_app, body)
-    assert seen["first"] == (["kicad.desktop"], [])
-    assert seen["fallback"] == ["KiCad"]
+    assert seen["here_offered"] is True
+    assert seen["joined"] == ["kicad.desktop"]
+    assert seen["new"] == ["KiCad"]
+    assert seen["here_hidden"] is False
+    assert seen["fallback"] == ["KiCad", "KiCad"]
 
 
 def test_notifications_off_does_not_eat_the_drift_prompt(gtk_app, isolated_store, monkeypatch):

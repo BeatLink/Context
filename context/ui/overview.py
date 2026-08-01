@@ -193,6 +193,16 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self.sort_chooser.add(SORTS[key])
         right.append(_labelled("Sort", self.sort_chooser))
 
+        # What clicking an application does, with the other two things that
+        # decide what the grid is showing and in what order. It was under the
+        # grid, on the reasoning that it is answered after you have found
+        # something; in practice it is a mode the grid is in, and a mode belongs
+        # with the other controls rather than past the scroll.
+        self.target_chooser = widgets.SegmentedChoice(self._on_target)
+        self.target_chooser.add("New context")
+        self.target_chooser.add("Current context")
+        right.append(_labelled("Opens", self.target_chooser))
+
         # One section per group, each with its own grid: a heading cannot sit
         # inside a FlowBox, and the groups are the point of the ordering.
         self.sections = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -201,14 +211,6 @@ class OverviewWindow(Gtk.ApplicationWindow):
         right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         right_scroller.set_child(self.sections)
         right.append(right_scroller)
-
-        # What clicking an application does. Under the grid rather than over
-        # it: it is what happens *after* you have found something, and the
-        # question you answer first should be the one nearest the top.
-        self.target_chooser = widgets.SegmentedChoice(self._on_target)
-        self.target_chooser.add("New context")
-        self.target_chooser.add("Current context")
-        right.append(_labelled("Opens", self.target_chooser))
 
         columns.append(left)
         columns.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))

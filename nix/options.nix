@@ -142,9 +142,6 @@ rec {
       show_apps = setting t.bool "true"
         "Show matching applications under the search results.";
 
-      search_apps_target = setting (t.enum [ "new" "current" ]) "`new`"
-        "Where an app started from the search results lands.";
-
       scratchpad = setting t.bool "true"
         "Somewhere to type in the sidebar and the overview.";
 

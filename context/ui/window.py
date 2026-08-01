@@ -776,7 +776,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
         app_matches = self._app_matches(query) if live.show_apps else []
         self.apps_listbox.remove_all()
         for info in app_matches[:APP_RESULTS]:
-            self.apps_listbox.append(AppRow(info, self._open_app))
+            self.apps_listbox.append(
+                AppRow(
+                    info,
+                    self._open_app,
+                    # No "open here" without somewhere to open it.
+                    self._open_app_here if active is not None else None,
+                )
+            )
 
         shown = min(len(app_matches), APP_RESULTS)
         self.apps_label.set_label(
@@ -906,26 +913,26 @@ class LauncherWindow(Gtk.ApplicationWindow):
         return search_apps(self._apps, query)
 
     def _open_app(self, info: App) -> None:
-        """Start an app from the search results.
+        """Start an app from the search results, in a context of its own."""
+        log.info("new context around %s", info.id)
+        self.entry.set_text("")
+        self._open(context_for_app(self.store, info))
 
-        Where it lands is a setting: a context of its own, or the context you
-        are standing in — with a new context as the fallback when there is
-        nothing to add to.
+    def _open_app_here(self, info: App) -> None:
+        """Start an app from the search results, inside the current context.
+
+        Falls back to a new context if the current one will not take it, which
+        is the same answer the other button gives — better than a click that
+        reports nothing at all.
         """
         app = self.get_application()
-        if (
-            settings.current().search_apps_target == "current"
-            and app is not None
-            and getattr(app, "add_app_to_active", lambda _i: False)(info)
-        ):
+        if app is not None and getattr(app, "add_app_to_active", lambda _i: False)(info):
             log.info("added %s to the current context", info.id)
             self.entry.set_text("")
             self.refresh()
             self._release_keyboard()
             return
-        log.info("new context around %s", info.id)
-        self.entry.set_text("")
-        self._open(context_for_app(self.store, info))
+        self._open_app(info)
 
     def _saved_group_shown(self, opened, saved, searching: bool) -> bool:
         """Whether the saved group is on show.

@@ -414,17 +414,6 @@ class SettingsPage(widgets.NavigationPage):
             if field == "show_apps":
                 self.apps_switch_row = row
 
-        self.apps_target_row = _row_combo(
-            "Apps open in",
-            "Where an app started from the search results lands. The current "
-            "context takes it in; without one open, a new context is made "
-            "either way.",
-            ("A new context", "The current context"),
-            settings.APP_TARGETS,
-            live.search_apps_target,
-            lambda v: self._apply(search_apps_target=v),
-        )
-        group.add(self.apps_target_row)
         self._sync_sidebar_rows()
         return group
 
@@ -506,7 +495,6 @@ class SettingsPage(widgets.NavigationPage):
         # dependency.
         live = settings.current()
         self.apps_switch_row.set_sensitive(live.show_search)
-        self.apps_target_row.set_sensitive(live.show_search and live.show_apps)
 
     def _sync_rows(self) -> None:
         """Hide the settings that the current mode makes meaningless."""

@@ -239,17 +239,20 @@ class ContextRow(widgets.ActionRow):
 
 
 class AppRow(widgets.ActionRow):
-    """An installed application, one activation from being a context.
+    """An installed application, one click from being open.
 
-    The overview draws the same thing as a tile; a sidebar has no room for a
-    grid, so the list gets rows. Both do the same thing when clicked.
+    Where it lands is asked on the row rather than set in advance. It was a
+    setting — every app opened in a new context, or every app joined the current
+    one — and the answer is per application rather than per person: a browser
+    you are opening to look something up belongs in what you are already doing,
+    and the editor you are about to work in does not.
     """
 
-    def __init__(self, info: App, on_open) -> None:
+    def __init__(self, info: App, on_new, on_current=None) -> None:
         super().__init__()
         self.app_info = info
         self.set_title(info.name)
-        self.set_subtitle(info.description or "New context")
+        self.set_subtitle(info.description or "")
         self.set_activatable(True)
 
         icon = (
@@ -258,8 +261,26 @@ class AppRow(widgets.ActionRow):
             else Gtk.Image.new_from_icon_name("application-x-executable-symbolic")
         )
         self.add_prefix(icon)
-        self.set_tooltip_text(f"Open a new “{info.name}” context")
-        self.connect("activated", lambda _r: on_open(info))
+
+        # Only offered when there is a context to open it in. Without one the
+        # button would be the same as the other and say something untrue.
+        self.here = Gtk.Button(icon_name="go-jump-symbolic", valign=Gtk.Align.CENTER)
+        self.here.add_css_class("flat")
+        self.here.set_tooltip_text(f"Open “{info.name}” in this context")
+        self.here.set_visible(on_current is not None)
+        self.here.connect("clicked", lambda _b: on_current and on_current(info))
+        self.add_suffix(self.here)
+
+        self.fresh = Gtk.Button(icon_name="list-add-symbolic", valign=Gtk.Align.CENTER)
+        self.fresh.add_css_class("flat")
+        self.fresh.set_tooltip_text(f"Open a new “{info.name}” context")
+        self.fresh.connect("clicked", lambda _b: on_new(info))
+        self.add_suffix(self.fresh)
+
+        # Activating the row takes the answer that always works: with no context
+        # open there is nothing to add to, so a new one is the only one of the
+        # two that is always available.
+        self.connect("activated", lambda _r: on_new(info))
 
 
 def app_tile(info: App, on_pick, tooltip: str | None = None) -> Gtk.FlowBoxChild:
