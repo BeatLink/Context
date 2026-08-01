@@ -149,10 +149,9 @@ def test_the_preview_edit_hotspot_opens_the_resource_page(gtk_app, isolated_stor
     assert seen["pushed"] is True
 
 
-def _preset_index(name: str) -> int:
-    from context.layout import PRESETS
-
-    return list(PRESETS).index(name)
+def _preset_index(page, label: str) -> int:
+    """Where an arrangement sits in what the editor is currently offering."""
+    return [name for name, _slots in page.preset_options].index(label)
 
 
 def test_choosing_an_arrangement_applies_it(gtk_app, isolated_store):
@@ -174,25 +173,28 @@ def test_choosing_an_arrangement_applies_it(gtk_app, isolated_store):
             "probe", resources=[Resource(app_id="a"), Resource(app_id="b")]
         )
         page = EditorPage(ctx, lambda *a_: None, lambda: None)
+        stacked = _preset_index(page, "Top and bottom")
         seen["starts_as"] = page.preset_chooser.get_selected()
+        seen["side_by_side"] = _preset_index(page, "Side by side")
 
-        page.preset_chooser._buttons[_preset_index("stacked")].set_active(True)
+        page.preset_chooser._buttons[stacked].set_active(True)
         seen["slots"] = [
             (s.x, s.y, s.width, s.height) for s in page.previews[0].layout.slots
         ]
         seen["chosen"] = page.preset_chooser.get_selected()
 
         # Clicking the chosen one again must not leave nothing chosen.
-        page.preset_chooser._buttons[_preset_index("stacked")].set_active(False)
+        page.preset_chooser._buttons[stacked].set_active(False)
         seen["still_chosen"] = page.preset_chooser.get_selected()
+        seen["stacked"] = stacked
         app.quit()
 
     run_app(gtk_app, body)
-    # Two apps start side by side, which is the preset the chooser shows.
-    assert seen["starts_as"] == _preset_index("side-by-side")
+    # Two apps start side by side, which is the arrangement the chooser shows.
+    assert seen["starts_as"] == seen["side_by_side"]
     assert seen["slots"] == [(0.0, 0.0, 1.0, 0.5), (0.0, 0.5, 1.0, 0.5)]
-    assert seen["chosen"] == _preset_index("stacked")
-    assert seen["still_chosen"] == _preset_index("stacked")
+    assert seen["chosen"] == seen["stacked"]
+    assert seen["still_chosen"] == seen["stacked"]
 
 
 def test_a_hand_dragged_layout_matches_no_arrangement(gtk_app, isolated_store):
@@ -218,3 +220,44 @@ def test_a_hand_dragged_layout_matches_no_arrangement(gtk_app, isolated_store):
 
     run_app(gtk_app, body)
     assert seen["chosen"] == -1
+
+
+def test_only_the_arrangements_that_fit_are_offered(gtk_app, isolated_store):
+    """A preset was padded or trimmed to the window count, so "Three columns"
+    over two windows meant two thirds of a screen and a gap, and "Grid" meant
+    the same thing as side by side."""
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create("probe", resources=[Resource(app_id="a")])
+        page = EditorPage(ctx, lambda *a_: None, lambda: None)
+        seen["one"] = [label for label, _slots in page.preset_options]
+
+        for extra in ("b", "c"):
+            page.entries.append(Resource(app_id=extra))
+            page.arrangement.assign(len(page.entries) - 1, 0)
+        page._update_state()
+        seen["three"] = [label for label, _slots in page.preset_options]
+        seen["buttons"] = len(page.preset_chooser._buttons)
+
+        for extra in ("d", "e", "f"):
+            page.entries.append(Resource(app_id=extra))
+            page.arrangement.assign(len(page.entries) - 1, 0)
+        page._update_state()
+        seen["six"] = [label for label, _slots in page.preset_options]
+        seen["six_slots"] = len(page.preset_options[0][1])
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["one"] == ["Maximised"]
+    assert seen["three"] == ["Three columns", "Main and stack"]
+    # The row holds exactly what is offered, and nothing that would be trimmed.
+    assert seen["buttons"] == 2
+    # Past what the named arrangements cover, the generated grid is the offer.
+    assert seen["six"] == ["Grid of 6"]
+    assert seen["six_slots"] == 6

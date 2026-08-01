@@ -398,6 +398,13 @@ class SegmentedChoice(Gtk.Box):
         self.append(button)
         return button
 
+    def clear(self) -> None:
+        """Empty the row, for a set of choices that depends on something else."""
+        for button in self._buttons:
+            self.remove(button)
+        self._buttons = []
+        self._selected = -1
+
     def _on_toggled(self, button: Gtk.ToggleButton, index: int) -> None:
         if self._settling:
             return

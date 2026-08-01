@@ -93,9 +93,12 @@ on top, the app catalogue below.
 **Layout.** A scale model of your monitor, one rectangle per window. Drag a
 window to move it, its corner to resize, the × to remove it. Each window shows
 the app's icon, with its name on hover, and a pencil for what it opens.
-Everything snaps to a 5% grid, and a dropdown offers arrangements to start from:
-maximised, side by side, top and bottom, main and side, three columns, main and
-stack, grid.
+Everything snaps to a 5% grid, and a row of thumbnails offers the arrangements
+to start from — maximised, side by side, top and bottom, main and side, three
+columns, main and stack, grid. Only the ones that hold exactly as many windows
+as the screen has are shown, so the row changes as apps are added; past what
+they cover, a generated grid is offered instead. The one your layout currently
+matches is ringed, and none is once you have dragged a window off it.
 
 **Apps.** Every installed application, searchable. Click a card to add it to the
 layout; add one twice to give it two windows.
@@ -122,8 +125,8 @@ rearranging the desk is one change there rather than an edit to every context.
 The editor shows one preview per screen, side by side, labelled with the
 monitor each number currently means. Drag a window off the edge of one preview
 to move it to the next — the screen it would land on lights up while you drag.
-The dropdown above chooses which arrangement you are editing, so the two-screen
-layout can be set up while undocked.
+**Layout for** above chooses which arrangement you are editing, so the
+two-screen layout can be set up while undocked.
 
 Opening a context brings up all of its screens at once and leaves you on the
 first. Closing shuts all of them.

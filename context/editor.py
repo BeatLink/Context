@@ -609,11 +609,11 @@ class EditorPage(widgets.NavigationPage):
         heading.add_css_class("heading")
         layout_header.append(heading)
 
+        # Filled in by `_sync_preset_choices`, since which arrangements make
+        # sense depends on how many windows there are to arrange.
         self.preset_chooser = widgets.SegmentedChoice(self._on_preset_selected)
-        for name in PRESETS:
-            self.preset_chooser.add(
-                _preset_glyph(PRESETS[name]), PRESET_LABELS[name]
-            )
+        self.preset_options: list[tuple[str, list[Slot]]] = []
+        self._preset_for_count = -1
         layout_header.append(self.preset_chooser)
         content.append(layout_header)
 
@@ -797,17 +797,43 @@ class EditorPage(widgets.NavigationPage):
         # Screen 0 stays the single-screen layout, so a context edited while
         # docked still opens sensibly undocked.
         self.layout = healed.layout_for(0)
-        # The chooser shows which arrangement is in force, and shows none once
-        # a slot has been dragged away from it.
+        self._sync_preset_choices()
+
+    def _sync_preset_choices(self) -> None:
+        """Offer the arrangements that fit the windows on screen 1, and no others.
+
+        A preset held a fixed number of slots and was padded or trimmed to the
+        window count, so "Three columns" over two windows meant two thirds of a
+        screen and a gap, and "Grid" meant the same thing as side by side. What
+        cannot be arranged is not offered.
+        """
+        count = len(self.arrangement.indices_on(0))
+        if count != self._preset_for_count:
+            self._preset_for_count = count
+            self.preset_options = [
+                (PRESET_LABELS[name], list(slots))
+                for name, slots in PRESETS.items()
+                if len(slots) == count
+            ]
+            if not self.preset_options and count:
+                # More windows than any named arrangement covers. The generated
+                # grid is the only sensible starting point, so it is the only
+                # thing offered rather than a row that would all be trimmed.
+                self.preset_options = [
+                    (f"Grid of {count}", list(preset_for(count).slots))
+                ]
+            self.preset_chooser.clear()
+            for label, slots in self.preset_options:
+                self.preset_chooser.add(_preset_glyph(slots), label)
+        # Which one is in force — and none, once a slot has been dragged off it.
         self.preset_chooser.set_selected(self._matching_preset(), notify=False)
 
     def _matching_preset(self) -> int:
-        """Which preset the first screen currently is, or -1 for none."""
+        """Which of the offered arrangements the first screen currently is."""
         slots = self.arrangement.layout_for(0).slots
-        for index, name in enumerate(PRESETS):
-            preset = PRESETS[name][: len(slots)]
-            if len(preset) == len(slots) and all(
-                _same_slot(a, b) for a, b in zip(preset, slots)
+        for index, (_label, option) in enumerate(self.preset_options):
+            if len(option) == len(slots) and all(
+                _same_slot(a, b) for a, b in zip(option, slots)
             ):
                 return index
         return -1
@@ -849,16 +875,14 @@ class EditorPage(widgets.NavigationPage):
         self._update_state()
 
     def _on_preset_selected(self, selected: int) -> None:
-        name = list(PRESETS)[selected]
-        slots = list(PRESETS[name])
-        log.debug("preset %s chosen", name)
-        # Keep one slot per selected app, padding or trimming the preset.
-        # The preset applies to the screen it was chosen for, which is the
-        # first one — the others keep whatever they were given.
-        count = max(1, len(self.arrangement.indices_on(0)))
-        while len(slots) < count:
-            slots.append(Slot())
-        self._on_layout_changed(Layout(slots=slots[:count]), 0)
+        if not 0 <= selected < len(self.preset_options):
+            return
+        label, slots = self.preset_options[selected]
+        log.debug("arrangement %s chosen", label)
+        # Only arrangements that hold exactly this many windows are offered, so
+        # there is nothing to pad or trim. The choice applies to the screen it
+        # was made on, which is the first — the others keep what they had.
+        self._on_layout_changed(Layout(slots=list(slots)), 0)
         self._update_state()
 
     # -- apps ----------------------------------------------------------------
