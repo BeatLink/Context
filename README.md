@@ -146,8 +146,12 @@ searchable, filtered by kind and ordered the same four ways. Click a row to add
 it to the layout; add one twice to give it two windows, and the row says how
 many it has put there.
 
-**Details.** The context's name and an isolated toggle. Deleting is in the
-header, beside Cancel.
+**Details.** The context's name is at the top. The isolated toggle and Delete
+are at the bottom, under both columns — the two things you touch least, and one
+of them cannot be undone, so the top of the page belongs to the applications and
+the layout.
+
+The two columns are exactly half each.
 
 Layouts are stored as fractions of the monitor, so they carry between displays.
 The preview is drawn at the shape of the screen the launcher is on.

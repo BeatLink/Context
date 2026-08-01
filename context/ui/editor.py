@@ -459,36 +459,6 @@ class EditorPage(widgets.NavigationPage):
         cancel.connect("clicked", lambda _b: self.on_cancel())
         header.pack_start(cancel)
 
-        # Deleting lives up here rather than in the details below, where it was
-        # a row competing with the context's own settings for the same column
-        # the applications need. On the start side, beside Cancel: the two
-        # things that leave without saving belong together, and putting it next
-        # to Save would make the destructive button the misclick neighbour of
-        # the confirming one.
-        #
-        # The confirmation is these buttons swapping rather than a dialog —
-        # there is nowhere sensible for a popup on a full-screen overlay, and
-        # answers appearing where the click just landed cannot be missed.
-        if on_delete is not None and not is_new:
-            self.delete_button = Gtk.Button(label="Delete")
-            self.delete_button.add_css_class("destructive-action")
-            self.delete_button.set_tooltip_text(
-                "Remove this context. Windows it opened are left alone."
-            )
-            self.delete_button.connect("clicked", lambda _b: self._ask_to_delete(True))
-            header.pack_start(self.delete_button)
-
-            self.keep_button = Gtk.Button(label="Keep")
-            self.keep_button.set_visible(False)
-            self.keep_button.connect("clicked", lambda _b: self._ask_to_delete(False))
-            header.pack_start(self.keep_button)
-
-            self.confirm_delete = Gtk.Button(label="Really delete")
-            self.confirm_delete.add_css_class("destructive-action")
-            self.confirm_delete.set_visible(False)
-            self.confirm_delete.connect("clicked", lambda _b: self.on_delete(self.ctx))
-            header.pack_start(self.confirm_delete)
-
         self.done_button = Gtk.Button(label="Start" if is_new else "Save")
         self.done_button.add_css_class("suggested-action")
         self.done_button.connect("clicked", lambda _b: self._commit())
@@ -510,30 +480,21 @@ class EditorPage(widgets.NavigationPage):
         self.title_row.connect("changed", lambda _e: self._update_state())
         details.append(self.title_row)
 
-        isolated_row = widgets.ActionRow(
-            title="Isolated",
-            subtitle=(
-                "Apps here cannot see copies of themselves running elsewhere, so "
-                "they open their own window instead of reusing one. Turn off for "
-                "any app that shares a database with another context."
-            ),
-        )
-        self.isolated_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-        self.isolated_switch.set_active(ctx.isolated)
-        self.isolated_switch.set_sensitive(isolation.available())
-        if not isolation.available():
-            isolated_row.set_subtitle("Needs dbus-run-session, which is not installed")
-        isolated_row.add_suffix(self.isolated_switch)
-        isolated_row.set_activatable_widget(self.isolated_switch)
-        details.append(isolated_row)
-
         content.append(details)
 
         # Apps on one side, the arrangement on the other. Stacked, the preview
         # got a strip of a screen that is wider than it is tall and the grid
         # got four rows; side by side each gets the height of the window, which
         # is what a full-screen editor has to spend.
-        columns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+        # Homogeneous, so the two halves are halves. Left to their natural
+        # widths the applications took about two thirds: a row is as wide as
+        # its description wants to be, and there are ninety of them against one
+        # scale drawing. The separator rides inside the layout half rather than
+        # being a third child, which homogeneous would have given a third of
+        # the width to.
+        columns = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=18, homogeneous=True
+        )
         columns.set_vexpand(True)
         apps_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         apps_column.set_hexpand(True)
@@ -603,10 +564,67 @@ class EditorPage(widgets.NavigationPage):
 
         apps_column.append(self.catalogue)
 
+        divided = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+        divided.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        divided.append(layout_column)
         columns.append(apps_column)
-        columns.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
-        columns.append(layout_column)
+        columns.append(divided)
         content.append(columns)
+
+        # --- what is true of the context, rather than of its contents ---------
+        # Under both columns. These are the two things you touch least and one
+        # of them cannot be undone, so they sit past everything you came here to
+        # do rather than in the corner your pointer starts in — the top of this
+        # page belongs to the applications and the layout.
+        footer = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        footer.add_css_class("boxed-list")
+
+        isolated_row = widgets.ActionRow(
+            title="Isolated",
+            subtitle=(
+                "Apps here cannot see copies of themselves running elsewhere, so "
+                "they open their own window instead of reusing one. Turn off for "
+                "any app that shares a database with another context."
+            ),
+        )
+        self.isolated_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.isolated_switch.set_active(ctx.isolated)
+        self.isolated_switch.set_sensitive(isolation.available())
+        if not isolation.available():
+            isolated_row.set_subtitle("Needs dbus-run-session, which is not installed")
+        isolated_row.add_suffix(self.isolated_switch)
+        isolated_row.set_activatable_widget(self.isolated_switch)
+        footer.append(isolated_row)
+
+        # The confirmation is the row's own buttons swapping rather than a
+        # dialog: there is nowhere sensible for a popup on a full-screen
+        # overlay, and answers appearing where the click just landed cannot be
+        # missed.
+        if on_delete is not None and not is_new:
+            delete_row = widgets.ActionRow(
+                title="Delete this context",
+                subtitle="Removes the definition. Windows it opened are left alone.",
+            )
+            self.delete_button = Gtk.Button(label="Delete", valign=Gtk.Align.CENTER)
+            self.delete_button.add_css_class("destructive-action")
+            self.delete_button.connect("clicked", lambda _b: self._ask_to_delete(True))
+            delete_row.add_suffix(self.delete_button)
+
+            self.keep_button = Gtk.Button(label="Keep", valign=Gtk.Align.CENTER)
+            self.keep_button.set_visible(False)
+            self.keep_button.connect("clicked", lambda _b: self._ask_to_delete(False))
+            delete_row.add_suffix(self.keep_button)
+
+            self.confirm_delete = Gtk.Button(
+                label="Really delete", valign=Gtk.Align.CENTER
+            )
+            self.confirm_delete.add_css_class("destructive-action")
+            self.confirm_delete.set_visible(False)
+            self.confirm_delete.connect("clicked", lambda _b: self.on_delete(self.ctx))
+            delete_row.add_suffix(self.confirm_delete)
+            footer.append(delete_row)
+
+        content.append(footer)
 
         toolbar.set_content(content)
         self.set_child(toolbar)
