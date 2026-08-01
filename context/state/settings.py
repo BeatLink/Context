@@ -76,6 +76,11 @@ SAVE_PROMPTS = ("never", "change", "switch", "close")
 # Where an app opens from: a context of its own, or the one you are standing in.
 APP_TARGETS = ("new", "current")
 
+# How the context list is ordered, in the sidebar, the overview and the rail.
+# "recent" is by when each was last opened, which is what the list has always
+# done; the other two are stable orders that do not move under the pointer.
+CONTEXT_SORTS = ("recent", "created", "name")
+
 # How the overview's application grid is ordered. Mirrors the keys of
 # `system.apps.SORTS`, spelled out rather than imported: that module reads
 # desktop entries through Gio, and settings have to load without a display.
@@ -241,6 +246,8 @@ class Settings:
     show_overview_button: bool = True
     show_saved: bool = True
     show_apps: bool = True
+    # How the contexts are ordered wherever they are listed.
+    context_sort: str = "recent"
     # The overview's grid, as it should be every time it opens rather than as
     # it was left. It is reached to do one thing and dismissed, so what it
     # remembers between openings is a setting rather than a habit it picks up.
@@ -340,6 +347,11 @@ class Settings:
             show_overview_button=bool(self.show_overview_button),
             show_saved=bool(self.show_saved),
             show_apps=bool(self.show_apps),
+            context_sort=(
+                self.context_sort.strip().lower()
+                if self.context_sort.strip().lower() in CONTEXT_SORTS
+                else "recent"
+            ),
             overview_sort=(
                 self.overview_sort.strip().lower()
                 if self.overview_sort.strip().lower() in OVERVIEW_SORTS

@@ -63,7 +63,7 @@ class AppGridWindow(Gtk.ApplicationWindow):
             label.add_css_class("dim-label")
             content.append(label)
 
-        self.entry = Gtk.SearchEntry(placeholder_text="Search apps")
+        self.entry = widgets.SearchBar("Search apps")
         self.entry.connect("search-changed", lambda _e: self.refresh())
         self.entry.connect("activate", lambda _e: self._pick_first())
         self.entry.connect("stop-search", lambda _e: self._dismiss())

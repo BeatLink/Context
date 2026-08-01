@@ -82,8 +82,8 @@ class SwitcherWindow(Gtk.ApplicationWindow):
         for setter in ("set_margin_top", "set_margin_bottom", "set_margin_start", "set_margin_end"):
             getattr(content, setter)(18)
 
-        self.entry = Gtk.SearchEntry(
-            placeholder_text=(
+        self.entry = widgets.SearchBar(
+            (
                 "Switch to a context" if mode == CONTEXTS else "Switch to a window"
             )
         )

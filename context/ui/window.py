@@ -148,10 +148,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         content.set_margin_start(18)
         content.set_margin_end(18)
 
-        self.entry = Gtk.Entry(
-            placeholder_text="Search or create a context",
-            activates_default=False,
-        )
+        self.entry = widgets.SearchBar("Search or create a context")
         self.entry.set_hexpand(True)
         self.entry.connect("changed", self._on_entry_changed)
         self.entry.connect("activate", self._on_entry_activate)

@@ -674,7 +674,7 @@ class EditorPage(widgets.NavigationPage):
         self.count_label.add_css_class("heading")
         apps_header.append(self.count_label)
 
-        self.search = Gtk.SearchEntry(placeholder_text="Search apps…")
+        self.search = widgets.SearchBar("Search apps…")
         self.search.set_size_request(240, -1)
         self.search.connect("search-changed", lambda _e: self.refresh_apps())
         apps_header.append(self.search)

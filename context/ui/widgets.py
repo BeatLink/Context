@@ -25,7 +25,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import GLib, GObject, Gtk
+from gi.repository import Gdk, GLib, GObject, Gtk
 
 from context.system.logging_setup import get_logger
 
@@ -336,6 +336,81 @@ class EntryRow(Row):
         if signal in ("changed", "activate"):
             return GObject.Object.connect(self.entry, signal, handler, *args)
         return super().connect(signal, handler, *args)
+
+
+class SearchBar(Gtk.Entry):
+    """The search box, wherever Context has one.
+
+    Five of these had grown separately — four `Gtk.SearchEntry` and one plain
+    `Gtk.Entry` — so only some of them offered a way to clear the text, and the
+    one that could not was the sidebar's, which is the one on screen all day.
+
+    Built on `Gtk.Entry` rather than `Gtk.SearchEntry` because the sidebar's
+    behaviour is the one that has constraints: `Gtk.SearchEntry` debounces
+    `search-changed` by about 150ms, which the sidebar's filtering must not do,
+    and it swallows Escape. Both signals a `SearchEntry` call site uses are
+    re-emitted here, so nothing had to change to adopt it.
+    """
+
+    __gsignals__ = {
+        "search-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "stop-search": (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+
+    def __init__(self, placeholder: str = "") -> None:
+        super().__init__(placeholder_text=placeholder, activates_default=False)
+        self.add_css_class("ctx-search")
+        self.set_icon_from_icon_name(
+            Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic"
+        )
+        self.set_icon_activatable(Gtk.EntryIconPosition.PRIMARY, False)
+        self.set_icon_from_icon_name(
+            Gtk.EntryIconPosition.SECONDARY, "edit-clear-symbolic"
+        )
+        self.set_icon_tooltip_text(Gtk.EntryIconPosition.SECONDARY, "Clear")
+        self._sync_clear()
+
+        Gtk.Entry.connect(self, "changed", self._on_changed)
+        Gtk.Entry.connect(self, "icon-release", self._on_icon)
+
+        # Escape clears rather than only closing, so the key does the smaller
+        # thing first and the view still gets `stop-search` to close on when
+        # there is nothing left to clear.
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self._on_key)
+        self.add_controller(keys)
+
+    def _sync_clear(self) -> None:
+        # Only while there is something to clear: a button that does nothing is
+        # worse than an absent one, and it sits in the text's way.
+        self.set_icon_sensitive(
+            Gtk.EntryIconPosition.SECONDARY, bool(self.get_text())
+        )
+        self.set_icon_from_icon_name(
+            Gtk.EntryIconPosition.SECONDARY,
+            "edit-clear-symbolic" if self.get_text() else None,
+        )
+
+    def _on_changed(self, _entry) -> None:
+        self._sync_clear()
+        self.emit("search-changed")
+
+    def _on_icon(self, _entry, position) -> None:
+        if position == Gtk.EntryIconPosition.SECONDARY:
+            self.clear()
+
+    def _on_key(self, _controller, keyval, _keycode, _state) -> bool:
+        if keyval != Gdk.KEY_Escape:
+            return False
+        if self.get_text():
+            self.clear()
+            return True
+        self.emit("stop-search")
+        return True
+
+    def clear(self) -> None:
+        self.set_text("")
+        self.grab_focus()
 
 
 class ToolbarView(Gtk.Box):

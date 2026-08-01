@@ -142,6 +142,12 @@ rec {
       show_apps = setting t.bool "true"
         "Show matching applications under the search results.";
 
+      context_sort = setting (t.enum [ "recent" "created" "name" ]) "`recent`" ''
+        How the context list is ordered, in the sidebar, the overview and the
+        rail alike: by when each was last opened, by when it was made, or by
+        name.
+      '';
+
       overview_sort = setting (t.enum [ "recent" "name" "kind" "contexts" ]) "`recent`"
         "How the overview's application grid is ordered each time it opens.";
 

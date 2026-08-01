@@ -154,41 +154,31 @@ class SettingsPage(widgets.NavigationPage):
         header.pack_start(self.back_button)
         toolbar.add_top_bar(header)
 
-        # Three tabs, by which part of Context a setting belongs to. One column
-        # of nine groups meant scrolling past the sidebar's settings to reach
-        # the log level, and the two are not related in any way worth the trip.
+        # Tabs by what a setting is *about*, not by which view shows it.
+        # Named after views, the scratchpad ended up cut across three of them —
+        # which pads exist in one, how they are drawn in another, whether the
+        # overview shows one in a third — so changing one feature meant visiting
+        # three tabs. Where a setting genuinely belongs to one view it still
+        # lives there: where the launcher docks is a fact about the launcher,
+        # not a domain of its own.
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.stack.set_vexpand(True)
 
         for name, title, groups in (
             (
-                "overview",
-                "Overview Window",
-                [self._overview()],
+                "launcher",
+                "Launcher",
+                [self._appearance(), self._behaviour(), self._sidebar_contents()],
             ),
+            ("overview", "Overview", [self._overview()]),
+            ("scratchpad", "Scratchpad", [self._scratchpad()]),
             (
-                "sidebar",
-                "Sidebar",
-                [
-                    self._appearance(),
-                    self._sidebar_contents(),
-                    self._sidebar_scratchpad(),
-                    self._behaviour(),
-                ],
+                "contexts",
+                "Contexts",
+                [self._contexts(), self._saving(), self._screens()],
             ),
-            (
-                "general",
-                "General",
-                [
-                    self._scratchpad(),
-                    self._screens(),
-                    self._saving(),
-                    self._advanced(),
-                    self._layers(),
-                    self._files(),
-                ],
-            ),
+            ("system", "System", [self._advanced(), self._layers(), self._files()]),
         ):
             page = widgets.Page(max_width=760)
             for group in groups:
@@ -497,19 +487,16 @@ class SettingsPage(widgets.NavigationPage):
                 lambda v: self._apply(overview_target=v),
             )
         )
-        group.add(
-            _row_switch(
-                "Scratchpad",
-                "Show the scratchpad beneath the contexts, with the room the "
-                "overview has and the sidebar does not.",
-                live.overview_scratchpad,
-                lambda v: self._apply(overview_scratchpad=v),
-            )
-        )
         return group
 
     def _scratchpad(self) -> widgets.Group:
-        """Which scratchpads there are. Not where they are drawn."""
+        """Every scratchpad setting, including where it is drawn.
+
+        It was split across three tabs while they were named after views, since
+        a feature shown in two of them belonged to neither. Whether the sidebar
+        shows one and whether the overview does are two switches of the same
+        thing, and they read as a pair here in a way they never could apart.
+        """
         live = settings.current()
         group = widgets.Group(
             title="Scratchpad",
@@ -538,6 +525,23 @@ class SettingsPage(widgets.NavigationPage):
                 "a switch above the scratchpad moves between them.",
                 "scratchpad_per_context",
             ),
+            (
+                "Show both at once",
+                "With a global scratchpad and a context one, show them stacked "
+                "rather than one at a time behind a switch.",
+                "scratchpad_show_both",
+            ),
+            (
+                "Show in the sidebar",
+                "The scratchpad in the launcher's narrow column.",
+                "show_notes",
+            ),
+            (
+                "Show in the overview",
+                "The scratchpad beneath the contexts, with the room the "
+                "overview has and the sidebar does not.",
+                "overview_scratchpad",
+            ),
         ):
             row = _row_switch(
                 title,
@@ -547,40 +551,6 @@ class SettingsPage(widgets.NavigationPage):
             )
             group.add(row)
             self.scratchpad_rows.append(row)
-        self._sync_scratchpad_rows()
-        return group
-
-    def _sidebar_scratchpad(self) -> widgets.Group:
-        """How the scratchpad is drawn in the narrow column."""
-        live = settings.current()
-        group = widgets.Group(
-            title="Scratchpad",
-            description="Which scratchpads there are is under General; this is "
-            "how they are shown in the sidebar.",
-        )
-        self.sidebar_scratchpad_rows = []
-        for title, subtitle, field in (
-            (
-                "Show in the sidebar",
-                "The scratchpad in the narrow list. The overview has its own "
-                "switch for the same thing.",
-                "show_notes",
-            ),
-            (
-                "Show both at once",
-                "With a global scratchpad and a context one, show them stacked "
-                "rather than one at a time behind a switch.",
-                "scratchpad_show_both",
-            ),
-        ):
-            row = _row_switch(
-                title,
-                subtitle,
-                getattr(live, field),
-                lambda value, name=field: self._apply(**{name: value}, resync=True),
-            )
-            group.add(row)
-            self.sidebar_scratchpad_rows.append(row)
 
         self.scratchpad_height_row = _row_spin(
             "Writing area height",
@@ -593,7 +563,8 @@ class SettingsPage(widgets.NavigationPage):
             lambda v: self._apply(scratchpad_height=v, resync=True),
         )
         group.add(self.scratchpad_height_row)
-        self.sidebar_scratchpad_rows.append(self.scratchpad_height_row)
+        self.scratchpad_rows.append(self.scratchpad_height_row)
+        self._sync_scratchpad_rows()
         return group
 
     def _sync_scratchpad_rows(self) -> None:
@@ -601,8 +572,6 @@ class SettingsPage(widgets.NavigationPage):
         # question at all while the scratchpad is off.
         live = settings.current()
         for row in getattr(self, "scratchpad_rows", []):
-            row.set_sensitive(live.scratchpad)
-        for row in getattr(self, "sidebar_scratchpad_rows", []):
             row.set_sensitive(live.scratchpad)
 
     def _sync_sidebar_rows(self) -> None:
@@ -631,6 +600,25 @@ class SettingsPage(widgets.NavigationPage):
         )
         # Only hover-expansion retracts on its own, so only it has a delay.
         self.collapse_delay_row.set_visible(self.hover_delay_row.get_visible())
+
+    def _contexts(self) -> widgets.Group:
+        live = settings.current()
+        group = widgets.Group(
+            title="Contexts",
+            description="How contexts are listed wherever they are shown.",
+        )
+        group.add(
+            _row_combo(
+                "Order contexts by",
+                "The sidebar, the overview and the rail all follow this, so "
+                "they cannot disagree about the order.",
+                ("Most recently used", "When they were made", "Name"),
+                settings.CONTEXT_SORTS,
+                live.context_sort,
+                lambda v: self._apply(context_sort=v, resync=True),
+            )
+        )
+        return group
 
     def _saving(self) -> widgets.Group:
         live = settings.current()

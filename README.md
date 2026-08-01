@@ -280,9 +280,9 @@ text as widgets where a box is something you click.
 
 ## Settings
 
-The cogwheel in the launcher's header, in three tabs — **Overview Window**,
-**Sidebar** and **General**. Changes apply as you make them; the few that need a
-restart say so.
+The cogwheel in the launcher's header, in five tabs — **Launcher**,
+**Overview**, **Scratchpad**, **Contexts** and **System**. Changes apply as you
+make them; the few that need a restart say so.
 
 | Setting | Meaning |
 | --- | --- |
@@ -305,6 +305,7 @@ restart say so.
 | Overview button | Show the Overview button at the top of the sidebar |
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |
+| Order contexts by | Most recently used, when they were made, or name |
 | Sort applications by | How the overview's grid is ordered when it opens |
 | Applications open in | What clicking an application in the overview does |
 | Scratchpad (overview) | Show the scratchpad in the overview |

@@ -224,3 +224,39 @@ def test_the_overview_opens_the_same_way_every_time():
     odd = Settings(overview_sort="sideways", overview_target="nowhere").validated()
     assert odd.overview_sort == "recent"
     assert odd.overview_target == "new"
+
+
+def test_contexts_can_be_ordered_three_ways():
+    live = Settings().validated()
+    assert live.context_sort == "recent"
+    assert Settings(context_sort="sideways").validated().context_sort == "recent"
+    for order in settings.CONTEXT_SORTS:
+        assert Settings(context_sort=order).validated().context_sort == order
+
+
+def test_the_order_setting_reaches_the_list(isolated_settings):
+    """One order for everywhere contexts are listed — the sidebar, the overview
+    and the rail all read `store.contexts`."""
+    import time
+
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    first = store.create("Zebra")
+    first.created_at = 100.0
+    first.last_used_at = 300.0
+    second = store.create("Apple")
+    second.created_at = 200.0
+    second.last_used_at = 100.0
+
+    settings.update(context_sort="name")
+    store._sort()
+    assert [c.title for c in store.contexts] == ["Apple", "Zebra"]
+
+    settings.update(context_sort="created")
+    store._sort()
+    assert [c.title for c in store.contexts] == ["Apple", "Zebra"]
+
+    settings.update(context_sort="recent")
+    store._sort()
+    assert [c.title for c in store.contexts] == ["Zebra", "Apple"]

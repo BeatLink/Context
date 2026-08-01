@@ -100,7 +100,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         ):
             getattr(content, setter)(18)
 
-        self.entry = Gtk.SearchEntry(placeholder_text="Search contexts and apps")
+        self.entry = widgets.SearchBar("Search contexts and apps")
         self.entry.connect("search-changed", lambda _e: self.refresh())
         self.entry.connect("activate", lambda _e: self._activate_first())
         # A focused search entry consumes Escape as stop-search, so the

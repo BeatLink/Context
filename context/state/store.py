@@ -312,7 +312,22 @@ class ContextStore:
         tmp.replace(self.path)
 
     def _sort(self) -> None:
-        self.contexts.sort(key=lambda c: c.last_used_at, reverse=True)
+        """Order the list the way the setting says.
+
+        One order for everywhere contexts are listed — the sidebar, the overview
+        and the rail all read `self.contexts` — so they cannot disagree about
+        it. Sorting by name is ascending; the two by time are newest first,
+        since "what I was just doing" is the thing worth having at the top.
+        """
+        from context.state import settings
+
+        order = settings.current().context_sort
+        if order == "name":
+            self.contexts.sort(key=lambda c: c.title.casefold())
+        elif order == "created":
+            self.contexts.sort(key=lambda c: c.created_at, reverse=True)
+        else:
+            self.contexts.sort(key=lambda c: c.last_used_at, reverse=True)
 
     def create(
         self,
