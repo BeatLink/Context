@@ -323,3 +323,67 @@ def test_a_drifted_context_offers_the_way_back_as_well_as_the_way_on(gtk_app, is
     assert seen["settled"] is False
     assert seen["in_menu"] is True
     assert [c.title for c in seen["restored"]] == ["work"]
+
+
+def test_the_row_buttons_can_each_be_switched_off(gtk_app, isolated_store):
+    """Every button is a shortcut to something the menu offers anyway, so a
+    row with all of them off still does everything it did."""
+    from context.state import settings
+    from context.state.store import Context
+    from context.ui.rows import ContextRow
+
+    seen = {}
+
+    def build(ctx):
+        return ContextRow(
+            ctx,
+            lambda c: None,
+            lambda c, is_new=False: None,
+            lambda c: None,
+            is_open=True,
+            is_drifted=True,
+            on_delete=lambda c: None,
+            on_add_app=lambda c: None,
+            on_save=lambda c: None,
+            on_restore=lambda c: None,
+        )
+
+    def body(app):
+        ctx = Context(title="work")
+        row = build(ctx)
+        seen["on"] = (
+            row.save.get_visible(),
+            row.restore.get_visible(),
+            row.add_app.get_visible(),
+            row.close.get_visible(),
+        )
+
+        settings.update(
+            show_save_button=False,
+            show_restore_button=False,
+            show_add_app_button=False,
+            show_close_button=False,
+        )
+        bare = build(ctx)
+        seen["off"] = (
+            bare.save.get_visible(),
+            bare.restore.get_visible(),
+            bare.add_app.get_visible(),
+            bare.close.get_visible(),
+        )
+        # Editing is not one of the four, so it stays.
+        seen["edit"] = bare.edit.get_visible()
+        # And the menu still offers every one of them. Parented first: a
+        # popover on a row that is in no window takes the process down.
+        window = Gtk.ApplicationWindow(application=app)
+        window.set_child(bare)
+        bare.open_menu()
+        seen["menu"] = set(bare.menu_items)
+        window.destroy()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["on"] == (True, True, True, True)
+    assert seen["off"] == (False, False, False, False)
+    assert seen["edit"] is True
+    assert {"save", "restore", "add-app", "close"} <= seen["menu"]

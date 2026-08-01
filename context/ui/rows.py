@@ -19,6 +19,7 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gdk, GLib, Gtk
 
+from context.state import settings
 from context.ui import widgets
 from context.system.apps import App
 from context.state.layout import preset_for
@@ -115,6 +116,11 @@ class ContextRow(widgets.ActionRow):
         self.set_title(ctx.title)
         self.set_activatable(True)
 
+        # Which shortcuts this row draws. Every one of them is also in the
+        # menu, so switching one off takes away the button and never the
+        # action — the row can be as bare as a list of names and still do
+        # everything it did.
+        shown = settings.current()
         self.is_virtual = is_no_context(ctx)
         if self.is_virtual:
             count = len(getattr(ctx, "windows", []))
@@ -172,7 +178,11 @@ class ContextRow(widgets.ActionRow):
         # drifted: an unsaved context has nothing to compare against, and the
         # button is the only way it stops being thrown away when it closes.
         self.save.set_visible(
-            bool(on_save is not None and (is_drifted or ctx.ephemeral))
+            bool(
+                shown.show_save_button
+                and on_save is not None
+                and (is_drifted or ctx.ephemeral)
+            )
         )
         self.save.connect("clicked", lambda _b: on_save and on_save(ctx))
 
@@ -185,7 +195,12 @@ class ContextRow(widgets.ActionRow):
         self.restore.add_css_class("flat")
         self.restore.set_tooltip_text("Put these windows back where they were saved")
         self.restore.set_visible(
-            bool(is_drifted and on_restore is not None and not self.is_virtual)
+            bool(
+                shown.show_restore_button
+                and is_drifted
+                and on_restore is not None
+                and not self.is_virtual
+            )
         )
         self.restore.connect("clicked", lambda _b: on_restore and on_restore(ctx))
 
@@ -200,8 +215,23 @@ class ContextRow(widgets.ActionRow):
             if ctx.ephemeral
             else "Close this context, keeping it for later"
         )
-        self.close.set_visible(bool(is_open and on_close is not None))
+        self.close.set_visible(
+            bool(shown.show_close_button and is_open and on_close is not None)
+        )
         self.close.connect("clicked", lambda _b: on_close and on_close(ctx))
+
+        # Opening an application into this context: the verb belongs to the
+        # context, so this is the row's, and the catalogue it leads to is the
+        # one the overview and the editor draw.
+        self.add_app = Gtk.Button(
+            icon_name="list-add-symbolic", valign=Gtk.Align.CENTER
+        )
+        self.add_app.add_css_class("flat")
+        self.add_app.set_tooltip_text("Open an app in this context")
+        self.add_app.set_visible(
+            bool(shown.show_add_app_button and on_add_app is not None)
+        )
+        self.add_app.connect("clicked", lambda _b: on_add_app and on_add_app(ctx))
 
         self.edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER)
         self.edit.add_css_class("flat")
@@ -212,7 +242,9 @@ class ContextRow(widgets.ActionRow):
         self.edit.connect("clicked", lambda _b: on_edit and on_edit(ctx))
 
         # Only the ones that will show, then joined — see `link_suffixes`.
-        for button in (self.save, self.restore, self.close, self.edit):
+        for button in (
+            self.save, self.restore, self.add_app, self.close, self.edit
+        ):
             if button.get_visible():
                 self.add_suffix(button)
         self.link_suffixes()

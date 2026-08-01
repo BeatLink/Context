@@ -287,7 +287,10 @@ nothing to go back to — and the emptied context is closed, or discarded if it
 was never saved.
 
 Right-clicking a context in the sidebar opens its menu: open it, open an app
-inside it, edit it, close it, or delete it. "Open app here" shows the same
+inside it, edit it, close it, or delete it. The row draws buttons for the common
+ones, and **Buttons on a context** in settings says which — the menu offers all
+of them whatever is switched on there, so turning a button off takes away the
+shortcut and never the action. "Open app here" shows the same
 application catalogue the overview and the editor do; what you pick joins that
 context and opens in it.
 

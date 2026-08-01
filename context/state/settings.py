@@ -241,6 +241,14 @@ class Settings:
     # is useful without it.
     show_new_context: bool = True
     show_saved: bool = True
+    # The quick-action buttons on a context's row. Each one is a shortcut to
+    # something the right-click menu offers anyway, so switching one off takes
+    # away the button and never the action — which is what makes these safe to
+    # offer, and different from a switch that removes a capability.
+    show_save_button: bool = True
+    show_restore_button: bool = True
+    show_add_app_button: bool = True
+    show_close_button: bool = True
     show_apps: bool = True
     # How the contexts are ordered wherever they are listed.
     context_sort: str = "recent"
@@ -338,6 +346,10 @@ class Settings:
             show_search=bool(self.show_search),
             show_new_context=bool(self.show_new_context),
             show_saved=bool(self.show_saved),
+            show_save_button=bool(self.show_save_button),
+            show_restore_button=bool(self.show_restore_button),
+            show_add_app_button=bool(self.show_add_app_button),
+            show_close_button=bool(self.show_close_button),
             show_apps=bool(self.show_apps),
             context_sort=(
                 self.context_sort.strip().lower()

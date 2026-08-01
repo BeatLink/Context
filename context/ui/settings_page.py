@@ -197,7 +197,12 @@ class SettingsPage(widgets.NavigationPage):
             (
                 "contexts",
                 "Contexts",
-                [self._contexts(), self._saving(), self._screens()],
+                [
+                    self._contexts(),
+                    self._card_buttons(),
+                    self._saving(),
+                    self._screens(),
+                ],
             ),
             ("system", "System", [self._advanced(), self._layers(), self._files()]),
         ):
@@ -464,6 +469,58 @@ class SettingsPage(widgets.NavigationPage):
                 self.apps_switch_row = row
 
         self._sync_sidebar_rows()
+        return group
+
+    def _card_buttons(self) -> widgets.Group:
+        """The shortcuts on a context's row.
+
+        Each is a button for something the right-click menu offers anyway, so
+        every one of these can be off and the row still does everything it did
+        — which is what makes them safe to offer. They cost width rather than
+        capability, and a row carrying five of them has little left for the
+        name.
+        """
+        live = settings.current()
+        group = widgets.Group(
+            title="Buttons on a context",
+            description="Shortcuts on the row itself. Right-clicking a context "
+            "offers all of them whatever is switched on here, so turning one "
+            "off takes away the button and not the action.",
+        )
+        for title, subtitle, field in (
+            (
+                "Save",
+                "Keeps an unsaved context, or saves where the windows have got "
+                "to. Only shown when there is something to keep.",
+                "show_save_button",
+            ),
+            (
+                "Put back",
+                "Returns a drifted context's windows to where it was saved. "
+                "Only shown when it has drifted.",
+                "show_restore_button",
+            ),
+            (
+                "Open an app",
+                "Adds an application to this context and opens it there.",
+                "show_add_app_button",
+            ),
+            (
+                "Close",
+                "Shuts the context's windows. Only shown while it is open.",
+                "show_close_button",
+            ),
+        ):
+            group.add(
+                _row_switch(
+                    title,
+                    subtitle,
+                    getattr(live, field),
+                    lambda value, name=field: self._apply(
+                        **{name: value}, resync=True
+                    ),
+                )
+            )
         return group
 
     def _overview(self) -> widgets.Group:

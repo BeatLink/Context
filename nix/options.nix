@@ -131,6 +131,18 @@ rec {
       show_saved = setting t.bool "true"
         "Show saved contexts beneath the open ones.";
 
+      show_save_button = setting t.bool "true"
+        "Show the save button on a context's row.";
+
+      show_restore_button = setting t.bool "true"
+        "Show the put-the-windows-back button on a context's row.";
+
+      show_add_app_button = setting t.bool "true"
+        "Show the open-an-app-here button on a context's row.";
+
+      show_close_button = setting t.bool "true"
+        "Show the close button on a context's row.";
+
       show_apps = setting t.bool "true"
         "Show matching applications under the search results.";
 
