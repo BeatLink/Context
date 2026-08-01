@@ -110,3 +110,36 @@ def test_escape_clears_before_it_closes(gtk_app):
     run_app(gtk_app, body)
     assert seen["after_first"] == ("", 0)
     assert seen["after_second"] == ("", 1)
+
+
+@needs_display
+def test_a_settings_choice_is_not_a_dropdown(gtk_app):
+    """The settings page is a layer-shell overlay, and a GtkDropDown there opens
+    its popover and throws the click away — the value never changes. Every combo
+    in the application was dead for exactly this reason once settings moved out
+    of the sidebar into a window of its own, so this asserts the control is
+    buttons and that clicking one actually reports the new value."""
+    from context.ui import settings_page
+
+    seen = {"picked": []}
+
+    def body(app):
+        row = settings_page._row_combo(
+            "Order contexts by",
+            "How the list is ordered.",
+            ("Most recently used", "When they were made", "Name"),
+            ("recent", "created", "name"),
+            "recent",
+            seen["picked"].append,
+        )
+        seen["is_buttons"] = isinstance(row.choice, widgets.SegmentedChoice)
+        seen["starts_on"] = row.choice.get_selected()
+        seen["no_dropdown"] = not hasattr(row, "dropdown")
+        row.choice.set_selected(2)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["is_buttons"] is True
+    assert seen["no_dropdown"] is True
+    assert seen["starts_on"] == 0
+    assert seen["picked"] == ["name"]

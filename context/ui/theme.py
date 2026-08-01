@@ -486,6 +486,36 @@ window.ctx-window box.linked > *:not(:first-child),
 window.ctx-window stackswitcher > button:not(:first-child) {
     border-left-width: 0;
 }
+
+/* A row's menu, on its own surface above everything.
+
+   `ctx_surface` carries the launcher's transparency, so a menu painted with it
+   showed the desktop — and whatever window happened to be under it — through
+   the words. A menu is a few lines of text over whatever you were pointing at,
+   which is the one place translucency costs legibility outright, so it takes
+   `ctx_surface_solid`: the same colour with the alpha taken off, derived rather
+   than declared so a restyled surface brings the menu with it. */
+window.ctx-window popover > contents {
+    background-color: @ctx_surface_solid;
+    border: 1px solid @ctx_border;
+    border-radius: 10px;
+    padding: 4px;
+}
+window.ctx-window popover > arrow {
+    background-color: @ctx_surface_solid;
+    border: 1px solid @ctx_border;
+}
+/* The buttons inside it are the menu's items; a plate each would read as a
+   toolbar rather than a list. */
+window.ctx-window popover > contents button {
+    background: none;
+    background-image: none;
+    border-color: transparent;
+    border-radius: 6px;
+}
+window.ctx-window popover > contents button:hover {
+    background-color: @ctx_control_hover;
+}
 window.ctx-window entry:focus-within,
 window.ctx-window spinbutton:focus-within {
     border-color: @ctx_accent;

@@ -106,11 +106,27 @@ def _row_spin(title, subtitle, value, low, high, step, on_change) -> widgets.Row
 
 
 def _row_combo(title, subtitle, labels, values, current_value, on_change):
-    drop = Gtk.DropDown(model=Gtk.StringList.new(list(labels)), hexpand=True)
-    drop.set_selected(values.index(current_value) if current_value in values else 0)
-    drop.connect("notify::selected", lambda d, _p: on_change(values[d.get_selected()]))
-    row = _stacked(title, subtitle, drop)
-    row.dropdown = drop
+    """One of several, as buttons rather than a dropdown.
+
+    A `Gtk.DropDown` opens a popover, and this page is a layer-shell overlay:
+    the popup closes with the old value still selected, so a dropdown here does
+    nothing at all. The editor hit this first and the note recording it said the
+    settings page was exempt — which stopped being true the day settings moved
+    out of the sidebar into a window of its own, and went unnoticed until every
+    combo in the application was dead.
+    """
+    choice = widgets.SegmentedChoice(lambda index: on_change(values[index]))
+    for label in labels:
+        choice.add(label)
+    if current_value in values:
+        choice.set_selected(values.index(current_value), notify=False)
+
+    # No scroller. The buttons are the control, so the row is at least as wide
+    # as all of them — a scrollbar across a handful of buttons hides options
+    # behind a gesture and reads as a mistake. The description takes whatever
+    # is left and wraps, which is the thing that should give.
+    row = _stacked(title, subtitle, choice)
+    row.choice = choice
     return row
 
 
