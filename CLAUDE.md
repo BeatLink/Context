@@ -152,6 +152,14 @@ The contract, and the constraints holding it up:
   parses the `@define-color ctx_*` lines out of style.css itself. Never
   hard-code a colour in a widget or a Cairo call — add a field to `Theme` so
   the stylesheet and the drawing stay one palette.
+- **Order and scope decide a rule, not just its selector.** `window.ctx-window
+  button` gives every button an 8px plate, and it sits late in the sheet. A
+  `.linked > button` rule has the same specificity — one class, two elements —
+  so written earlier it lost the tie and the corners stayed round, with the
+  rules plainly present in the generated CSS and no error anywhere. Anything
+  overriding the general button, entry or spinbutton plates has to come after
+  them *and* carry the window scope. Found by painting the rule bright red and
+  photographing it; reading the sheet had suggested three wrong culprits first.
 - Styles revalidate on the next frame, not at the reload call. A test that
   reads a colour back synchronously after `reinstall()` reads the old value
   and proves nothing; present the window and wait.

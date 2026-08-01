@@ -281,36 +281,6 @@ popover > arrow {
     border-bottom: none;
 }
 
-/* `.linked` was libadwaita's too, and went the same way as the two above —
-   still on the search row, on every SegmentedChoice and on the settings tabs,
-   with nothing defining it. The buttons sat flush and each kept its own
-   rounded corners, so a joined control read as a row of separate ones with
-   the seams showing.
-
-   A GtkStackSwitcher gets the same treatment: it is a linked group that does
-   not carry the class, since GTK styles it by element name. */
-.linked > button,
-.linked > entry,
-stackswitcher > button {
-    border-radius: 0;
-}
-.linked > *:first-child,
-stackswitcher > button:first-child {
-    border-top-left-radius: 8px;
-    border-bottom-left-radius: 8px;
-}
-.linked > *:last-child,
-stackswitcher > button:last-child {
-    border-top-right-radius: 8px;
-    border-bottom-right-radius: 8px;
-}
-/* One border between neighbours rather than each drawing its own, which at
-   this size is the difference between a join and a gap. */
-.linked > *:not(:first-child),
-stackswitcher > button:not(:first-child) {
-    border-left-width: 0;
-}
-
 .dim-label {
     opacity: 0.7;
 }
@@ -475,6 +445,46 @@ window.ctx-window dropdown > button {
 window.ctx-window button:hover,
 window.ctx-window dropdown > button:hover {
     background-color: @ctx_control_hover;
+}
+
+/* `.linked` is not a GTK4 built-in. It comes from whatever stylesheet is in
+   play — libadwaita's, or an Adwaita-derived desktop theme — and Context ships
+   its own sheet with libadwaita removed, so it has to define the class itself
+   or a linked box is just buttons that happen to touch.
+
+   Both the position and the scope are load-bearing, and getting either wrong
+   fails silently. The rule above gives every button in a Context window its
+   own 8px plate; a `.linked > button` rule has the same specificity as
+   `window.ctx-window button` (one class, two elements), so written earlier in
+   the file it lost the tie and the corners stayed round. Written here, after
+   it, and scoped to the window as well, it wins on both counts.
+
+   `margin: 0` matters too: a desktop theme puts margin on buttons, and a gap
+   between them is precisely what stops a group reading as one control.
+
+   A GtkStackSwitcher gets the same treatment: it is a linked group that does
+   not carry the class, since GTK styles it by element name. */
+window.ctx-window box.linked > button,
+window.ctx-window box.linked > entry,
+window.ctx-window stackswitcher > button {
+    border-radius: 0;
+    margin: 0;
+}
+window.ctx-window box.linked > *:first-child,
+window.ctx-window stackswitcher > button:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+window.ctx-window box.linked > *:last-child,
+window.ctx-window stackswitcher > button:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+/* One border between neighbours rather than each drawing its own, which at
+   this size is the difference between a join and a gap. */
+window.ctx-window box.linked > *:not(:first-child),
+window.ctx-window stackswitcher > button:not(:first-child) {
+    border-left-width: 0;
 }
 window.ctx-window entry:focus-within,
 window.ctx-window spinbutton:focus-within {
@@ -679,9 +689,18 @@ def install() -> bool:
 
     Anything using a `ctx-` style class has to call this — the launcher styles
     its rail, the editor its tiles, and whichever appears first must not be the
-    unstyled one. The built-in sheet goes on at USER priority so the desktop
-    theme cannot outrank it, and style.css goes on one step above so the user
-    outranks Context.
+    unstyled one.
+
+    Both providers sit *above* USER, not at it. GTK4 ignores `gtk-theme-name`,
+    so the usual way to get a theme is `~/.config/gtk-4.0/gtk.css` importing it
+    — which is what home-manager writes — and GTK loads that file at USER. A
+    desktop theme therefore arrives at Context's own priority rather than at
+    THEME beneath it, and a rule tied with it is decided by whatever the
+    tie-break happens to be. That is not a contest to enter: `.linked` was
+    defined, present in the sheet, and silently lost to Mint-Y for exactly this
+    reason. The built-in sheet goes one step above the imported theme, and
+    style.css one above that, so the order is theme, then Context, then the
+    user — which is what it always claimed to be.
     """
     global _installed, _provider, _user_provider
     if _installed:
