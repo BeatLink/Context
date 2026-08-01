@@ -91,22 +91,23 @@ class OverviewWindow(Gtk.ApplicationWindow):
         # A tiled window fills the workspace it is on, so this only decides the
         # shape it takes where there is no window manager to tile it.
         self.set_default_size(1200, 720)
+        # The toolkit half of having no titlebar. It is not the half that
+        # matters on Hyprland — hyprbars decorates regardless and is turned off
+        # by a window rule — but a compositor honouring xdg-decoration would
+        # otherwise put a bar with a close button on the one window that must
+        # not close.
+        self.set_decorated(False)
 
-        toolbar = widgets.ToolbarView()
-        toolbar.add_css_class("ctx-surface")
-        toolbar.add_css_class("ctx-solid")
-        toolbar.set_overflow(Gtk.Overflow.HIDDEN)
-        header = widgets.HeaderBar(title="Overview")
-        header.set_show_start_title_buttons(False)
-        header.set_show_end_title_buttons(False)
-        self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
-        self.back_button.add_css_class("flat")
-        self.back_button.set_tooltip_text("Back to where you were")
-        self.back_button.connect("clicked", lambda _b: self._leave())
-        header.pack_start(self.back_button)
-        toolbar.add_top_bar(header)
-
+        # No header. Every other full-screen view is a thing you opened and
+        # will close, so it carries a title saying which one and a back button
+        # to leave by; home is neither. The title named the screen you are
+        # always able to get to, and the back button offered to leave the one
+        # place that cannot be left empty — Escape and the sidebar's own list
+        # are the ways out, and both were already there.
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        content.add_css_class("ctx-surface")
+        content.add_css_class("ctx-solid")
+        content.set_overflow(Gtk.Overflow.HIDDEN)
         for setter in (
             "set_margin_top",
             "set_margin_bottom",
@@ -227,8 +228,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         columns.append(right)
         content.append(columns)
 
-        toolbar.set_content(content)
-        self.set_child(toolbar)
+        self.set_child(content)
 
         escape = Gtk.ShortcutController()
         escape.add_shortcut(

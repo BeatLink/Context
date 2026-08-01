@@ -116,6 +116,30 @@ class HyprlandBackend:
         return result is not None and result.returncode == 0
 
     @traced(log)
+    def hide_titlebar(self, app_id: str, title: str) -> bool:
+        """Suppress hyprbars' titlebar on the overview.
+
+        Hyprland draws no decorations of its own, so there is only ever a
+        plugin's to suppress and nothing to do when none is loaded — the rule
+        is simply never matched.
+
+        The field is `hyprbars:no_bar`, taking a value, and it is not under
+        `plugin:`: `plugin:hyprbars:no_bar` is answered "invalid field type"
+        and `nobar` "missing a value". Read out of the plugin's own source,
+        which registers the effect by that name, after two plausible spellings
+        were rejected and a third — `bar_blacklist`, which does not exist —
+        was accepted and silently did nothing.
+        """
+        if not app_id or not title:
+            return False
+        result = self._run(
+            "keyword",
+            "windowrule",
+            f"hyprbars:no_bar on, match:class {app_id}, match:title {title}",
+        )
+        return result is not None and result.returncode == 0
+
+    @traced(log)
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace | None:
         name = handle or f"{HANDLE_PREFIX}{_sanitize(title)}"
         # A context called "Home" derives the overview's own handle, and the two

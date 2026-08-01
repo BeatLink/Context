@@ -99,3 +99,40 @@ def test_the_overview_is_pinned_to_home_by_a_window_rule(monkeypatch):
     # class would send the launcher itself to home.
     assert wm.bind_to_home("io.beatlink.Context", "") is False
     assert wm.bind_to_home("", "Overview") is False
+
+
+def test_the_overviews_titlebar_is_suppressed_by_the_plugins_own_field_name():
+    """hyprbars registers the effect as `hyprbars:no_bar`, read out of its
+    source. `nobar` is answered "missing a value" and `plugin:hyprbars:no_bar`
+    "invalid field type" — and `bar_blacklist`, which does not exist at all,
+    is answered "ok" and silently does nothing. Only the source settles it."""
+    from context.system.backends.hyprland import HyprlandBackend
+
+    wm = HyprlandBackend()
+    sent = []
+
+    class Result:
+        returncode = 0
+
+    wm._run = lambda *a: sent.append(a) or Result()
+
+    assert wm.hide_titlebar("io.beatlink.Context", "Overview") is True
+    rule = sent[0][2]
+    assert sent[0][:2] == ("keyword", "windowrule")
+    assert rule.startswith("hyprbars:no_bar on,")
+    assert not rule.startswith("plugin:")
+    assert "match:class io.beatlink.Context" in rule
+    assert "match:title Overview" in rule
+
+    # Both halves, or the rule would undecorate every window of the class —
+    # the launcher included.
+    assert wm.hide_titlebar("io.beatlink.Context", "") is False
+    assert wm.hide_titlebar("", "Overview") is False
+
+
+def test_the_null_backend_decorates_nothing_and_has_no_home():
+    from context.system.backends import NullBackend
+
+    wm = NullBackend()
+    assert wm.hide_titlebar("a", "b") is False
+    assert wm.bind_to_home("a", "b") is False

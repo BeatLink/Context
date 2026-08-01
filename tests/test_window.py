@@ -2666,7 +2666,8 @@ def test_home_is_pinned_before_its_window_exists(gtk_app, isolated_store, backen
 
         window = ContextApplication.ensure_overview(app)
         seen["bound"] = [c for c in backend.calls if c[0] == "bind-home"]
-        # The rule is in place before the window exists, not after it maps.
+        seen["undecorated"] = [c for c in backend.calls if c[0] == "hide-titlebar"]
+        # The rules are in place before the window exists, not after it maps.
         seen["bound_first"] = backend.calls[0][0] == "bind-home"
         # Built once and kept — home cannot be left without its window.
         seen["same"] = ContextApplication.ensure_overview(app) is window
@@ -2677,6 +2678,10 @@ def test_home_is_pinned_before_its_window_exists(gtk_app, isolated_store, backen
     run_app(gtk_app, body)
     assert seen["bound"] == [
         ("bind-home", gtk_app.get_application_id(), OVERVIEW_TITLE)
+    ]
+    # A fixture is not a window you manage: no titlebar offering to close it.
+    assert seen["undecorated"] == [
+        ("hide-titlebar", gtk_app.get_application_id(), OVERVIEW_TITLE)
     ]
     assert seen["bound_first"] is True
     assert seen["same"] is True

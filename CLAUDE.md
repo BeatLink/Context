@@ -212,6 +212,19 @@ What holds it up:
 - **Build the overview at startup**, on idle after the launchers. Reading every
   installed application takes long enough to be raced, and home without its
   window is an empty workspace.
+- **No titlebar, on either side.** The window has no `HeaderBar` — a title
+  naming the screen you can always reach, and a back button offering to leave
+  the one place that cannot be left empty, were both saying nothing. Escape and
+  the sidebar's list are the ways out. `hide_titlebar()` suppresses the
+  compositor's half.
+- **hyprbars' field is `hyprbars:no_bar`, and it takes a value.** Read out of
+  the plugin's source (`registerEffect("hyprbars:no_bar")`) after `nobar` was
+  answered "missing a value" and `plugin:hyprbars:no_bar` "invalid field type".
+  `bar_blacklist` — which does not exist anywhere in the plugin — is answered
+  **`ok`** and silently does nothing, so "hyprctl accepted it" proves only that
+  it parsed. Verify by measuring: with `bar_part_of_window` the suppressed
+  window sits `bar_height` higher and taller than its neighbours, which is what
+  confirmed this (58/1012 against 86/984 at a bar height of 28).
 - **`close-request` returns True, and that really does refuse.** Also measured:
   `hyprctl dispatch closewindow` on a window whose handler returns True leaves it
   running. `restart` is the one exception and clears `permanent` first, because

@@ -207,7 +207,12 @@ class ContextApplication(Gtk.Application):
         # committed, and the sidebar handing the keyboard back in between moves
         # the active workspace out from under the map — which is exactly how
         # the overview ended up mapped in whatever context you came from.
-        self.backend.bind_to_home(self.get_application_id(), OVERVIEW_TITLE)
+        app_id = self.get_application_id()
+        self.backend.bind_to_home(app_id, OVERVIEW_TITLE)
+        # No titlebar either: home is a fixture, not a window you manage, and
+        # a compositor-drawn bar offers to close and move the one window that
+        # must not go anywhere.
+        self.backend.hide_titlebar(app_id, OVERVIEW_TITLE)
 
         window = OverviewWindow(
             self, self.store, backend=self.backend, notes=self.notes

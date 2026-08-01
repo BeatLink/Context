@@ -83,6 +83,14 @@ class Backend(Protocol):
         active workspace out from under the map.
         """
 
+    def hide_titlebar(self, app_id: str, title: str) -> bool:
+        """Ask the compositor not to decorate this window.
+
+        Home is a fixture rather than a window you manage — there is nothing to
+        close, and nowhere else for it to go — so a titlebar offering both is
+        an invitation to break it.
+        """
+
     def home_handle(self) -> str | None:
         """The workspace the overview lives on, or None where there is no such
         thing.
@@ -193,6 +201,9 @@ class NullBackend:
         return True
 
     def bind_to_home(self, app_id: str, title: str) -> bool:
+        return False
+
+    def hide_titlebar(self, app_id: str, title: str) -> bool:
         return False
 
     def home_handle(self) -> str | None:

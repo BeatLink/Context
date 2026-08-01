@@ -97,6 +97,10 @@ class FakeBackend:
         self.calls.append(("bind-home", app_id, title))
         return True
 
+    def hide_titlebar(self, app_id: str, title: str) -> bool:
+        self.calls.append(("hide-titlebar", app_id, title))
+        return True
+
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace:
         name = handle or f"ctx-{title.strip().casefold().replace(' ', '-')}"
         created = name not in self.workspaces

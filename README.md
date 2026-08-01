@@ -100,6 +100,9 @@ somewhere to come back to: closing your last context leaves you here rather than
 looking at an empty desktop. It is listed with your open contexts, first and
 always, and the sidebar sits beside it the way it sits beside anything else.
 
+It wears no titlebar, its own or the compositor's. There is nothing to close and
+nowhere for it to go.
+
 <kbd>Esc</kbd> clears the search, and again goes back to the context you came
 from. Editing a context, picking an app or writing a note opens over the
 overview and leaves it where it was.
