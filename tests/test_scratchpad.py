@@ -352,7 +352,7 @@ def test_the_sidebar_shows_the_scratchpad_rather_than_a_list(gtk_app, isolated_s
         )
         window.refresh()
         seen["is_a_pad"] = isinstance(window.scratchpad_view, ScratchpadSection)
-        seen["visible"] = window.scratchpad_box.get_visible()
+        seen["visible"] = window.notes_expander.get_visible()
         app.quit()
 
     run_app(gtk_app, body)
@@ -375,10 +375,10 @@ def test_the_sidebar_hides_the_scratchpad_when_it_is_switched_off(
             app, ContextStore(), lambda c: None, lambda c: None, notes=NoteStore()
         )
         window.refresh()
-        seen["on"] = window.scratchpad_box.get_visible()
+        seen["on"] = window.notes_expander.get_visible()
         settings.update(scratchpad=False)
         window.refresh()
-        seen["off"] = window.scratchpad_box.get_visible()
+        seen["off"] = window.notes_expander.get_visible()
         app.quit()
 
     run_app(gtk_app, body)
@@ -595,3 +595,53 @@ def test_the_height_is_clamped_to_what_can_be_rendered():
     assert Settings(scratchpad_height=99999).validated().scratchpad_height == (
         MAX_SCRATCHPAD_HEIGHT
     )
+
+
+@needs_display
+def test_the_scratchpad_folds_away_and_stays_folded(gtk_app, isolated_store):
+    """The writing area is the tallest thing in the column by some way, and a
+    sidebar that is mostly a text box is not a list of contexts.
+
+    Stored, unlike the saved group's state: this is a deliberate "not today"
+    rather than something the list works out for itself. Stored once, so it
+    goes through the application — two launchers disagreeing about one value is
+    how collapsing shipped broken twice.
+    """
+    from context.state import uistate
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        first = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        second = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        # The real fan-out, which is the application's: without it each
+        # launcher would answer for itself and they would disagree.
+        from context.app import ContextApplication
+
+        app.window, app.extra_windows = first, [second]
+        app.launchers = [first, second]
+        app.set_scratchpad_open = lambda o: ContextApplication.set_scratchpad_open(
+            app, o
+        )
+        seen["starts_open"] = first.notes_expander.get_expanded()
+
+        first.notes_expander.set_expanded(False)
+        seen["both_folded"] = (
+            first.notes_expander.get_expanded(),
+            second.notes_expander.get_expanded(),
+        )
+        seen["stored"] = uistate.get("scratchpad_open")
+
+        # A launcher built afterwards comes up the way it was left.
+        third = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["remembered"] = third.notes_expander.get_expanded()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["starts_open"] is True
+    assert seen["both_folded"] == (False, False)
+    assert seen["stored"] is False
+    assert seen["remembered"] is False

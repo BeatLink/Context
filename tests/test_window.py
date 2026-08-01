@@ -3119,7 +3119,7 @@ def test_the_scratchpad_master_switch_still_holds_on_home(
         window.is_sidebar = True
         window._live = LiveState(at_home=True)
         window.refresh()
-        seen["shown"] = window.scratchpad_box.get_visible()
+        seen["shown"] = window.notes_expander.get_visible()
         seen["forced"] = window._sections().show_notes
         app.quit()
 

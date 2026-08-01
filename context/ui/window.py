@@ -230,6 +230,16 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
         self.scratchpad_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
+        # Behind an expander, the way the saved group is. The writing area is
+        # the tallest thing in the column by some way, and a sidebar that is
+        # mostly a text box is not a list of contexts.
+        self.notes_expander = Gtk.Expander()
+        self.notes_expander.set_label_widget(self.notes_label)
+        self.notes_expander.set_child(self.scratchpad_box)
+        self.notes_expander.set_expanded(bool(uistate.get("scratchpad_open", True)))
+        self.notes_expander.connect("notify::expanded", self._on_notes_toggled)
+        self._suppress_notes_toggle = False
+
         groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         groups.append(self.open_label)
         groups.append(self.open_listbox)
@@ -256,8 +266,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # the context list and must not disappear with it: a launcher with no
         # contexts yet is exactly when somewhere to jot something is worth most,
         # and inside the stack it was hidden behind the empty state.
-        content.append(self.notes_label)
-        content.append(self.scratchpad_box)
+        content.append(self.notes_expander)
 
         # Collapsed, the sidebar is the rail — see context/rail.py. The old
         # names stay as aliases so callers keep working: `rail` is the strip of
@@ -886,8 +895,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # poll would take the cursor out from under whatever is being typed.
         notes_shown = live.scratchpad and live.show_notes
         self._sync_scratchpad(active.id if active else None, notes_shown)
-        self.notes_label.set_visible(notes_shown)
-        self.scratchpad_box.set_visible(notes_shown)
+        self.notes_expander.set_visible(notes_shown)
 
         self.open_label.set_visible(bool(opened or loose))
         self.open_listbox.set_visible(bool(opened or loose))
@@ -1043,6 +1051,35 @@ class LauncherWindow(Gtk.ApplicationWindow):
         if self._saved_pinned_open is not None:
             return self._saved_pinned_open
         return not opened
+
+    def _on_notes_toggled(self, expander, _param) -> None:
+        """Fold the scratchpad away, on every launcher and for next time.
+
+        Stored, unlike the saved group's state, because it is a deliberate "I
+        am not using this today" rather than something the list decides for
+        itself. Stored once, so it goes through the application: two launchers
+        disagreeing about one value is how collapsing shipped broken twice.
+        """
+        if self._suppress_notes_toggle:
+            return
+        app = self.get_application()
+        wanted = expander.get_expanded()
+        if app is not None and hasattr(app, "set_scratchpad_open"):
+            app.set_scratchpad_open(wanted)
+        else:
+            self.set_scratchpad_open(wanted)
+
+    def set_scratchpad_open(self, open_: bool) -> None:
+        """Show or fold this launcher's scratchpad, without touching the rest."""
+        if not open_ and self.scratchpad_view is not None:
+            # About to go off screen, and a note that is lost is worse than one
+            # that was slow to save.
+            self.scratchpad_view.flush()
+        if self.notes_expander.get_expanded() == open_:
+            return
+        self._suppress_notes_toggle = True
+        self.notes_expander.set_expanded(open_)
+        self._suppress_notes_toggle = False
 
     def _on_saved_toggled(self, expander, _param) -> None:
         """Remember a deliberate expand, so the next refresh does not undo it."""

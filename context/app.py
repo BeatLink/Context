@@ -852,6 +852,16 @@ class ContextApplication(Gtk.Application):
         for launcher_window in self.launchers:
             launcher_window.set_collapsed(collapsed)
 
+    def set_scratchpad_open(self, open_: bool) -> None:
+        """Fold or unfold the scratchpad on every launcher together.
+
+        One stored value, so the launchers cannot disagree about it and have
+        whichever restarted last decide what it had been.
+        """
+        uistate.save(scratchpad_open=open_)
+        for launcher_window in self.launchers:
+            launcher_window.set_scratchpad_open(open_)
+
     def refresh_all(self) -> None:
         """Keep every launcher — and home — showing the same thing.
 
