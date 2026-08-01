@@ -40,6 +40,20 @@ APP_RESULTS = 8
 # left the surface by then, so there are no motion events to go on.
 ZONE_POLL_MS = 200
 
+# The panel this button is about, drawn as a panel rather than as an arrow. An
+# arrow says which way something will move; the thing being collapsed is the
+# sidebar, and saying so is more use than saying which direction it goes.
+#
+# Adwaita has no top or bottom variant, so a launcher docked to either gets the
+# left-hand drawing — a rectangle with one edge filled, which reads as "there is
+# a panel here" whichever edge it is.
+SIDEBAR_ICONS = {
+    "left": "sidebar-show-symbolic",
+    "right": "sidebar-show-right-symbolic",
+    "top": "sidebar-show-symbolic",
+    "bottom": "sidebar-show-symbolic",
+}
+
 
 class LauncherWindow(Gtk.ApplicationWindow):
     def __init__(
@@ -120,7 +134,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # window there is no reserved space to give back.
         self.collapse_button: Gtk.Button | None = None
         if self.is_sidebar:
-            self.collapse_button = Gtk.Button(icon_name="go-previous-symbolic")
+            self.collapse_button = Gtk.Button(icon_name=SIDEBAR_ICONS["left"])
             self.collapse_button.add_css_class("flat")
             self.collapse_button.set_tooltip_text("Collapse to a rail")
             self.collapse_button.connect("clicked", lambda _b: self.toggle_collapsed())
@@ -648,12 +662,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         """
         if self.collapse_button is None:
             return
-        collapse_icon = {
-            "left": "go-previous-symbolic",
-            "right": "go-next-symbolic",
-            "top": "go-up-symbolic",
-            "bottom": "go-down-symbolic",
-        }[sidebar.configured_edge()]
+        collapse_icon = SIDEBAR_ICONS[sidebar.configured_edge()]
         if not self._pins:
             self.collapse_button.set_icon_name(collapse_icon)
             self.collapse_button.set_tooltip_text("Collapse to a rail")

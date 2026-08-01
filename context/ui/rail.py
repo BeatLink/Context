@@ -34,13 +34,14 @@ RAIL_MARGIN = 4
 RAIL_ICON_PADDING = 16
 MIN_RAIL_ICON = 12
 
-# Which way the expand button points: into the screen, away from the edge the
-# sidebar is docked against.
+# The same panel the header's button shows, so collapsing and expanding are one
+# control in two places rather than two unrelated arrows. Mirrored per edge
+# where Adwaita has a variant; top and bottom take the left-hand drawing.
 EXPAND_ICONS = {
-    "left": "go-next-symbolic",
-    "right": "go-previous-symbolic",
-    "top": "go-down-symbolic",
-    "bottom": "go-up-symbolic",
+    "left": "sidebar-show-symbolic",
+    "right": "sidebar-show-right-symbolic",
+    "top": "sidebar-show-symbolic",
+    "bottom": "sidebar-show-symbolic",
 }
 
 

@@ -2416,7 +2416,7 @@ def test_the_collapse_button_pins_when_the_sidebar_opens_itself(
     assert seen["pinned_open"] is True
     assert seen["no_longer_peeking"] is True
     # Pinned, it offers the opposite again.
-    assert seen["pinned_icon"] == "go-previous-symbolic"
+    assert seen["pinned_icon"] == "sidebar-show-symbolic"
     assert seen["unpinned"] is True
 
 
@@ -2701,7 +2701,8 @@ def test_a_horizontal_sidebar_gets_a_horizontal_rail(
     assert seen["rail"] == Gtk.Orientation.HORIZONTAL
     assert seen["buttons"] == Gtk.Orientation.HORIZONTAL
     # Expansion grows downward from a top bar, and the icon says so.
-    assert seen["expand_icon"] == "go-down-symbolic"
+    # Adwaita has no top/bottom variant, so a horizontal dock takes the left one.
+    assert seen["expand_icon"] == "sidebar-show-symbolic"
 
 
 def test_search_matches_whatever_the_case(gtk_app, isolated_store):
