@@ -1182,9 +1182,9 @@ def test_switching_screen_mode_rebuilds_the_previews(
         ctx = store.create("probe", resources=[Resource(app_id="a")])
         page = EditorPage(ctx, lambda *a_: None, lambda: None, on_delete=None)
 
-        page.mode_dropdown.set_selected(2)
+        page.mode_chooser.set_selected(2)
         seen["three"] = (page.screen_count, len(page.previews))
-        page.mode_dropdown.set_selected(0)
+        page.mode_chooser.set_selected(0)
         seen["one"] = (page.screen_count, len(page.previews))
         app.quit()
 
@@ -1214,11 +1214,11 @@ def test_switching_mode_keeps_what_the_other_mode_had(
         )
         page = EditorPage(ctx, lambda *a_: None, lambda: None, on_delete=None)
 
-        page.mode_dropdown.set_selected(1)      # two screens
+        page.mode_chooser.set_selected(1)      # two screens
         page._move_to_screen(0, 1, 1)
-        page.mode_dropdown.set_selected(0)      # back to one
+        page.mode_chooser.set_selected(0)      # back to one
         seen["one_screen"] = dict(page.arrangement.assignments)
-        page.mode_dropdown.set_selected(1)      # and back again
+        page.mode_chooser.set_selected(1)      # and back again
         seen["two_screen"] = dict(page.arrangement.assignments)
         app.quit()
 

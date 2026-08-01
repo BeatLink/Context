@@ -25,6 +25,38 @@ HANDLE = 14  # px hit area for the resize grips
 # styling for them; colours come from the theme instead. See context/theme.py.
 
 
+def _same_slot(one: Slot, other: Slot, tolerance: float = 0.01) -> bool:
+    return all(
+        abs(getattr(one, field) - getattr(other, field)) <= tolerance
+        for field in ("x", "y", "width", "height")
+    )
+
+
+def _preset_glyph(slots: list[Slot]) -> Gtk.DrawingArea:
+    """A thumbnail of an arrangement, for the button that applies it."""
+    area = Gtk.DrawingArea()
+    area.set_content_width(30)
+    area.set_content_height(20)
+
+    def draw(_area, cr, width: int, height: int) -> None:
+        palette = theme.current()
+        cr.set_source_rgba(*palette.rgba("preview_background"))
+        cr.rectangle(0, 0, width, height)
+        cr.fill()
+        for slot in slots:
+            x, y = slot.x * width, slot.y * height
+            w, h = slot.width * width, slot.height * height
+            cr.set_source_rgba(*palette.rgba("slot_fill"))
+            cr.rectangle(x + 1, y + 1, max(1.0, w - 2), max(1.0, h - 2))
+            cr.fill()
+            cr.set_source_rgba(*palette.rgba("slot_border"))
+            cr.set_line_width(1)
+            cr.rectangle(x + 1, y + 1, max(1.0, w - 2), max(1.0, h - 2))
+            cr.stroke()
+
+    area.set_draw_func(draw)
+    return area
+
 
 class LayoutPreview(Gtk.DrawingArea):
     """A scale model of the monitor, one rectangle per window.
@@ -577,12 +609,12 @@ class EditorPage(widgets.NavigationPage):
         heading.add_css_class("heading")
         layout_header.append(heading)
 
-        self.preset_dropdown = Gtk.DropDown.new_from_strings(
-            [PRESET_LABELS[k] for k in PRESETS]
-        )
-        self.preset_dropdown.set_tooltip_text("Start from an arrangement")
-        self.preset_dropdown.connect("notify::selected", self._on_preset_selected)
-        layout_header.append(self.preset_dropdown)
+        self.preset_chooser = widgets.SegmentedChoice(self._on_preset_selected)
+        for name in PRESETS:
+            self.preset_chooser.add(
+                _preset_glyph(PRESETS[name]), PRESET_LABELS[name]
+            )
+        layout_header.append(self.preset_chooser)
         content.append(layout_header)
 
         hint = Gtk.Label(
@@ -608,18 +640,14 @@ class EditorPage(widgets.NavigationPage):
         mode_label.add_css_class("dim-label")
         mode_row.append(mode_label)
 
-        self.mode_dropdown = Gtk.DropDown(
-            model=Gtk.StringList.new(
-                [
-                    f"{n} screen{'s' if n != 1 else ''}"
-                    + (" · attached now" if n == self.attached else "")
-                    for n in range(1, settings.current().max_screens + 1)
-                ]
+        self.mode_chooser = widgets.SegmentedChoice(self._on_mode_changed)
+        for n in range(1, settings.current().max_screens + 1):
+            self.mode_chooser.add(
+                f"{n} screen{'s' if n != 1 else ''}"
+                + (" · attached now" if n == self.attached else "")
             )
-        )
-        self.mode_dropdown.set_selected(self.screen_count - 1)
-        self.mode_dropdown.connect("notify::selected", self._on_mode_changed)
-        mode_row.append(self.mode_dropdown)
+        self.mode_chooser.set_selected(self.screen_count - 1, notify=False)
+        mode_row.append(self.mode_chooser)
         content.append(mode_row)
 
         self.screens_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -716,10 +744,10 @@ class EditorPage(widgets.NavigationPage):
         # Kept for the code that still speaks in one layout; screen 0's.
         self.preview = self.previews[0]
 
-    def _on_mode_changed(self, dropdown, _param) -> None:
+    def _on_mode_changed(self, selected: int) -> None:
         """Switch to editing another screen mode, keeping what was edited."""
         self.ctx.set_arrangement(self.screen_count, self.arrangement)
-        self.screen_count = dropdown.get_selected() + 1
+        self.screen_count = selected + 1
         self.arrangement = self.ctx.arrangement_for(self.screen_count)
         log.debug("editing the %d-screen layout", self.screen_count)
         self._build_previews()
@@ -769,6 +797,20 @@ class EditorPage(widgets.NavigationPage):
         # Screen 0 stays the single-screen layout, so a context edited while
         # docked still opens sensibly undocked.
         self.layout = healed.layout_for(0)
+        # The chooser shows which arrangement is in force, and shows none once
+        # a slot has been dragged away from it.
+        self.preset_chooser.set_selected(self._matching_preset(), notify=False)
+
+    def _matching_preset(self) -> int:
+        """Which preset the first screen currently is, or -1 for none."""
+        slots = self.arrangement.layout_for(0).slots
+        for index, name in enumerate(PRESETS):
+            preset = PRESETS[name][: len(slots)]
+            if len(preset) == len(slots) and all(
+                _same_slot(a, b) for a, b in zip(preset, slots)
+            ):
+                return index
+        return -1
 
     def _on_layout_changed(self, layout: Layout, screen: int = 0) -> None:
         screens = list(self.arrangement.screens)
@@ -806,9 +848,10 @@ class EditorPage(widgets.NavigationPage):
             preview.set_drop_target(False)
         self._update_state()
 
-    def _on_preset_selected(self, dropdown, _param) -> None:
-        name = list(PRESETS)[dropdown.get_selected()]
+    def _on_preset_selected(self, selected: int) -> None:
+        name = list(PRESETS)[selected]
         slots = list(PRESETS[name])
+        log.debug("preset %s chosen", name)
         # Keep one slot per selected app, padding or trimming the preset.
         # The preset applies to the screen it was chosen for, which is the
         # first one — the others keep whatever they were given.

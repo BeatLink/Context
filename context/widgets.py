@@ -360,6 +360,78 @@ class HeaderBar(Gtk.CenterBox):
         self.set_center_widget(widget)
 
 
+class SegmentedChoice(Gtk.Box):
+    """One of several, as buttons rather than a list behind a popover.
+
+    The editor is a layer-shell overlay, and a `Gtk.DropDown` there opens its
+    list but never keeps what is clicked in it — the popup closes with the old
+    value still selected, so both layout dropdowns appeared to do nothing.
+    Buttons live in the surface itself and have no such problem; on a screen
+    this size the choices are better shown than hidden anyway.
+    """
+
+    def __init__(self, on_change) -> None:
+        super().__init__(spacing=4)
+        self.add_css_class("linked")
+        self.on_change = on_change
+        self._buttons: list[Gtk.ToggleButton] = []
+        self._selected = 0
+        # Set while the buttons are being brought in line with the choice, so
+        # untoggling the old one is not read as a choice of its own.
+        self._settling = False
+
+    def add(self, child, tooltip: str = "") -> Gtk.ToggleButton:
+        button = Gtk.ToggleButton()
+        # Adwaita's checked state is a shade darker, which on a thumbnail of a
+        # window arrangement is invisible; the theme rings the chosen one.
+        button.add_css_class("ctx-choice")
+        if isinstance(child, str):
+            button.set_label(child)
+        else:
+            button.set_child(child)
+        if tooltip:
+            button.set_tooltip_text(tooltip)
+        index = len(self._buttons)
+        button.set_active(index == self._selected)
+        button.connect("toggled", lambda b, i=index: self._on_toggled(b, i))
+        self._buttons.append(button)
+        self.append(button)
+        return button
+
+    def _on_toggled(self, button: Gtk.ToggleButton, index: int) -> None:
+        if self._settling:
+            return
+        if not button.get_active():
+            # Clicking the chosen one again must not leave nothing chosen.
+            self._settle(self._selected)
+            return
+        self._selected = index
+        self._settle(index)
+        self.on_change(index)
+
+    def _settle(self, index: int) -> None:
+        self._settling = True
+        for position, button in enumerate(self._buttons):
+            button.set_active(position == index)
+        self._settling = False
+
+    def set_selected(self, index: int, notify: bool = True) -> None:
+        """Choose one, or -1 for none — which is what a hand-dragged layout is."""
+        if index >= len(self._buttons):
+            return
+        if index < 0:
+            self._selected = -1
+            self._settle(-1)
+            return
+        self._selected = index
+        self._settle(index)
+        if notify:
+            self.on_change(index)
+
+    def get_selected(self) -> int:
+        return self._selected
+
+
 class NavigationPage(Gtk.Box):
     """One screen in a navigation stack.
 

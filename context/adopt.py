@@ -4,8 +4,8 @@ The goal state is that every window belongs to a context. Windows opened
 outside one — from a notification, a file manager, a terminal you already had —
 are the leftovers, and this offers each of them a context to join.
 
-One list, one dropdown per window, one button. Deliberately not a wizard: the
-whole point is that adopting a window should be cheaper than recreating it
+One list, one row of choices per window, one button. Deliberately not a wizard:
+the whole point is that adopting a window should be cheaper than recreating it
 inside a context.
 """
 
@@ -36,7 +36,7 @@ class AdoptWindow(Gtk.ApplicationWindow):
         self.store = store
         self.windows = windows
         self.backend = backend
-        self.choices: dict[str, Gtk.DropDown] = {}
+        self.choices: dict[str, widgets.SegmentedChoice] = {}
 
         theme.install()
         self.set_default_size(720, 560)
@@ -99,12 +99,20 @@ class AdoptWindow(Gtk.ApplicationWindow):
                 subtitle=window.app_id or "unknown application",
             )
             row.set_subtitle_lines(1)
-            drop = Gtk.DropDown(
-                model=Gtk.StringList.new(labels), valign=Gtk.Align.CENTER
+            # Buttons rather than a dropdown: this is a layer-shell overlay,
+            # and a dropdown's popover never keeps what is clicked in it here.
+            choice = widgets.SegmentedChoice(lambda _index: None)
+            choice.set_valign(Gtk.Align.CENTER)
+            for label in labels:
+                choice.add(label)
+            choice.set_sensitive(bool(self.targets))
+            holder = Gtk.ScrolledWindow(
+                hexpand=True, propagate_natural_width=True, max_content_width=560
             )
-            drop.set_sensitive(bool(self.targets))
-            row.add_suffix(drop)
-            self.choices[window.id] = drop
+            holder.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+            holder.set_child(choice)
+            row.add_suffix(holder)
+            self.choices[window.id] = choice
             listbox.append(row)
 
         scroller = Gtk.ScrolledWindow(vexpand=True)
@@ -125,13 +133,13 @@ class AdoptWindow(Gtk.ApplicationWindow):
         self.add_controller(escape)
 
     def _adopt(self) -> int:
-        """Move every window whose dropdown names a context. Returns how many."""
+        """Move every window whose choice names a context. Returns how many."""
         moved = 0
         for window in self.windows:
-            drop = self.choices.get(window.id)
-            if drop is None:
+            choice = self.choices.get(window.id)
+            if choice is None:
                 continue
-            selected = drop.get_selected()
+            selected = choice.get_selected()
             if selected <= 0:  # index 0 is "leave it"
                 continue
             ctx = self.targets[selected - 1]

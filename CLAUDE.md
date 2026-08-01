@@ -331,6 +331,14 @@ launching real applications, and point `XDG_DATA_DIRS` at it.
   fails on protocol versions or GPU access (table in README). It needs a spare VT or
   a VM. Keep logic testable without a live Hyprland; the `hyprctl` stub approach in
   the scratchpad works well for this.
+- **No popover-based controls on an overlay.** A `Gtk.DropDown` in the editor
+  or the adopt window opens its list and then throws the click away: the popup
+  closes with the old value still selected, so both layout dropdowns appeared
+  to do nothing. Reported from the live session, not reproducible offscreen —
+  the model changes fine when the selection is set in code. Use
+  `widgets.SegmentedChoice` (buttons in the surface itself) for anything an
+  overlay has to choose between. The sidebar is not affected; the settings
+  page's combos work.
 - **A GTK label shows what it is given.** `markup_escape_text` on a title that
   is *not* parsed as markup spells the entities out — every context row but the
   current one read "Review todos &amp; notes", because only the active row is

@@ -147,3 +147,74 @@ def test_the_preview_edit_hotspot_opens_the_resource_page(gtk_app, isolated_stor
 
     run_app(gtk_app, body)
     assert seen["pushed"] is True
+
+
+def _preset_index(name: str) -> int:
+    from context.layout import PRESETS
+
+    return list(PRESETS).index(name)
+
+
+def test_choosing_an_arrangement_applies_it(gtk_app, isolated_store):
+    """The layout choosers are buttons, not dropdowns.
+
+    A `Gtk.DropDown` in the editor — a layer-shell overlay — opens its list but
+    never keeps what is clicked in it, so both layout dropdowns appeared to do
+    nothing at all.
+    """
+    from context.editor import EditorPage
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create(
+            "probe", resources=[Resource(app_id="a"), Resource(app_id="b")]
+        )
+        page = EditorPage(ctx, lambda *a_: None, lambda: None)
+        seen["starts_as"] = page.preset_chooser.get_selected()
+
+        page.preset_chooser._buttons[_preset_index("stacked")].set_active(True)
+        seen["slots"] = [
+            (s.x, s.y, s.width, s.height) for s in page.previews[0].layout.slots
+        ]
+        seen["chosen"] = page.preset_chooser.get_selected()
+
+        # Clicking the chosen one again must not leave nothing chosen.
+        page.preset_chooser._buttons[_preset_index("stacked")].set_active(False)
+        seen["still_chosen"] = page.preset_chooser.get_selected()
+        app.quit()
+
+    run_app(gtk_app, body)
+    # Two apps start side by side, which is the preset the chooser shows.
+    assert seen["starts_as"] == _preset_index("side-by-side")
+    assert seen["slots"] == [(0.0, 0.0, 1.0, 0.5), (0.0, 0.5, 1.0, 0.5)]
+    assert seen["chosen"] == _preset_index("stacked")
+    assert seen["still_chosen"] == _preset_index("stacked")
+
+
+def test_a_hand_dragged_layout_matches_no_arrangement(gtk_app, isolated_store):
+    from context.editor import EditorPage
+    from context.layout import Layout, Slot
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        store = ContextStore()
+        ctx = store.create(
+            "probe", resources=[Resource(app_id="a"), Resource(app_id="b")]
+        )
+        page = EditorPage(ctx, lambda *a_: None, lambda: None)
+        page._on_layout_changed(
+            Layout(slots=[Slot(0, 0, 0.3, 1.0), Slot(0.3, 0, 0.7, 1.0)]), 0
+        )
+        page._update_state()
+        seen["chosen"] = page.preset_chooser.get_selected()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["chosen"] == -1

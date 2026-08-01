@@ -456,6 +456,15 @@ grid, asked which application to add to an existing context rather than which
 to build a new one around. The app joins the context's definition and the
 context is relaunched, so only the missing window opens.
 
+### 20. Choosing on an overlay — *done*
+
+The editor's layout dropdowns never kept what was picked in them, because a
+popover on a layer-shell overlay drops the click. Presets are now thumbnails
+of the arrangement they apply and the screen mode is a segmented control, both
+plain buttons; the adopt window's per-window dropdown went the same way. The
+underlying popover behaviour is still unexplained — see the gotcha in
+CLAUDE.md — so anything that must choose on an overlay avoids popovers.
+
 ### 19. Notifications — *done*
 
 What the launcher reports goes to the desktop's notification daemon rather
