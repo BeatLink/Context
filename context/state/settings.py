@@ -249,6 +249,7 @@ class Settings:
     show_restore_button: bool = True
     show_add_app_button: bool = True
     show_close_button: bool = True
+    show_edit_button: bool = True
     show_apps: bool = True
     # How the contexts are ordered wherever they are listed.
     context_sort: str = "recent"
@@ -350,6 +351,7 @@ class Settings:
             show_restore_button=bool(self.show_restore_button),
             show_add_app_button=bool(self.show_add_app_button),
             show_close_button=bool(self.show_close_button),
+            show_edit_button=bool(self.show_edit_button),
             show_apps=bool(self.show_apps),
             context_sort=(
                 self.context_sort.strip().lower()

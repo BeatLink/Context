@@ -478,7 +478,8 @@ class SettingsPage(widgets.NavigationPage):
         every one of these can be off and the row still does everything it did
         — which is what makes them safe to offer. They cost width rather than
         capability, and a row carrying five of them has little left for the
-        name.
+        name it is mostly there to show. With all five off a row is a list of
+        names that still does everything, by right-click.
         """
         live = settings.current()
         group = widgets.Group(
@@ -509,6 +510,12 @@ class SettingsPage(widgets.NavigationPage):
                 "Close",
                 "Shuts the context's windows. Only shown while it is open.",
                 "show_close_button",
+            ),
+            (
+                "Edit",
+                "Opens the context's editor — its applications, its layout and "
+                "everything else about it.",
+                "show_edit_button",
             ),
         ):
             group.add(

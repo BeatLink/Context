@@ -3413,5 +3413,5 @@ def test_the_card_buttons_are_offered_on_the_contexts_tab(gtk_app, isolated_stor
 
     run_app(gtk_app, body)
     assert "Buttons on a context" in seen["labels"]
-    for title in ("Save", "Put back", "Open an app", "Close"):
+    for title in ("Save", "Put back", "Open an app", "Close", "Edit"):
         assert title in seen["labels"], title

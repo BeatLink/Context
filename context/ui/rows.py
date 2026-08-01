@@ -238,7 +238,7 @@ class ContextRow(widgets.ActionRow):
         self.edit.set_tooltip_text("Edit this context")
         # Nothing to edit about a context that is only a name for what has no
         # context: it has no definition until it is saved as one.
-        self.edit.set_visible(on_edit is not None)
+        self.edit.set_visible(bool(shown.show_edit_button and on_edit is not None))
         self.edit.connect("clicked", lambda _b: on_edit and on_edit(ctx))
 
         # Only the ones that will show, then joined — see `link_suffixes`.

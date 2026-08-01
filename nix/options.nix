@@ -143,6 +143,9 @@ rec {
       show_close_button = setting t.bool "true"
         "Show the close button on a context's row.";
 
+      show_edit_button = setting t.bool "true"
+        "Show the edit button on a context's row.";
+
       show_apps = setting t.bool "true"
         "Show matching applications under the search results.";
 

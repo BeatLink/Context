@@ -356,6 +356,7 @@ def test_the_row_buttons_can_each_be_switched_off(gtk_app, isolated_store):
             row.restore.get_visible(),
             row.add_app.get_visible(),
             row.close.get_visible(),
+            row.edit.get_visible(),
         )
 
         settings.update(
@@ -363,6 +364,7 @@ def test_the_row_buttons_can_each_be_switched_off(gtk_app, isolated_store):
             show_restore_button=False,
             show_add_app_button=False,
             show_close_button=False,
+            show_edit_button=False,
         )
         bare = build(ctx)
         seen["off"] = (
@@ -370,9 +372,8 @@ def test_the_row_buttons_can_each_be_switched_off(gtk_app, isolated_store):
             bare.restore.get_visible(),
             bare.add_app.get_visible(),
             bare.close.get_visible(),
+            bare.edit.get_visible(),
         )
-        # Editing is not one of the four, so it stays.
-        seen["edit"] = bare.edit.get_visible()
         # And the menu still offers every one of them. Parented first: a
         # popover on a row that is in no window takes the process down.
         window = Gtk.ApplicationWindow(application=app)
@@ -383,7 +384,7 @@ def test_the_row_buttons_can_each_be_switched_off(gtk_app, isolated_store):
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["on"] == (True, True, True, True)
-    assert seen["off"] == (False, False, False, False)
-    assert seen["edit"] is True
-    assert {"save", "restore", "add-app", "close"} <= seen["menu"]
+    assert seen["on"] == (True, True, True, True, True)
+    # A bare row: every shortcut gone, every action still there.
+    assert seen["off"] == (False, False, False, False, False)
+    assert {"save", "restore", "add-app", "close", "edit"} <= seen["menu"]
