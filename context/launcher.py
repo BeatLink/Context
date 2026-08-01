@@ -335,12 +335,18 @@ def launch_context(
     backend: Backend | None = None,
     use_workspaces: bool = True,
 ) -> LaunchResult:
-    """Open a context across every screen it arranges itself for.
+    """Open a context, or switch to it if it already is.
 
-    One workspace per screen, each with its own slots. The arrangement is
-    chosen by how many screens are attached now, so a context laid out for two
-    monitors opens as a single-screen context when undocked without losing the
-    two-screen version.
+    Opening launches and tiles across every screen the arrangement uses;
+    switching back to a live context is a switch and *only* a switch. Windows
+    the user closed stay closed, windows they moved stay moved: an earlier
+    version relaunched whatever was "missing" and re-proportioned the tiles on
+    every visit, which repaired the user's deliberate changes out from under
+    them before they could decide to save them.
+
+    Healing a broken stored layout still happens, but for this launch only —
+    the repaired copy is never written back. The definition changes when the
+    user saves it, and at no other time.
     """
     wm: Backend = backend or (
         backends.detect() if use_workspaces else backends.NullBackend()
@@ -351,23 +357,33 @@ def launch_context(
         result.launched, result.failed = _launch_resources(ctx, wm, None)
         return result
 
-    outputs = _outputs(wm)
-    arrangement, problems = ctx.arrangement_for(len(outputs)).healed(len(ctx.resources))
-    ctx.set_arrangement(len(outputs), arrangement)
-    if problems:
-        for problem in problems:
-            log.warning("layout for %s %s; repaired", ctx.title, problem)
-        result.layout_repaired = True
-
     primary = wm.ensure_workspace(ctx.title, ctx.handle_for(wm.name))
     if primary is None:
         result.launched, result.failed = _launch_resources(ctx, wm, None)
         return result
+
+    # Alive means any of its screens holds a window: switch and stop. The
+    # primary counts even when the context has no stored handle yet — a
+    # workspace by its name with windows on it is this context, mid-adoption.
+    handles = ctx.handles_for(wm.name) or [primary.handle]
+    if any(wm.window_count(handle) > 0 for handle in handles):
+        ctx.set_handle(wm.name, handles[0])
+        result.workspace = handles[0]
+        result.screens = list(handles)
+        result.reused_workspace = True
+        wm.switch_to(Workspace(handle=handles[0], label=ctx.title))
+        return result
+
+    outputs = _outputs(wm)
+    arrangement, problems = ctx.arrangement_for(len(outputs)).healed(len(ctx.resources))
+    if problems:
+        for problem in problems:
+            log.warning("layout for %s %s; repaired for this launch", ctx.title, problem)
+        result.layout_repaired = True
     result.workspace = primary.handle
 
     # Every screen the arrangement uses, and no more than there are outputs.
     screens = min(arrangement.screen_count, max(1, len(outputs)))
-    reused = True
     for screen in range(screens):
         handle = screen_handle(primary.handle, screen)
         ctx.set_handle(wm.name, handle, screen=screen)
@@ -383,33 +399,22 @@ def launch_context(
             wm.place_workspace(handle, outputs[screen].name)
         wm.prepare_launch(workspace)
 
-        # What this screen is missing, rather than whether it holds anything.
-        #
-        # Skipping a screen that held *any* window meant an application closed
-        # by hand never came back: reopening a context with two of its three
-        # windows up relaunched nothing, because the workspace was not empty.
-        wanted = arrangement.indices_on(screen)
-        missing = _missing_on(ctx, wm, handle, wanted)
-        if not missing:
-            continue
-
-        reused = False
         launched, failed = _launch_resources(
-            ctx, wm, handle, missing, arrangement.layout_for(screen)
+            ctx,
+            wm,
+            handle,
+            arrangement.indices_on(screen),
+            arrangement.layout_for(screen),
         )
         result.launched.extend(launched)
         result.failed.extend(failed)
 
-        # Only worth proportioning a screen that was built from nothing. A
-        # window added beside existing ones is placed by the compositor, and
-        # resizing everything would rearrange what the user already had.
         slots = arrangement.layout_for(screen).slots
-        if len(missing) == len(wanted) and len(slots) > 1:
+        if len(slots) > 1:
             ratios = getattr(wm, "apply_ratios", None)
             if ratios is not None:
                 result.resized += ratios(handle, slots)
 
-    result.reused_workspace = reused
     # Finish on the context's first screen rather than wherever the last one
     # happened to be, so opening a context leaves you looking at its main work.
     if screens > 1:
@@ -417,38 +422,33 @@ def launch_context(
     return result
 
 
-def _missing_on(
-    ctx: Context, wm: Backend, handle: str, wanted: list[int]
-) -> list[int]:
-    """Which of `wanted` has no window on this screen yet.
+@traced(log)
+def launch_resource(
+    ctx: Context, index: int, backend: Backend | None = None
+) -> LaunchResult:
+    """Start one of a context's resources inside its already-open workspace.
 
-    Counted per application, so a context asking for two terminals still gets
-    two. There is no way to tell *which* window belongs to which resource — see
-    ROADMAP §3 — so this is the closest honest answer: how many of each
-    application should be here, minus how many are.
+    This is the only way a window is added to a live context by Context
+    itself — "open app here", and the overview's into-current-context mode.
+    Nothing else it holds is touched.
     """
-    from collections import Counter
+    wm: Backend = backend or backends.detect()
+    result = LaunchResult(backend=wm.name)
+    if not 0 <= index < len(ctx.resources):
+        return result
 
-    present = Counter(
-        window.app_id.strip().casefold()
-        for window in wm.windows(handle)
-        if window.app_id
-    )
+    outputs = _outputs(wm)
+    arrangement = ctx.arrangement_for(len(outputs))
+    screen = arrangement.screen_for(index)
+    handle = ctx.handle_for(wm.name, screen) or ctx.handle_for(wm.name)
+    if handle is None:
+        return result
+    result.workspace = handle
 
-    missing = []
-    for index in wanted:
-        if not 0 <= index < len(ctx.resources):
-            continue
-        app = ctx.resources[index].app_id.strip().casefold()
-        # A window's class rarely matches the desktop id exactly, so both
-        # forms count: `element` for `element.desktop`.
-        for key in (app, app.removesuffix(".desktop")):
-            if present.get(key):
-                present[key] -= 1
-                break
-        else:
-            missing.append(index)
-    return missing
+    wm.switch_to(Workspace(handle=handle, label=ctx.title))
+    wm.prepare_launch(Workspace(handle=handle, label=ctx.title))
+    result.launched, result.failed = _launch_resources(ctx, wm, handle, [index])
+    return result
 
 
 def _outputs(wm: Backend):

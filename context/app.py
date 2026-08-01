@@ -21,6 +21,7 @@ from .launcher import has_drifted, is_no_context
 from .launcher import move_window_to_context, move_window_to_screen
 from .launcher import unmanaged_windows
 from .launcher import close_context as close_ctx
+from .launcher import context_is_open, launch_resource
 from .launcher import hand_keyboard_back
 from .launcher import launch_context as launch_ctx
 from .launcher import reconnect
@@ -235,10 +236,37 @@ class ContextApplication(Gtk.Application):
         ctx.resources.append(Resource(app_id=info.id))
         self.store.save()
         self.log.info("added %s to %s", info.id, ctx.title)
-        # Launching the whole context rather than the one app: it only starts
-        # what is missing, so an open context gains the new window and a closed
-        # one opens properly instead of stranding a window on its own.
-        self.launch_context(ctx)
+        if not context_is_open(ctx, backend=self.backend):
+            # Closed: opening it launches everything, the new app included.
+            self.launch_context(ctx)
+            return
+        # Open: exactly the one window joins it. Launching the whole context
+        # would be a switch under the new model, and the old relaunch-missing
+        # model rearranged what the user already had.
+        index = len(ctx.resources) - 1
+        if ctx.id in self.launching:
+            self.log.info("%s is already being launched", ctx.title)
+            return
+        self.launching.add(ctx.id)
+        threading.Thread(
+            target=self._resource_worker, args=(ctx, index), daemon=True
+        ).start()
+
+    def _resource_worker(self, ctx: Context, index: int) -> None:
+        try:
+            result = launch_resource(ctx, index, backend=self.backend)
+        except Exception:
+            self.log.exception("launching into %s failed", ctx.title)
+            result = None
+        GLib.idle_add(self._launch_finished, ctx, result)
+
+    def add_app_to_active(self, info) -> bool:
+        """Add an app to the context in view. False when there is none."""
+        current = active_context(self.store.contexts, backend=self.backend)
+        if current is None:
+            return False
+        self.add_app_to_context(current, info)
+        return True
 
     def note_open_contexts(self, count: int) -> None:
         """Open the overview when the last context closes, and only then.
@@ -431,11 +459,7 @@ class ContextApplication(Gtk.Application):
     def _ask_to_save(self, ctx: Context) -> None:
         if ctx.id in self.asked_about:
             return
-        # Once per context per run: a context that drifts and is not saved
-        # would otherwise ask again on every switch.
-        self.asked_about.add(ctx.id)
-
-        notify.send(
+        sent = notify.send(
             self,
             "drift",
             f"“{ctx.title}” has changed",
@@ -443,6 +467,12 @@ class ContextApplication(Gtk.Application):
             button="Save layout",
             on_click=lambda: self._save_drift(ctx),
         )
+        # Once per context per run — but only once *asked*. With notifications
+        # switched off the send is a no-op, and marking the context asked
+        # anyway consumed the prompt without it ever appearing: turning
+        # notifications back on then never offered to save.
+        if sent:
+            self.asked_about.add(ctx.id)
 
     def _save_drift(self, ctx: Context) -> None:
         self.save_context(ctx)
@@ -613,7 +643,7 @@ class ContextApplication(Gtk.Application):
         # layout, so both are written back.
         self.store.save()
         if result.layout_repaired:
-            self.log.info("repaired the layout for %s", ctx.title)
+            self.log.info("repaired the layout for %s for this launch", ctx.title)
         self.log.info(
             "launched %s: workspace=%s launched=%d failed=%d",
             ctx.title, result.workspace, len(result.launched), len(result.failed),

@@ -32,14 +32,20 @@ def send(
     body: str = "",
     button: str | None = None,
     on_click=None,
+    essential: bool = False,
 ) -> bool:
     """Show one notification. Returns whether anything was sent.
 
     `key` identifies the message rather than the occurrence: sending the same
     key again replaces what is on screen, so a burst of launches leaves one
     notification instead of a column of them.
+
+    `essential` bypasses the notifications setting. It is for the messages
+    that are the only path to an action — the restart prompt after changing a
+    setting that needs one. The setting silences reports; a control is not a
+    report.
     """
-    if not enabled():
+    if not enabled() and not essential:
         log.debug("notifications are off; not sending %s", key)
         return False
     if app is None:

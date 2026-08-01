@@ -39,7 +39,9 @@ class App:
 
     @property
     def haystack(self) -> str:
-        return f"{self.name}\n{self.description}".lower()
+        # casefold to match what `search_apps` folds the query with; lower()
+        # left "ß" unfindable by "ss".
+        return f"{self.name}\n{self.description}".casefold()
 
 
 def installed_apps() -> list[App]:

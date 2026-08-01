@@ -355,7 +355,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
     def _create_subtitle(self, query: str) -> str:
         if not query:
             return "Name it in the editor"
-        if any(c.title.lower() == query.lower() for c in self.store.contexts):
+        if any(c.title.casefold() == query.casefold() for c in self.store.contexts):
             return f"Open “{query}”"
         return f"Start “{query}”"
 
@@ -379,7 +379,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self._edit_context(self.store.create("New context"), is_new=True)
             return
         for ctx in self.store.contexts:
-            if ctx.title.lower() == title.lower():
+            if ctx.title.casefold() == title.casefold():
                 self._open_context(ctx)
                 return
         self._edit_context(self.store.create(title), is_new=True)

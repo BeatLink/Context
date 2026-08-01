@@ -31,13 +31,13 @@ SAVE_LABELS = (
 
 
 def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> widgets.Row:
-    """A row with its control under the description rather than beside it.
+    """A row with its control beside the text, text taking the slack.
 
-    `Adw.ActionRow` and its subclasses put the control in a suffix, which is
-    cramped once the description is a sentence: the text wraps to three lines
-    in a 360px sidebar while the control keeps a fixed share of the width.
-    Those rows cannot be re-oriented, so the row is built from a plain
-    `PreferencesRow` instead.
+    The control used to sit *under* the description, because these rows lived
+    in a 380px sidebar where a side-by-side layout wrapped every sentence to
+    three lines. Settings are a full screen now, so the control goes back to
+    the right — the arrangement every settings page uses — and the name stays
+    from the stacked era because every row in this file calls it.
 
     The title is set on the row as well as drawn, so it still reaches
     accessibility tooling and anything that looks rows up by name.
@@ -45,23 +45,35 @@ def _stacked(title: str, subtitle: str, control: Gtk.Widget) -> widgets.Row:
     row = widgets.Row(title=title)
     row.add_css_class("ctx-setting")
 
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    box = Gtk.Box(spacing=18)
     box.set_margin_top(12)
     box.set_margin_bottom(12)
     box.set_margin_start(14)
     box.set_margin_end(14)
 
+    text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    text.set_hexpand(True)
+    text.set_valign(Gtk.Align.CENTER)
+
     heading = Gtk.Label(label=title, xalign=0.0, wrap=True)
     heading.add_css_class("ctx-setting-title")
-    box.append(heading)
+    text.append(heading)
 
     if subtitle:
         description = Gtk.Label(label=subtitle, xalign=0.0, wrap=True)
         description.add_css_class("ctx-setting-subtitle")
-        description.set_margin_bottom(2)
-        box.append(description)
+        text.append(description)
+    box.append(text)
 
+    # The control keeps its natural size at the end of the row rather than
+    # stretching to fill it; the text is what absorbs the width.
+    control.set_hexpand(False)
+    control.set_halign(Gtk.Align.END)
+    control.set_valign(Gtk.Align.CENTER)
+    if not isinstance(control, Gtk.Switch):
+        control.set_size_request(230, -1)
     box.append(control)
+
     row.set_child(box)
     # The description is redrawn when a setting changes what it says.
     row.set_subtitle = (
@@ -370,34 +382,60 @@ class SettingsPage(widgets.NavigationPage):
             ),
             (
                 "Overview button",
-                "The + in the header, which opens the overview.",
+                "Everything you can open, on one screen. Shares the search "
+                "box's row when both are shown.",
                 "show_overview_button",
             ),
             (
                 "Saved contexts",
-                "The group beneath the open ones. Open contexts are always "
-                "listed.",
+                "The group beneath the open ones, in the list and on the rail. "
+                "Open contexts are always listed.",
                 "show_saved",
             ),
             (
                 "Apps",
                 "Matching applications under the search results, each one a new "
-                "context.",
+                "context. Only ever appears while searching, so it needs the "
+                "search box.",
                 "show_apps",
             ),
         ):
-            group.add(
-                _row_switch(
-                    title,
-                    subtitle,
-                    getattr(live, field),
-                    lambda value, name=field: self._apply(**{name: value}),
-                )
+            row = _row_switch(
+                title,
+                subtitle,
+                getattr(live, field),
+                lambda value, name=field: self._apply(**{name: value}, resync=True),
             )
+            group.add(row)
+            if field == "show_apps":
+                self.apps_switch_row = row
+
+        self.apps_target_row = _row_combo(
+            "Apps open in",
+            "Where an app started from the search results lands. The current "
+            "context takes it in; without one open, a new context is made "
+            "either way.",
+            ("A new context", "The current context"),
+            settings.APP_TARGETS,
+            live.search_apps_target,
+            lambda v: self._apply(search_apps_target=v),
+        )
+        group.add(self.apps_target_row)
+        self._sync_sidebar_rows()
         return group
+
+    def _sync_sidebar_rows(self) -> None:
+        # App results cannot appear without the search box that summons them;
+        # a live switch here looked like a broken feature rather than a
+        # dependency.
+        live = settings.current()
+        self.apps_switch_row.set_sensitive(live.show_search)
+        self.apps_target_row.set_sensitive(live.show_search and live.show_apps)
 
     def _sync_rows(self) -> None:
         """Hide the settings that the current mode makes meaningless."""
+        if hasattr(self, "apps_switch_row"):
+            self._sync_sidebar_rows()
         live = settings.current()
         collapses = live.collapse_mode != "none"
 

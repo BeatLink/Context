@@ -79,25 +79,19 @@ def test_reopening_a_live_context_does_not_relaunch(ctx, backend, stub_adapters)
     assert stub_adapters == []
 
 
-def test_reopening_relaunches_only_what_was_closed(ctx, backend, stub_adapters):
-    """A context with one window closed by hand gets that one window back.
+def test_switching_back_never_relaunches_what_you_closed(ctx, backend, stub_adapters):
+    """A live context is switched to, and only switched to.
 
-    Skipping any screen that held a window meant an app closed on its own never
-    returned: the workspace was not empty, so nothing relaunched.
+    An earlier version relaunched whatever was "missing", which repaired the
+    user's deliberate changes — a window closed on purpose came straight back,
+    before they could decide to save the context without it.
     """
     backend.place_windows("ctx-work", "a.desktop")
     result = launch_context(ctx, backend=backend)
-    assert not result.reused_workspace
-    assert stub_adapters == ["b.desktop"]
-
-
-def test_a_window_whose_class_drops_the_desktop_suffix_still_counts(
-    ctx, backend, stub_adapters
-):
-    """Window classes rarely match desktop ids: `element`, not `element.desktop`."""
-    backend.place_windows("ctx-work", "a", "b")
-    launch_context(ctx, backend=backend)
+    assert result.reused_workspace
     assert stub_adapters == []
+    # And nothing was re-proportioned either.
+    assert not backend.sequence("ratios")
 
 
 def test_reopening_a_closed_context_relaunches(ctx, backend, stub_adapters):
@@ -143,9 +137,12 @@ def test_a_context_with_no_layout_gets_one(backend, stub_adapters):
     arrangement rather than wherever the compositor happens to put things."""
     ctx = Context(title="plain", resources=[Resource(app_id="a.desktop")])
     launch_context(ctx, backend=backend)
-    assert len(ctx.layout.slots) == 1
+    assert stub_adapters == ["a.desktop"]
     # One window has nothing to split against, so no ratio pass is needed.
     assert not backend.sequence("ratios")
+    # For the launch only: the definition is the user's to change, and it
+    # said "no layout" — healing must not write its repair back.
+    assert ctx.layout.slots == []
 
 
 def test_a_broken_layout_is_repaired_on_launch(backend, stub_adapters):
@@ -160,8 +157,10 @@ def test_a_broken_layout_is_repaired_on_launch(backend, stub_adapters):
     result = launch_context(ctx, backend=backend)
 
     assert result.layout_repaired
-    assert len(ctx.layout.slots) == 2
     assert stub_adapters == ["a.desktop", "b.desktop"]
+    # Repaired in memory, launched from the repair — but the stored definition
+    # stays exactly as the user (or their editor) left it.
+    assert len(ctx.layout.slots) == 1
 
 
 def test_close_keeps_the_definition(ctx, backend, stub_adapters):
@@ -562,3 +561,27 @@ def test_the_switcher_still_warps_to_a_chosen_window(backend):
     backend.focus_window("0xpicked")
 
     assert backend.focus_warped is True
+
+
+def test_one_resource_joins_an_open_context(ctx, backend, stub_adapters):
+    """"Open app here" launches exactly the new window into the live
+    workspace; everything else the context holds is left alone."""
+    launch_context(ctx, backend=backend)
+    stub_adapters.clear()
+    backend.calls.clear()
+
+    ctx.resources.append(Resource(app_id="c.desktop"))
+    result = launcher.launch_resource(ctx, len(ctx.resources) - 1, backend=backend)
+
+    assert stub_adapters == ["c.desktop"]
+    assert result.workspace == "ctx-work"
+    # Launched into the workspace, not wherever focus happened to be.
+    kinds = [c[0] for c in backend.calls]
+    assert "switch" in kinds
+    # And no re-proportioning of what was already there.
+    assert "ratios" not in kinds
+
+
+def test_a_resource_cannot_join_a_context_with_no_workspace(ctx, backend, stub_adapters):
+    result = launcher.launch_resource(ctx, 0, backend=backend)
+    assert result.launched == []

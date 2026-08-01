@@ -2551,3 +2551,292 @@ def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypat
     assert "Collapse mode" in seen["titles"]
     assert "Notifications" in seen["titles"]
     assert seen["closed"] == [True]
+
+
+# -- setting permutations ------------------------------------------------------
+
+
+def test_the_top_row_joins_search_and_overview(gtk_app, isolated_store, monkeypatch):
+    """Both on, they share a row and the button folds to its icon; the button
+    alone takes the full width and says what it opens."""
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, show_search=True, show_overview_button=True)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["joined_label"] = window.overview_label.get_visible()
+        seen["row"] = window.top_row.get_visible()
+
+        settings.update(show_search=False)
+        window.settings_changed()
+        seen["alone_label"] = window.overview_label.get_visible()
+        seen["alone_fills"] = window.overview_button.get_hexpand()
+
+        settings.update(show_overview_button=False)
+        window.settings_changed()
+        seen["empty_row"] = window.top_row.get_visible()
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["joined_label"] is False
+    assert seen["row"] is True
+    assert seen["alone_label"] is True
+    assert seen["alone_fills"] is True
+    assert seen["empty_row"] is False
+
+
+def test_the_empty_state_never_points_at_a_hidden_control(
+    gtk_app, isolated_store, monkeypatch
+):
+    """"Type a name above" with the search box switched off pointed at
+    nothing; "no contexts yet" over hidden saved contexts was a lie."""
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, show_search=False, show_new_context=False)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.refresh()
+        seen["no_contexts"] = window.empty_state._description.get_label()
+
+        store.create("parked")
+        settings.update(show_saved=False)
+        window.settings_changed()
+        seen["hidden_saved"] = (
+            window.empty_state._title.get_label(),
+            window.empty_state._description.get_label(),
+        )
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert "type a name" not in seen["no_contexts"].casefold()
+    assert "Overview" in seen["no_contexts"]
+    title, description = seen["hidden_saved"]
+    assert title == "Nothing open"
+    assert "hidden" in description
+
+
+def test_the_rail_hides_saved_contexts_with_the_list(
+    gtk_app, isolated_store, monkeypatch
+):
+    """A rail that kept showing them disagreed with what it expands into."""
+    from context import settings, sidebar
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, collapse_mode="rail", show_saved=False)
+    monkeypatch.setattr(sidebar, "available", lambda: True)
+    monkeypatch.setattr(sidebar, "resize", lambda w, width, edge=None: None)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.is_sidebar = True
+        window.collapsed = True
+        window.refresh()
+        seen["hidden"] = _rail_buttons(window)
+        settings.update(show_saved=True)
+        window.settings_changed()
+        seen["shown"] = _rail_buttons(window)
+        app.quit()
+
+    store = ContextStore()
+    store.create("alpha")
+    store.create("beta")
+    run_app(gtk_app, body)
+    assert seen["hidden"] == 0
+    assert seen["shown"] == 2
+
+
+def test_a_horizontal_sidebar_gets_a_horizontal_rail(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Docked to the top, the rail is a row along the strip. Built as a column
+    regardless, it overflowed a 56px-tall bar after two icons."""
+    from context import rail as rail_module
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, sidebar_edge="top", collapse_mode="rail")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        seen["rail"] = window.rail_box.get_orientation()
+        seen["buttons"] = window.rail.get_orientation()
+        seen["expand_icon"] = window.expand_button.get_icon_name()
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["rail"] == Gtk.Orientation.HORIZONTAL
+    assert seen["buttons"] == Gtk.Orientation.HORIZONTAL
+    # Expansion grows downward from a top bar, and the icon says so.
+    assert seen["expand_icon"] == "go-down-symbolic"
+
+
+def test_search_matches_whatever_the_case(gtk_app, isolated_store):
+    from context.store import ContextStore
+
+    store = ContextStore()
+    store.create("Review Todos & Notes")
+    assert [c.title for c in store.search("reVIEW")] == ["Review Todos & Notes"]
+    assert [c.title for c in store.search("TODOS")] == ["Review Todos & Notes"]
+    # casefold, not lower: ß is findable by what a user types for it.
+    store.create("Straße planen")
+    assert [c.title for c in store.search("strasse")] == ["Straße planen"]
+
+
+def test_an_app_from_search_can_join_the_current_context(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Where a searched app lands is a setting; without a context to add to,
+    a new one is made whatever it says."""
+    from context import settings, window as window_module
+    from context.apps import App
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    info = App(id="kicad.desktop", name="KiCad", description="", icon=None)
+    monkeypatch.setattr(window_module, "installed_apps", lambda: [info])
+    _mode(monkeypatch, isolated_store, search_apps_target="current")
+    seen = {"added": [], "opened": []}
+
+    class Holder:
+        backend = None
+
+        def add_app_to_active(self, picked):
+            seen["added"].append(picked.id)
+            return True
+
+    def body(app):
+        window = LauncherWindow(app, store, seen["opened"].append, lambda c: None)
+        holder = Holder()
+        monkeypatch.setattr(window, "get_application", lambda: holder)
+        monkeypatch.setattr(window, "_release_keyboard", lambda: None)
+        window.entry.set_text("kic")
+        _list_rows(window.apps_listbox)[0].emit("activated")
+        seen["first"] = (list(seen["added"]), [c.title for c in seen["opened"]])
+
+        # No active context: the holder starts refusing, and a new context is
+        # the fallback rather than a click that does nothing.
+        holder.add_app_to_active = lambda picked: False
+        window.entry.set_text("kic")
+        _list_rows(window.apps_listbox)[0].emit("activated")
+        seen["fallback"] = [c.title for c in seen["opened"]]
+        app.quit()
+
+    store = ContextStore()
+    run_app(gtk_app, body)
+    assert seen["first"] == (["kicad.desktop"], [])
+    assert seen["fallback"] == ["KiCad"]
+
+
+def test_notifications_off_does_not_eat_the_drift_prompt(gtk_app, isolated_store, monkeypatch):
+    """Marking a context "asked" before knowing whether the notification went
+    out consumed the prompt without it ever appearing."""
+    import logging
+
+    from context import notify, settings
+    from context.app import ContextApplication
+    from context.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.drift-consumed")
+        holder.asked_about = set()
+        store = ContextStore()
+        ctx = store.create("work")
+
+        monkeypatch.setattr(
+            settings, "_current", settings.current().replace(notifications=False)
+        )
+        holder._ask_to_save(ctx)
+        seen["consumed_while_off"] = ctx.id in holder.asked_about
+
+        monkeypatch.setattr(
+            settings, "_current", settings.current().replace(notifications=True)
+        )
+        sent = []
+        monkeypatch.setattr(
+            notify, "send", lambda *a, **k: (sent.append(a[1]), True)[1]
+        )
+        holder._ask_to_save(ctx)
+        seen["asked_when_on"] = (list(sent), ctx.id in holder.asked_about)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["consumed_while_off"] is False
+    assert seen["asked_when_on"] == (["drift"], True)
+
+
+def test_the_restart_prompt_survives_notifications_being_off(
+    gtk_app, isolated_store, monkeypatch
+):
+    """It is the only path to the restart the change needs: the setting
+    silences reports, and a control is not a report."""
+    from context import settings
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    monkeypatch.setattr(
+        settings, "_current", settings.current().replace(notifications=False)
+    )
+    seen = {}
+
+    class Holder:
+        backend = None
+
+        def send_notification(self, key, note):
+            seen["sent"] = key
+
+        def lookup_action(self, _name):
+            return None
+
+        def add_action(self, _action):
+            return None
+
+    def body(app):
+        window = LauncherWindow(app, ContextStore(), lambda c: None, lambda c: None)
+        monkeypatch.setattr(window, "get_application", lambda: Holder())
+        window.settings_changed(needs_restart=True, changed={"sidebar_edge": "right"})
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["sent"] == "restart"
+
+
+def test_the_apps_switch_needs_the_search_box(gtk_app, isolated_store, monkeypatch):
+    """App results only ever appear while searching; a live switch with the
+    search box off looked like a broken feature rather than a dependency."""
+    from context import settings
+    from context.settings_page import SettingsPage
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, show_search=False)
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, ContextStore(), lambda c: None, lambda c: None)
+        page = SettingsPage(window)
+        seen["without_search"] = page.apps_switch_row.get_sensitive()
+        settings.update(show_search=True)
+        page._sync_sidebar_rows()
+        seen["with_search"] = page.apps_switch_row.get_sensitive()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["without_search"] is False
+    assert seen["with_search"] is True

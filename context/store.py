@@ -296,7 +296,9 @@ class ContextStore:
         self.save()
 
     def search(self, query: str) -> list[Context]:
-        q = query.strip().lower()
+        # casefold rather than lower: lower() leaves characters like ß and
+        # dotted capital İ unequal to what a user types for them.
+        q = query.strip().casefold()
         if not q:
             return list(self.contexts)
-        return [c for c in self.contexts if q in c.title.lower()]
+        return [c for c in self.contexts if q in c.title.casefold()]

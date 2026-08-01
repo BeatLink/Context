@@ -45,6 +45,9 @@ ALL_MONITORS = "*"
 # the moments you were leaving anyway, which is where a prompt costs least.
 SAVE_PROMPTS = ("never", "change", "switch", "close")
 
+# Where an app started from the sidebar's search results lands.
+APP_TARGETS = ("new", "current")
+
 # Below this the sidebar cannot show a list, and above it stops being a rail.
 MIN_SIDEBAR_WIDTH = 200
 MAX_SIDEBAR_WIDTH = 1200
@@ -117,6 +120,9 @@ class Settings:
     show_overview_button: bool = True
     show_saved: bool = True
     show_apps: bool = True
+    # What starting an app from the sidebar's search results does: grow a new
+    # context around it, or add it to the context you are standing in.
+    search_apps_target: str = "new"
     # How often the open list is re-checked against the compositor.
     poll_seconds: int = 2
     log_level: str = "info"
@@ -199,6 +205,11 @@ class Settings:
             show_overview_button=bool(self.show_overview_button),
             show_saved=bool(self.show_saved),
             show_apps=bool(self.show_apps),
+            search_apps_target=(
+                self.search_apps_target.strip().lower()
+                if self.search_apps_target.strip().lower() in APP_TARGETS
+                else "new"
+            ),
             poll_seconds=_clamp(self.poll_seconds, 1, 60, 2),
             log_level=(
                 self.log_level.strip().lower()
