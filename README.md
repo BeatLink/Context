@@ -382,6 +382,11 @@ Settings that do nothing in the current collapse mode are not shown: the
 collapsed width only appears for a rail, and the hover settings disappear when
 collapsing is off.
 
+**Switching a part off hides it at rest, not for good.** The New context row and
+the saved group come back the moment you type, so nothing is ever more than a
+search away. The two exceptions have nothing to reveal: the search box cannot be
+brought back by searching, and applications only ever appear while you search.
+
 ### Where settings come from
 
 Settings are read from several files, merged setting by setting, and the last

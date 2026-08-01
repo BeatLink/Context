@@ -3415,3 +3415,91 @@ def test_the_card_buttons_are_offered_on_the_contexts_tab(gtk_app, isolated_stor
     assert "Buttons on a context" in seen["labels"]
     for title in ("Save", "Put back", "Open an app", "Close", "Edit"):
         assert title in seen["labels"], title
+
+
+def test_a_part_switched_off_is_still_reached_by_searching(
+    gtk_app, isolated_store, monkeypatch
+):
+    """Off means hidden at rest, not gone. Turning a part off says what the
+    column looks like when you are not asking it anything — a launcher that
+    hid an answer you had typed the question for would be hiding the answer
+    rather than the furniture."""
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    _mode(
+        monkeypatch,
+        isolated_store,
+        collapse_mode="none",
+        show_search=True,
+        show_new_context=False,
+        show_saved=False,
+    )
+    store = ContextStore()
+    store.create("plan the week")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.refresh()
+        seen["at_rest"] = (
+            window.create_list.get_visible(),
+            window.saved_expander.get_visible(),
+        )
+
+        window.entry.set_text("plan")
+        window.refresh()
+        seen["searching"] = (
+            window.create_list.get_visible(),
+            window.saved_expander.get_visible(),
+        )
+        # And the list is what shows, not the empty state.
+        seen["page"] = window.stack.get_visible_child_name()
+
+        window.entry.set_text("")
+        window.refresh()
+        seen["back_at_rest"] = (
+            window.create_list.get_visible(),
+            window.saved_expander.get_visible(),
+        )
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["at_rest"] == (False, False)
+    assert seen["searching"] == (True, True)
+    assert seen["page"] == "list"
+    assert seen["back_at_rest"] == (False, False)
+
+
+def test_the_search_box_and_the_apps_have_nothing_to_reveal(
+    gtk_app, isolated_store, monkeypatch
+):
+    """The search box cannot be brought back by searching, and applications
+    only ever appear *while* searching — for those two, off is off."""
+    from context.ui import window as window_module
+    from context.system.apps import App
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    monkeypatch.setattr(
+        window_module,
+        "installed_apps",
+        lambda: [App(id="f.desktop", name="Firefox", description="", icon=None)],
+    )
+    _mode(
+        monkeypatch, isolated_store,
+        collapse_mode="none", show_search=False, show_apps=False,
+    )
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, ContextStore(), lambda c: None, lambda c: None)
+        window.entry.set_text("fire")
+        window.refresh()
+        seen["search"] = window.entry.get_visible()
+        seen["apps"] = window.apps_listbox.get_visible()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["search"] is False
+    assert seen["apps"] is False

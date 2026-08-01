@@ -250,6 +250,19 @@ work on: the editor, the pickers and the note editor are still overlays and now
 simply stack on top of it. Everything the overview did used to come back to a
 screen that was no longer there.
 
+## Switched off is hidden at rest
+
+A sidebar part switched off is hidden when nothing is being asked, and comes
+back as soon as you type — `_apply_sections` reads the entry, and `refresh`
+gates the saved group on `show_saved or searching`. The setting says what the
+column looks like at rest; it does not take an answer away from a question the
+user has typed.
+
+Two parts have nothing to reveal and are genuinely off: the search box, which
+cannot be brought back by searching, and the applications, which only ever
+appear *while* searching — revealing those on search would make the switch mean
+nothing.
+
 ## The sidebar on home
 
 Home holds the sidebar open — expanded, with every part of it showing — for as

@@ -717,10 +717,22 @@ class LauncherWindow(Gtk.ApplicationWindow):
         )
 
     def _apply_sections(self) -> None:
-        """Show only the parts of the sidebar that are switched on."""
+        """Show only the parts of the sidebar that are switched on.
+
+        Switched off means hidden *at rest*, not gone: a search still reaches
+        what it would have found. Turning a part off is a statement about what
+        the column looks like when you are not asking it anything, and a
+        launcher that hid an answer you had typed the question for would be
+        hiding the answer rather than the furniture.
+
+        Two parts have nothing to reveal. The search box cannot be brought back
+        by searching, and the applications only ever appear *while* searching —
+        for them, off is off.
+        """
         live = self._sections()
+        searching = bool(self.entry.get_text().strip())
         self.entry.set_visible(live.show_search)
-        self.create_list.set_visible(live.show_new_context)
+        self.create_list.set_visible(live.show_new_context or searching)
         self.top_row.set_visible(live.show_search)
 
     def _sync_collapse_button(self) -> None:
@@ -907,8 +919,10 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # a row in this list and the number has to match what is under it.
         self.open_label.set_label(f"Open · {len(opened) + bool(loose)}")
 
-        self.saved_expander.set_visible(bool(saved) and live.show_saved)
-        self.list_label.set_visible(bool(saved) and live.show_saved)
+        # Hidden at rest, found by searching — see `_apply_sections`.
+        saved_shown = bool(saved) and (live.show_saved or searching)
+        self.saved_expander.set_visible(saved_shown)
+        self.list_label.set_visible(saved_shown)
         self.list_label.set_label(f"Saved · {len(saved)}")
 
         should_expand = self._saved_group_shown(opened, saved, searching)
@@ -921,7 +935,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         # than inside it, so it is on screen either way — and letting it stand
         # for "there is something to show" would have hidden the empty state,
         # which is the only place that says how to make a first context.
-        if opened or loose or app_matches or (saved and live.show_saved):
+        if opened or loose or app_matches or saved_shown:
             self.stack.set_visible_child_name("list")
             return
 

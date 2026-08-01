@@ -440,14 +440,16 @@ class SettingsPage(widgets.NavigationPage):
             ),
             (
                 "New context row",
-                "The row that starts a context — from what is typed in the "
-                "search box, or from the editor when nothing is.",
+                "The row that starts a context. Switched off it comes back as "
+                "soon as you type, so a name is never one keystroke from "
+                "nowhere.",
                 "show_new_context",
             ),
             (
                 "Saved contexts",
                 "The group beneath the open ones, in the list and on the rail. "
-                "Open contexts are always listed.",
+                "Switched off they are still found by searching; open contexts "
+                "are always listed.",
                 "show_saved",
             ),
             (
