@@ -125,6 +125,11 @@ class Theme:
     # between rows, and the shade a control uses to lift off the background.
     card: str = "#ffffff0d"
     border: str = "#ffffff1a"
+    # The ring around a whole Context surface, apart from `border` so that a
+    # session can match it to the compositor's window border without turning
+    # every divider between two rows the same colour. Same value by default,
+    # so nothing changes until it is set.
+    surface_border: str = "#ffffff1a"
     control: str = "#ffffff14"
     control_hover: str = "#ffffff26"
 
@@ -345,8 +350,12 @@ window.ctx-window {
 .ctx-surface {
     background-color: @ctx_surface;
     /* An inset ring rather than a border: a border is layout and would raise
-       the rail's minimum width by its two edges; a shadow only draws. */
-    box-shadow: inset 0 0 0 2px @ctx_border;
+       the rail's minimum width by its two edges; a shadow only draws.
+
+       Its own colour, so a session can match this to the border the compositor
+       draws around an ordinary window — a Context surface sitting next to one
+       with a different edge reads as a foreign object. */
+    box-shadow: inset 0 0 0 2px @ctx_surface_border;
     border-radius: 10px;
 }
 

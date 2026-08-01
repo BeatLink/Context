@@ -261,3 +261,17 @@ def test_a_full_screen_view_is_opaque(monkeypatch, tmp_path):
     # Derived from whatever the surface is, so one translucent colour gives both.
     assert "@define-color ctx_surface_solid rgb(20, 30, 40);" in css
     assert ".ctx-surface.ctx-solid" in css
+
+
+def test_the_surface_ring_has_its_own_colour():
+    """A session matching Context's edge to the compositor's window border must
+    not have to turn every divider between two rows the same colour."""
+    from context.ui.theme import Theme
+
+    css = Theme().css().decode()
+    assert "@define-color ctx_surface_border" in css
+    assert "inset 0 0 0 2px @ctx_surface_border" in css
+    # Same value by default, so nothing changes until it is set.
+    assert Theme().surface_border == Theme().border
+    # And the dividers stay on the general one.
+    assert "border: 1px solid @ctx_border" in css

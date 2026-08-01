@@ -481,6 +481,9 @@ both:
 
 The colour names cover everything Context draws, including the parts it paints
 itself — the app tiles and the layout preview follow the same definitions.
+`ctx_surface_border` is the ring around a whole surface, kept apart from
+`ctx_border` so it can be matched to the border your compositor draws around an
+ordinary window without recolouring every divider between two rows.
 **Write the style file** in settings creates the file with every colour
 spelled out. The file is watched, so saving it restyles the running launcher.
 Set `CONTEXT_STYLE` to load a file from elsewhere.
