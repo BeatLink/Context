@@ -435,10 +435,10 @@ class SettingsPage(widgets.NavigationPage):
                 "show_new_context",
             ),
             (
-                "Overview button",
-                "Everything you can open, on one screen. Shares the search "
-                "box's row when both are shown.",
-                "show_overview_button",
+                "Overview row",
+                "The overview, listed with the open contexts. It is a place "
+                "of its own, so it is where the places are.",
+                "show_overview_row",
             ),
             (
                 "Saved contexts",

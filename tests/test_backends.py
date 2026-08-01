@@ -39,3 +39,27 @@ def test_the_override_is_honoured(monkeypatch):
 
 def test_the_null_backend_holds_nothing_open():
     assert NullBackend().live_handles() == set()
+
+
+def test_a_context_called_home_does_not_land_on_the_overviews_workspace(monkeypatch):
+    """The handle is derived from the title, and "Home" derives the overview's
+    own. They would then be the same workspace: opening the context would put
+    its apps on the overview, and closing it would close the overview."""
+    from context.system.backends.hyprland import HOME_HANDLE, HyprlandBackend
+
+    wm = HyprlandBackend()
+    monkeypatch.setattr(wm, "workspace_names", lambda: [])
+
+    assert wm.home_handle() == HOME_HANDLE
+    assert wm.ensure_workspace("Home", None).handle != HOME_HANDLE
+    # A context that already holds the name keeps it — dropping a stored handle
+    # would orphan its workspace, which is worse than sharing one.
+    assert wm.ensure_workspace("Home", HOME_HANDLE).handle == HOME_HANDLE
+
+
+def test_the_null_backend_has_no_home():
+    """Without workspaces there is nowhere for home to be, so the overview
+    falls back to being an ordinary window."""
+    from context.system.backends import NullBackend
+
+    assert NullBackend().home_handle() is None

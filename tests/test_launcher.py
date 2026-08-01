@@ -585,3 +585,78 @@ def test_one_resource_joins_an_open_context(ctx, backend, stub_adapters):
 def test_a_resource_cannot_join_a_context_with_no_workspace(ctx, backend, stub_adapters):
     result = launcher.launch_resource(ctx, 0, backend=backend)
     assert result.launched == []
+
+
+# -- home ------------------------------------------------------------------
+
+
+def test_the_overviews_own_window_belongs_to_no_one_but_is_not_loose(backend):
+    """Home is not a stored context, so its handle is unclaimed by the usual
+    rule — and the overview listed itself under "No context", offering to
+    gather the overview into a context of its own."""
+    backend.geometry[backend.home_handle()] = [
+        {"id": "0xoverview", "app_id": "io.beatlink.Context.desktop",
+         "title": "Overview", "x": 0, "y": 0, "width": 1920, "height": 1080}
+    ]
+    backend.place_windows(backend.home_handle(), "io.beatlink.Context.desktop")
+
+    live = launcher.read_live_state([], backend=backend)
+
+    assert live.loose == []
+    assert launcher.unmanaged_windows([], backend=backend) == []
+
+
+def test_going_home_switches_to_the_overviews_workspace(backend):
+    assert launcher.go_home(backend=backend) is True
+    assert backend.current == backend.home_handle()
+    # Nothing is launched and no context is created by arriving.
+    assert [c[0] for c in backend.calls] == ["ensure", "switch"]
+
+
+def test_home_is_a_context_that_is_never_stored():
+    home = launcher.home_context()
+
+    assert launcher.is_home_context(home) is True
+    assert home.resources == []
+    # Neither of the two virtual contexts is the other.
+    assert launcher.is_no_context(home) is False
+    assert launcher.is_home_context(launcher.loose_context([{"app_id": "a"}])) is False
+
+
+def test_on_home_an_action_means_the_context_you_came_from(backend, isolated_store):
+    """`active_context` is None on home, which is exactly when "open this app
+    here" is asked. Only an open one: adding to a closed context would launch
+    the whole thing from a screen you are passing through."""
+    from context.state import uistate
+
+    work = Context(title="work")
+    work.set_handle("fake", "ctx-work")
+    parked = Context(title="parked")
+    parked.set_handle("fake", "ctx-parked")
+    backend.place_windows("ctx-work", "a.desktop")
+    backend.current = backend.home_handle()
+    contexts = [work, parked]
+
+    uistate.note_visit(work.id)
+    assert launcher.active_context(contexts, backend=backend) is None
+    assert launcher.current_context(contexts, backend=backend) is work
+
+    # The one you came from has since been closed: there is nothing to join.
+    uistate.note_visit(parked.id)
+    assert launcher.current_context(contexts, backend=backend) is None
+
+
+def test_standing_in_a_context_still_means_that_context(backend, isolated_store):
+    """The fallback is for home only — anywhere else the focused workspace is
+    the answer, and a stale visit record must not override it."""
+    from context.state import uistate
+
+    work = Context(title="work")
+    work.set_handle("fake", "ctx-work")
+    other = Context(title="other")
+    other.set_handle("fake", "ctx-other")
+    backend.place_windows("ctx-other", "a.desktop")
+    backend.current = "ctx-work"
+    uistate.note_visit(other.id)
+
+    assert launcher.current_context([work, other], backend=backend) is work

@@ -18,6 +18,7 @@ from context.ui import switcher
 from context.state.resources import Resource
 from context.system.backends import Workspace
 from context.system.launcher import active_context, adopt_loose, capture_arrangement, close_loose
+from context.system.launcher import current_context, go_home, is_home_context
 from context.system.launcher import restore_arrangement
 from context.system.launcher import open_state
 from context.system.launcher import has_drifted, is_no_context
@@ -94,6 +95,10 @@ class ContextApplication(Gtk.Application):
         self.asked_about: set[str] = set()
         self.launching: set[str] = set()
         self.switcher: switcher.SwitcherWindow | None = None
+        # The overview, built once and then never closed. Deliberately not the
+        # `switcher` slot: that is whatever overlay is up at the moment, and
+        # home is a place that outlives all of them.
+        self.overview = None
         # Held so the monitor list is not collected while it is being watched.
         self._monitor_model = None
         self._monitor_settle = 0
@@ -182,29 +187,69 @@ class ContextApplication(Gtk.Application):
         hand_keyboard_back(backend=self.backend)
         return False
 
-    def open_overview(self) -> None:
-        """Everything on one screen: contexts one side, apps the other.
+    def ensure_overview(self):
+        """The overview window, built the first time home is visited.
 
-        The same keybind again puts it away rather than stacking another.
+        Built once and kept: it is the window that lives on the home workspace,
+        so throwing it away and making another would be leaving home empty.
+        Lazily, so a session that starts with contexts open does not pay for a
+        list of every installed application before it shows anything.
         """
+        if self.overview is not None:
+            return self.overview
         from context.ui.overview import OverviewWindow
 
-        existing = self.switcher
-        if isinstance(existing, OverviewWindow):
-            existing.close()
-            self.switcher = None
-            return
-        picker = OverviewWindow(
+        window = OverviewWindow(
             self, self.store, backend=self.backend, notes=self.notes
         )
-        picker.on_context = self.go_to_context
-        picker.on_edit = self.edit_context
-        picker.on_close = self.close_context
-        picker.on_add_app = self.open_app_in_context
-        picker.on_app_into = self.add_app_to_context
-        picker.on_note = self.edit_note
-        picker.on_restore = self.restore_context
-        self._show_picker(picker)
+        window.on_context = self.go_to_context
+        window.on_edit = self.edit_context
+        window.on_close = self.close_context
+        window.on_add_app = self.open_app_in_context
+        window.on_app_into = self.add_app_to_context
+        window.on_note = self.edit_note
+        window.on_restore = self.restore_context
+        window.on_leave = self.leave_home
+        # Only if something destroys it anyway — `restart` does, by dropping
+        # `permanent` first. Anything else that manages it means home has no
+        # window, so the next visit builds a new one rather than switching to
+        # an empty workspace.
+        window.connect("destroy", self._on_overview_destroyed)
+        self.overview = window
+        return window
+
+    def _on_overview_destroyed(self, _window) -> None:
+        self.overview = None
+
+    def open_overview(self) -> None:
+        """Go home: contexts one side, applications the other.
+
+        A workspace switch, not a window being raised — so the same keybind
+        again does not put it away, because there is nothing to put away. The
+        window is presented after the switch so that a first visit maps it on
+        home rather than on the workspace being left.
+        """
+        switched = go_home(backend=self.backend)
+        window = self.ensure_overview()
+        window.refresh()
+        window.present()
+        if not switched:
+            # No workspaces to switch between, so home is only a window. Under
+            # the null backend that is the whole of what a context is too.
+            self.log.debug("no home workspace; showing the overview as a window")
+
+    def leave_home(self) -> None:
+        """Back to the context you came from, if it is still open.
+
+        Nothing happens when there is nowhere to go. Home is what a desktop
+        with nothing running looks like, so leaving it would be leaving the
+        only screen with anything on it.
+        """
+        target = current_context(self.store.contexts, backend=self.backend)
+        if target is None:
+            self.log.info("nowhere to go back to; staying home")
+            return
+        self.go_to_context(target)
 
     def edit_context(self, ctx: Context, is_new: bool = False) -> None:
         """Open a context's editor, whichever view asked for it."""
@@ -327,19 +372,24 @@ class ContextApplication(Gtk.Application):
         GLib.idle_add(self._launch_finished, ctx, result)
 
     def add_app_to_active(self, info) -> bool:
-        """Add an app to the context in view. False when there is none."""
-        current = active_context(self.store.contexts, backend=self.backend)
+        """Add an app to the context an action means. False when there is none.
+
+        `current_context`, not `active_context`: the sidebar's app results are
+        reachable from home, where nothing is active and the context meant is
+        the one you came from.
+        """
+        current = current_context(self.store.contexts, backend=self.backend)
         if current is None:
             return False
         self.add_app_to_context(current, info)
         return True
 
     def note_open_contexts(self, count: int) -> None:
-        """Open the overview when the last context closes, and only then.
+        """Go home when the last context closes, and only then.
 
-        On the transition, not on every check: once it is up, or once you have
-        dismissed it, an empty desktop should stay empty until something opens
-        and closes again.
+        On the transition, not on every check: once you have walked away from
+        home, an empty desktop should stay where you left it until something
+        opens and closes again.
         """
         if count:
             self._had_open = True
@@ -348,18 +398,26 @@ class ContextApplication(Gtk.Application):
             return
         self._had_open = False
         if self.switcher is not None or self._covered():
-            # Something of Context's is already on the screen — an editor, a
-            # picker — and opening an overlay over it would take the keyboard
-            # from what the user is in the middle of.
+            # An editor or a picker is up. Switching the workspace underneath
+            # one would be invisible until it closed, and would then have moved
+            # the user somewhere they did not ask to go.
             return
-        self.log.info("nothing is open; showing the overview")
+        self.log.info("nothing is open; going home")
         self.open_overview()
 
     def _covered(self) -> bool:
-        """Whether any Context window other than the launchers is on screen."""
-        docked = set(self.launchers)
+        """Whether an editor or a picker is on screen.
+
+        The launchers are excluded because they are always there, and so is the
+        overview now that it is: it is what going home *shows*, so counting it
+        as something in the way meant home was never reached again after the
+        first visit.
+        """
+        ignored = set(self.launchers)
+        if self.overview is not None:
+            ignored.add(self.overview)
         return any(
-            window.get_visible() for window in self.get_windows() if window not in docked
+            window.get_visible() for window in self.get_windows() if window not in ignored
         )
 
     def restart(self) -> None:
@@ -378,7 +436,11 @@ class ContextApplication(Gtk.Application):
         argv = [sys.executable, "-m", "context", *sys.argv[1:]]
         self.log.info("restarting: %s", " ".join(argv))
         # Windows first: an execv leaves surfaces behind if the compositor is
-        # not told, and the launcher would come back beside its own ghost.
+        # not told, and the launcher would come back beside its own ghost. The
+        # overview refuses to close, so it is released here — this is the one
+        # thing entitled to take it down, and it puts it straight back.
+        if self.overview is not None:
+            self.overview.permanent = False
         for window in list(self.get_windows()):
             window.close()
 
@@ -487,6 +549,11 @@ class ContextApplication(Gtk.Application):
 
     def go_to_context(self, ctx: Context) -> None:
         """Switch to a context, launching it if its windows are gone."""
+        if is_home_context(ctx):
+            # Home has nothing to launch and no definition to visit: going
+            # there is the workspace switch, and the window is already on it.
+            self.open_overview()
+            return
         if is_no_context(ctx):
             # Nothing to launch — these windows are already open, and there is
             # no workspace of their own to switch to. Going there means going
@@ -671,9 +738,16 @@ class ContextApplication(Gtk.Application):
             launcher_window.set_collapsed(collapsed)
 
     def refresh_all(self) -> None:
-        """Keep every launcher showing the same thing."""
+        """Keep every launcher — and home — showing the same thing.
+
+        The overview is on screen whenever you are standing on it, so it has to
+        be told as well: as an overlay it was rebuilt each time it appeared and
+        could not be out of date.
+        """
         for launcher_window in self.launchers:
             launcher_window.refresh_open_state()
+        if self.overview is not None:
+            self.overview.refresh()
 
     def launch_context(self, ctx: Context) -> None:
         """Start a context on a worker thread.

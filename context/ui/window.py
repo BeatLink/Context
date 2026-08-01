@@ -16,6 +16,7 @@ from context.ui import rail, sidebar, theme, widgets
 from context.system.apps import App, installed_apps, search_apps
 from context.ui.editor_window import EditorWindow
 from context.system.launcher import LiveState, hand_keyboard_back, is_no_context
+from context.system.launcher import home_context, is_home_context
 from context.system.launcher import loose_context, read_live_state
 from context.state.layout import Layout
 from context.system.logging_setup import get_logger
@@ -153,30 +154,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.entry.connect("changed", self._on_entry_changed)
         self.entry.connect("activate", self._on_entry_activate)
 
-        # Everything Context can open, on one screen. In the body rather than
-        # the header: as a + in the corner it read as "new context", which is
-        # the row below's job. It shares a row with the search box — the two
-        # are both ways of finding something to open, and stacked they cost a
-        # row each of a sidebar that has few to spend. Alone, either takes the
-        # full width; together the button folds to its icon.
-        self.overview_button = Gtk.Button()
-        overview_face = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
-        overview_face.append(Gtk.Image.new_from_icon_name("view-grid-symbolic"))
-        self.overview_label = Gtk.Label(label="Overview")
-        overview_face.append(self.overview_label)
-        self.overview_button.set_child(overview_face)
-        self.overview_button.set_tooltip_text(
-            "Everything you can open, on one screen"
-        )
-        self.overview_button.connect("clicked", lambda _b: self._new_context())
-
         # No Start button: Enter is the trigger, and the row below is the
         # clickable path — a button that mirrored the row said the same thing
-        # twice in half the sidebar's width.
+        # twice in half the sidebar's width. No Overview button either: the
+        # overview is a place now, so it is in the list of places rather than a
+        # control above it.
         self.top_row = Gtk.Box()
         self.top_row.add_css_class("linked")
         self.top_row.append(self.entry)
-        self.top_row.append(self.overview_button)
         content.append(self.top_row)
 
         # A built-in way to start something new, always in the list. With a
@@ -641,12 +626,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         live = settings.current()
         self.entry.set_visible(live.show_search)
         self.create_list.set_visible(live.show_new_context)
-        self.overview_button.set_visible(live.show_overview_button)
-        self.top_row.set_visible(live.show_search or live.show_overview_button)
-        # Joined to the search box the button folds to its icon; on its own it
-        # says what it opens and takes the row.
-        self.overview_label.set_visible(not live.show_search)
-        self.overview_button.set_hexpand(not live.show_search)
+        self.top_row.set_visible(live.show_search)
 
     def _sync_collapse_button(self) -> None:
         """What the header's button means, which depends on how it collapses.
@@ -764,6 +744,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
             return
 
         self.open_listbox.remove_all()
+        # Home, first in the open group and always in it: it is where you are
+        # when nothing else is, so it cannot be closed and cannot be absent.
+        # Not filtered by the search — the same reason the no-context is not.
+        home = home_context() if live.show_overview_row and not searching else None
+        if home is not None:
+            self.open_listbox.append(
+                self._context_row(home, is_open=True, is_active=self._live.at_home)
+            )
         for ctx in opened:
             self.open_listbox.append(
                 self._context_row(
@@ -785,13 +773,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
         app_matches = self._app_matches(query) if live.show_apps else []
         self.apps_listbox.remove_all()
+        current = self._current_context()
         for info in app_matches[:APP_RESULTS]:
             self.apps_listbox.append(
                 AppRow(
                     info,
                     self._open_app,
                     # No "open here" without somewhere to open it.
-                    self._open_app_here if active is not None else None,
+                    self._open_app_here if current is not None else None,
+                    into=current.title if current is not None else "",
                 )
             )
 
@@ -812,8 +802,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.notes_label.set_visible(notes_shown)
         self.scratchpad_box.set_visible(notes_shown)
 
-        self.open_label.set_visible(bool(opened or loose))
-        self.open_listbox.set_visible(bool(opened or loose))
+        self.open_label.set_visible(bool(opened or loose or home))
+        self.open_listbox.set_visible(bool(opened or loose or home))
         self.open_label.set_label("Open")
 
         self.saved_expander.set_visible(bool(saved) and live.show_saved)
@@ -858,13 +848,17 @@ class LauncherWindow(Gtk.ApplicationWindow):
                 description = "Type a name above to create your first one."
             elif live.show_new_context:
                 description = "“New context” above starts your first one."
-            elif live.show_overview_button:
-                description = "The Overview button starts your first one."
             else:
-                description = "Open the overview to start your first one."
+                description = "Start one from the overview."
             self.empty_state.set_description(description)
 
     def _context_row(self, ctx: Context, is_open: bool, is_active: bool = False):
+        # Home is only somewhere to go: there is nothing to edit, close, forget
+        # or keep about it, so it carries the one handle a row always has.
+        if is_home_context(ctx):
+            return ContextRow(
+                ctx, self._open, None, None, is_open=is_open, is_active=is_active
+            )
         # The no-context has no definition to edit, forget or add an app to
         # until it has been saved as one; what it does have is windows, so it
         # can be closed and it always offers to be kept.
@@ -1154,16 +1148,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
         else:
             self._pick_apps(self.store.create("New context"))
 
-    def _new_context(self) -> None:
-        """The + opens the overview.
-
-        Starting from an app or an existing context there is the fast path; a
-        blank context is still one typed name away in the search bar.
-        """
-        app = self.get_application()
-        if app is not None and hasattr(app, "open_overview"):
-            app.open_overview()
-
     def _pick_apps(self, ctx: Context) -> None:
         """Editor for a context that was just created; committing launches it."""
         self.entry.set_text("")
@@ -1275,6 +1259,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def _open(self, ctx: Context) -> None:
         log.info("opening context %s", ctx.title)
+        if is_home_context(ctx):
+            # Not a launch and not a visit: home is always there, so going to
+            # it is only a workspace switch and it plays no part in the alt-tab
+            # order — coming back from it has to land where you actually were.
+            self._release_keyboard()
+            app = self.get_application()
+            if app is not None and hasattr(app, "open_overview"):
+                app.open_overview()
+            return
         if is_no_context(ctx):
             # Nothing to launch: its windows are already open, so this is a
             # jump to them rather than an opening of anything.
@@ -1308,10 +1301,24 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.notify("launch", ctx.title, message)
 
     def _active_context(self):
+        """The context whose workspace is focused, for marking the row."""
         active_id = self._active_id
         if active_id is None:
             return None
         return next((c for c in self.store.contexts if c.id == active_id), None)
+
+    def _current_context(self):
+        """The context an application row would open into.
+
+        Not the same question as `_active_context`, and only the same answer
+        while you are standing in a context: on home nothing is active, and what
+        "open this here" means is the context you came from. See
+        `launcher.current_context`.
+        """
+        current = self._live.current_id
+        if current is None:
+            return None
+        return next((c for c in self.store.contexts if c.id == current), None)
 
     def _is_open(self, ctx: Context) -> bool:
         return ctx.id in self._open_ids

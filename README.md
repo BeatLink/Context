@@ -32,8 +32,10 @@ beside it rather than underneath.
 
 - **Search bar** — type to filter, or type a new name and press <kbd>Enter</kbd>
   to create a context. A name matching an existing context opens it instead.
-- **Open** — contexts running right now. The one you are in is highlighted.
-  Click a row to switch to it, the stop button to close it, the pencil to edit.
+- **Open** — the overview first, then the contexts running right now. The one
+  you are in is highlighted. Click a row to switch to it, the stop button to
+  close it, the pencil to edit. The overview has none of those: it is somewhere
+  to go and nothing else.
 - **Saved** — everything else, in a section below. It is expanded when nothing
   is open and folds away once something is, one click from opening again.
 
@@ -67,7 +69,7 @@ the saved group stays folded or unfolded as you had it.
 | `switch-window-all` | Pick a window across every context |
 | `previous` | Return to the last context |
 | `settings` | Open the settings page |
-| `overview` | Contexts and apps on one screen; an app opens as a new context |
+| `overview` | Go to the overview, which has a screen of its own |
 | `toggle-rail` | Collapse or expand the sidebar |
 | `restart` | Restart Context, keeping open contexts open |
 | `move-window` | Send the focused window to another context |
@@ -85,15 +87,27 @@ Windows are listed most recently focused first, each labelled with the context
 it belongs to. The window picker starts scoped to the context you are in and
 switches to all of them from its header.
 
-The **overview** puts everything on one screen: one search over the contexts
-you have — open ones first, with the same handles the sidebar gives them — and
-the applications installed. Contexts and applications are the same cards the
-sidebar lists, so everything they do there they do here.
+## The overview
 
-An application card offers both answers: open it in the context you are in, or
-start a new one around it. Clicking the card takes the second, since it is the
-one that works whether or not anything is open, and right-clicking says both in
-words.
+Everything you can open, on one screen: one search over the contexts you have —
+open ones first, with the same handles the sidebar gives them — and the
+applications installed. Contexts and applications are the same cards the sidebar
+lists, so everything they do there they do here.
+
+**It is a place, not a panel.** The overview has a workspace of its own, and
+going to it is a switch like any other. It cannot be closed, so there is always
+somewhere to come back to: closing your last context leaves you here rather than
+looking at an empty desktop. It is listed with your open contexts, first and
+always, and the sidebar sits beside it the way it sits beside anything else.
+
+<kbd>Esc</kbd> clears the search, and again goes back to the context you came
+from. Editing a context, picking an app or writing a note opens over the
+overview and leaves it where it was.
+
+An application card offers both answers: open it in a context of its own, or in
+the context you came from — named, since standing on the overview "here" would
+mean the overview. Clicking the card takes the first, since it is the one that
+works whether or not anything is open, and right-clicking says both in words.
 
 The applications filter by kind and group four ways: **Recent** by how long ago
 you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under letter
@@ -313,7 +327,7 @@ make them; the few that need a restart say so.
 | Notifications | Report launches, closes and drift to the desktop |
 | Search | Show the sidebar's search box |
 | New context row | Show the row that starts a context |
-| Overview button | Show the Overview button at the top of the sidebar |
+| Overview row | Show the overview in the sidebar's list of open contexts |
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |
 | Order contexts by | Most recently used, when they were made, or name |

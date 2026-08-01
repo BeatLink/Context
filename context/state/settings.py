@@ -240,7 +240,11 @@ class Settings:
     # works on its own — blank, it opens the editor to be named — and the box
     # is useful without it.
     show_new_context: bool = True
-    show_overview_button: bool = True
+    # Home, in the list of places rather than a button above it. Renamed from
+    # show_overview_button when the overview stopped being something raised
+    # over what you were doing and became somewhere to go; an old declaration
+    # naming the button is ignored, the way any unknown key is.
+    show_overview_row: bool = True
     show_saved: bool = True
     show_apps: bool = True
     # How the contexts are ordered wherever they are listed.
@@ -340,7 +344,7 @@ class Settings:
             notifications=bool(self.notifications),
             show_search=bool(self.show_search),
             show_new_context=bool(self.show_new_context),
-            show_overview_button=bool(self.show_overview_button),
+            show_overview_row=bool(self.show_overview_row),
             show_saved=bool(self.show_saved),
             show_apps=bool(self.show_apps),
             context_sort=(

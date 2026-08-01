@@ -19,11 +19,19 @@ from tests.conftest import needs_display, run_app
 pytestmark = needs_display
 
 
-def rows(listbox):
+def rows(listbox, home: bool = False):
+    """The context rows in a list.
+
+    Home is skipped unless asked for: it is first in the open group and always
+    there, so every test counting or indexing contexts would otherwise be about
+    the row in front of them. `test_home_is_first...` below asks for it.
+    """
+    from context.system.launcher import is_home_context
+
     out = []
     child = listbox.get_first_child()
     while child is not None:
-        if hasattr(child, "ctx"):
+        if hasattr(child, "ctx") and (home or not is_home_context(child.ctx)):
             out.append(child)
         child = child.get_next_sibling()
     return out
@@ -1031,6 +1039,8 @@ def test_restart_replaces_the_process(gtk_app, isolated_store, monkeypatch):
         holder = ContextApplication.__new__(ContextApplication)
         holder.log = __import__("logging").getLogger("test.restart")
         holder.get_windows = lambda: []
+        # Restart is the one thing entitled to take the overview down.
+        holder.overview = None
         ContextApplication.restart(holder)
         # Queued on idle so the windows close first; run it.
         from gi.repository import GLib
@@ -1941,24 +1951,65 @@ def test_focusing_does_not_steal_from_what_was_clicked(
     assert seen["focused"] is seen["button"]
 
 
-def test_the_new_context_button_opens_the_overview(gtk_app, isolated_store):
-    """The header's + opens the overview, and creates nothing by itself —
-    what the new context becomes is chosen there."""
+def test_home_is_first_in_the_open_list_and_goes_to_the_overview(
+    gtk_app, isolated_store
+):
+    """The overview is a place, so it is listed with the places rather than
+    sitting on a button above them — first, and always there."""
     from context.state.store import ContextStore
+    from context.system.launcher import is_home_context
     from context.ui.window import LauncherWindow
 
     store = ContextStore()
+    store.create("alpha")
     seen = {"overview": 0}
 
     def body(app):
         app.open_overview = lambda: seen.update(overview=seen["overview"] + 1)
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        window.overview_button.emit("clicked")
+        window.refresh()
+        listed = rows(window.open_listbox, home=True)
+        seen["first"] = is_home_context(listed[0].ctx)
+        seen["title"] = listed[0].ctx.title
+        # Nothing to close, edit or forget about the one place always there.
+        seen["closable"] = listed[0].close.get_visible()
+        seen["editable"] = listed[0].edit.get_visible()
+        listed[0].emit("activated")
         app.quit()
 
     run_app(gtk_app, body)
+    assert seen["first"] is True
+    assert seen["title"] == "Overview"
+    assert seen["closable"] is False
+    assert seen["editable"] is False
     assert seen["overview"] == 1
-    assert store.contexts == []
+    # Going home creates nothing: it is somewhere that already exists.
+    assert [c.title for c in store.contexts] == ["alpha"]
+
+
+def test_the_overview_row_can_be_switched_off(gtk_app, isolated_store, monkeypatch):
+    """The setting the Overview button used to carry, pointed at the row."""
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    _mode(monkeypatch, isolated_store, show_overview_row=False)
+    store = ContextStore()
+    store.create("alpha")
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.refresh()
+        seen["off"] = len(rows(window.open_listbox, home=True))
+        settings.update(show_overview_row=True)
+        window.refresh()
+        seen["on"] = len(rows(window.open_listbox, home=True))
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["off"] == 0
+    assert seen["on"] == 1
 
 
 def test_a_grazed_edge_does_not_snap_the_sidebar_shut(gtk_app, isolated_store, monkeypatch):
@@ -2116,12 +2167,16 @@ def test_an_app_from_the_sidebar_becomes_a_context_and_opens(
 
 
 def _list_rows(listbox) -> list:
-    rows = []
+    """Every row in a list, minus home — see `rows` for why."""
+    from context.system.launcher import is_home_context
+
+    found = []
     row = listbox.get_first_child()
     while row is not None:
-        rows.append(row)
+        if not is_home_context(getattr(row, "ctx", None)):
+            found.append(row)
         row = row.get_next_sibling()
-    return rows
+    return found
 
 
 def test_the_rail_is_inset_from_its_card(gtk_app, isolated_store, monkeypatch):
@@ -2439,7 +2494,7 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         isolated_store,
         show_search=False,
         show_new_context=False,
-        show_overview_button=False,
+        show_overview_row=False,
         show_saved=False,
         show_apps=False,
     )
@@ -2447,9 +2502,10 @@ def test_the_sidebar_shows_only_what_is_switched_on(
 
     def body(app):
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
+        window.refresh()
         seen["search"] = window.entry.get_visible()
         seen["create"] = window.create_list.get_visible()
-        seen["overview"] = window.overview_button.get_visible()
+        seen["overview"] = bool(rows(window.open_listbox, home=True))
         seen["saved"] = window.saved_expander.get_visible()
         window.entry.set_text("fire")
         window.refresh()
@@ -2497,6 +2553,7 @@ def test_the_overview_appears_when_the_last_context_closes(gtk_app, isolated_sto
         holder.get_windows = lambda: []
         holder.window = None
         holder.extra_windows = []
+        holder.overview = None
         holder.open_overview = lambda: seen.update(opened=seen["opened"] + 1)
 
         holder.note_open_contexts(2)      # still working
@@ -2518,8 +2575,9 @@ def test_the_overview_appears_when_the_last_context_closes(gtk_app, isolated_sto
 
 
 def test_nothing_opens_over_an_editor(gtk_app, isolated_store):
-    """The overview is an overlay that takes the keyboard; over an editor it
-    would take it from what the user is in the middle of."""
+    """Switching the workspace under an editor would be invisible until it
+    closed, and would then have moved the user somewhere they did not ask to
+    go."""
     import logging
 
     from context.app import ContextApplication
@@ -2537,6 +2595,7 @@ def test_nothing_opens_over_an_editor(gtk_app, isolated_store):
         holder._had_open = True
         holder.window = None
         holder.extra_windows = []
+        holder.overview = None
         holder.get_windows = lambda: [Visible()]
         holder.open_overview = lambda: seen.update(opened=seen["opened"] + 1)
 
@@ -2545,6 +2604,37 @@ def test_nothing_opens_over_an_editor(gtk_app, isolated_store):
 
     run_app(gtk_app, body)
     assert seen["opened"] == 0
+
+
+def test_the_overview_itself_does_not_block_going_home(gtk_app, isolated_store):
+    """It is what going home shows, so counting it as something in the way
+    meant home was never reached again after the first visit."""
+    import logging
+
+    from context.app import ContextApplication
+
+    seen = {"opened": 0}
+
+    class Visible:
+        def get_visible(self):
+            return True
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.overview-is-not-in-the-way")
+        holder.switcher = None
+        holder._had_open = True
+        holder.window = None
+        holder.extra_windows = []
+        holder.overview = Visible()
+        holder.get_windows = lambda: [holder.overview]
+        holder.open_overview = lambda: seen.update(opened=seen["opened"] + 1)
+
+        holder.note_open_contexts(0)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["opened"] == 1
 
 
 def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypatch):
@@ -2575,37 +2665,28 @@ def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypat
 # -- setting permutations ------------------------------------------------------
 
 
-def test_the_top_row_joins_search_and_overview(gtk_app, isolated_store, monkeypatch):
-    """Both on, they share a row and the button folds to its icon; the button
-    alone takes the full width and says what it opens."""
+def test_the_top_row_is_the_search_box_alone(gtk_app, isolated_store, monkeypatch):
+    """It held the search box and an Overview button. The overview moved into
+    the list, so the row goes when the search box does."""
     from context.state import settings
     from context.state.store import ContextStore
     from context.ui.window import LauncherWindow
 
-    _mode(monkeypatch, isolated_store, show_search=True, show_overview_button=True)
+    _mode(monkeypatch, isolated_store, show_search=True)
     seen = {}
 
     def body(app):
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        seen["joined_label"] = window.overview_label.get_visible()
         seen["row"] = window.top_row.get_visible()
 
         settings.update(show_search=False)
-        window.settings_changed()
-        seen["alone_label"] = window.overview_label.get_visible()
-        seen["alone_fills"] = window.overview_button.get_hexpand()
-
-        settings.update(show_overview_button=False)
         window.settings_changed()
         seen["empty_row"] = window.top_row.get_visible()
         app.quit()
 
     store = ContextStore()
     run_app(gtk_app, body)
-    assert seen["joined_label"] is False
     assert seen["row"] is True
-    assert seen["alone_label"] is True
-    assert seen["alone_fills"] is True
     assert seen["empty_row"] is False
 
 
@@ -2638,7 +2719,7 @@ def test_the_empty_state_never_points_at_a_hidden_control(
     store = ContextStore()
     run_app(gtk_app, body)
     assert "type a name" not in seen["no_contexts"].casefold()
-    assert "Overview" in seen["no_contexts"]
+    assert "overview" in seen["no_contexts"].casefold()
     title, description = seen["hidden_saved"]
     assert title == "Nothing open"
     assert "hidden" in description
@@ -2725,6 +2806,7 @@ def test_an_app_from_search_can_join_the_current_context(
     a context is active — otherwise it would say something untrue."""
     from context.ui import window as window_module
     from context.system.apps import App
+    from context.system.launcher import LiveState
     from context.state.store import ContextStore
     from context.ui.window import LauncherWindow
 
@@ -2747,10 +2829,13 @@ def test_an_app_from_search_can_join_the_current_context(
         monkeypatch.setattr(window, "_release_keyboard", lambda: None)
 
         ctx = store.create("work")
-        window._active_id = ctx.id
+        # `current_id`, not `active_id`: the row asks which context an app
+        # would join, which on home is the one you came from.
+        window._live = LiveState(current_id=ctx.id)
         window.entry.set_text("kic")
         row = _list_rows(window.apps_listbox)[0]
         seen["here_offered"] = row.here.get_visible()
+        seen["named"] = row.here.get_tooltip_text()
         row.here.emit("clicked")
         seen["joined"] = list(seen["added"])
 
@@ -2761,7 +2846,7 @@ def test_an_app_from_search_can_join_the_current_context(
 
         # Nothing to join: the button is not offered, and activating the row
         # still works because a new context is always available.
-        window._active_id = None
+        window._live = LiveState()
         window.entry.set_text("kic")
         row = _list_rows(window.apps_listbox)[0]
         seen["here_hidden"] = row.here.get_visible()
@@ -2772,6 +2857,8 @@ def test_an_app_from_search_can_join_the_current_context(
     store = ContextStore()
     run_app(gtk_app, body)
     assert seen["here_offered"] is True
+    # By name, not "this context": standing on home, "here" is the overview.
+    assert "work" in seen["named"]
     assert seen["joined"] == ["kicad.desktop"]
     assert seen["new"] == ["KiCad"]
     assert seen["here_hidden"] is False

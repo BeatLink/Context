@@ -23,6 +23,11 @@ log = get_logger("backend.hyprland")
 
 HANDLE_PREFIX = "ctx-"
 
+# The overview's own workspace. Under the same prefix as a context's, so it is
+# recognisably Context's, and a name rather than a number so it survives
+# workspaces being reordered — the same reason contexts are named.
+HOME_HANDLE = f"{HANDLE_PREFIX}home"
+
 
 def _sanitize(title: str) -> str:
     kept = [c if (c.isalnum() or c in "-_") else "-" for c in title.strip().casefold()]
@@ -84,9 +89,17 @@ class HyprlandBackend:
         name = data.get("name")
         return str(name) if name else None
 
+    def home_handle(self) -> str | None:
+        return HOME_HANDLE
+
     @traced(log)
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace | None:
         name = handle or f"{HANDLE_PREFIX}{_sanitize(title)}"
+        # A context called "Home" derives the overview's own handle, and the two
+        # would then be the same workspace: opening it would put its apps on the
+        # overview, and closing it would close the overview's window.
+        if name == HOME_HANDLE and handle is None:
+            name = f"{HOME_HANDLE}-1"
         exists = name in self.workspace_names()
         return Workspace(handle=name, label=title, created=not exists)
 

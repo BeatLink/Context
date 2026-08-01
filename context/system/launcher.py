@@ -60,6 +60,33 @@ def active_context(contexts, backend: Backend | None = None):
 
 
 @traced(log)
+def current_context(contexts, backend: Backend | None = None):
+    """The context an action means, standing anywhere — including on home.
+
+    `active_context` answers "whose workspace is focused", which is None while
+    you are looking at the overview. That is the one moment "open this app in
+    the context I am in" is most likely to be asked, so on home the answer is
+    the context you came from: home is somewhere you pass through rather than
+    somewhere you work, and it has no apps of its own to join.
+
+    Only a context that is still open, since adding an app to a closed one
+    would launch the whole thing from a screen you are only passing through.
+    """
+    wm: Backend = backend or backends.detect()
+    handle = wm.current_handle()
+    for ctx in contexts:
+        if handle is not None and handle in ctx.handles_for(wm.name):
+            return ctx
+    if not is_home(handle, backend=wm):
+        return None
+    open_ids, _active = open_state(contexts, backend=wm, current=handle)
+    previous = uistate.previous_context(None)
+    return next(
+        (c for c in contexts if c.id == previous and c.id in open_ids), None
+    )
+
+
+@traced(log)
 def reconnect(contexts, backend: Backend | None = None) -> list:
     """Re-adopt contexts whose workspaces are still running.
 
@@ -94,17 +121,26 @@ def reconnect(contexts, backend: Backend | None = None) -> list:
     return live
 
 
+_ASK = object()
+
+
 @traced(log)
-def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str | None]:
+def open_state(
+    contexts, backend: Backend | None = None, current=_ASK
+) -> tuple[set[str], str | None]:
     """Which contexts are open, and which one is focused, in two queries.
 
     The launcher polls this every couple of seconds. Asking `context_is_open`
     per context instead costs two subprocess calls each, which is enough work on
     the main loop to be felt with only a handful of contexts.
+
+    `current` is the focused handle for a caller that has already asked for it,
+    so the one pass `read_live_state` makes stays one pass.
     """
     wm: Backend = backend or backends.detect()
     live = wm.live_handles()
-    current = wm.current_handle()
+    if current is _ASK:
+        current = wm.current_handle()
 
     open_ids = set()
     active_id = None
@@ -154,6 +190,59 @@ def loose_context(loose: list[dict]) -> Context | None:
 
 def is_no_context(ctx) -> bool:
     return getattr(ctx, "id", None) == NO_CONTEXT_ID
+
+
+# Home: the overview's own place. Like the no-context it is a `Context` that is
+# never stored, so the lists and rows already know how to show and act on it —
+# but where the no-context exists only while something is homeless, this one is
+# always there. It is what a desktop with nothing open looks like.
+HOME_ID = "virtual:home"
+HOME_TITLE = "Overview"
+
+
+def is_home_context(ctx) -> bool:
+    return getattr(ctx, "id", None) == HOME_ID
+
+
+def home_context() -> Context:
+    """Home, as something a list can show.
+
+    It carries no resources and is never written to the file: there is nothing
+    to launch, and switching to it is a workspace switch rather than a launch.
+    """
+    return Context(title=HOME_TITLE, id=HOME_ID)
+
+
+def is_home(handle: str | None, backend: Backend | None = None) -> bool:
+    """Whether a workspace handle is the overview's own."""
+    if not handle:
+        return False
+    wm: Backend = backend or backends.detect()
+    return handle == wm.home_handle()
+
+
+def home_workspace(backend: Backend | None = None) -> Workspace | None:
+    """The workspace the overview lives on, or None without one."""
+    wm: Backend = backend or backends.detect()
+    handle = wm.home_handle()
+    if not handle:
+        return None
+    return wm.ensure_workspace(HOME_TITLE, handle)
+
+
+@traced(log)
+def go_home(backend: Backend | None = None) -> bool:
+    """Switch to the overview's workspace. False where there is none.
+
+    Nothing is launched and nothing is created beyond the workspace itself: the
+    overview's window is already there, and a backend with no workspaces leaves
+    presenting it to the caller.
+    """
+    wm: Backend = backend or backends.detect()
+    workspace = home_workspace(backend=wm)
+    if workspace is None:
+        return False
+    return wm.switch_to(workspace)
 
 
 @traced(log)
@@ -213,6 +302,11 @@ class LiveState:
     drifted_ids: set[str] = field(default_factory=set)
     # Windows belonging to no context, as geometry dictionaries.
     loose: list[dict] = field(default_factory=list)
+    # Which context an action means — the focused one, or the one you came from
+    # while standing on home. See `current_context`.
+    current_id: str | None = None
+    # Whether the overview's own workspace is the one being looked at.
+    at_home: bool = False
 
     @property
     def signature(self) -> tuple:
@@ -222,6 +316,11 @@ class LiveState:
             self.active_id,
             frozenset(self.drifted_ids),
             tuple(sorted(w.get("id", "") for w in self.loose)),
+            # Arriving on or leaving home changes what the rows offer: "open
+            # this app here" names the context you came from, and there is
+            # none until you are standing on home.
+            self.current_id,
+            self.at_home,
         )
 
 
@@ -230,14 +329,28 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
     """Which contexts are open, which is focused, which have drifted, and what
     belongs to none of them."""
     wm: Backend = backend or backends.detect()
-    open_ids, active_id = open_state(contexts, backend=wm)
+    handle = wm.current_handle()
+    open_ids, active_id = open_state(contexts, backend=wm, current=handle)
+    at_home = is_home(handle, backend=wm)
+    current_id = active_id
+    if current_id is None and at_home:
+        # Standing on home, an action means the context you came from. Only one
+        # that is still open: adding an app to a closed context would launch the
+        # whole thing from a screen you are passing through.
+        previous = uistate.previous_context(None)
+        current_id = previous if previous in open_ids else None
 
     reader = getattr(wm, "geometry_by_handle", None)
     geometry = reader() if reader is not None else {}
     if not geometry:
-        return LiveState(open_ids=open_ids, active_id=active_id)
+        return LiveState(
+            open_ids=open_ids,
+            active_id=active_id,
+            current_id=current_id,
+            at_home=at_home,
+        )
 
-    claimed = {h for ctx in contexts for h in ctx.handles_for(wm.name)}
+    claimed = _claimed_handles(contexts, wm)
     loose = [
         window
         for handle, windows in geometry.items()
@@ -256,7 +369,12 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
             drifted.add(ctx.id)
 
     return LiveState(
-        open_ids=open_ids, active_id=active_id, drifted_ids=drifted, loose=loose
+        open_ids=open_ids,
+        active_id=active_id,
+        drifted_ids=drifted,
+        loose=loose,
+        current_id=current_id,
+        at_home=at_home,
     )
 
 
@@ -673,8 +791,23 @@ def unmanaged_windows(contexts, backend: Backend | None = None) -> list:
     opened it.
     """
     wm: Backend = backend or backends.detect()
-    claimed = {h for ctx in contexts for h in ctx.handles_for(wm.name)}
+    claimed = _claimed_handles(contexts, wm)
     return [w for w in wm.windows() if w.handle not in claimed]
+
+
+def _claimed_handles(contexts, wm: Backend) -> set[str]:
+    """Every workspace something already answers for.
+
+    Home is in the set even though it is not a stored context: the overview's
+    own window sits on it, and left unclaimed it read as a window belonging
+    nowhere — the overview listed itself under "No context", and adopting it
+    would have moved the overview into a context of its own.
+    """
+    claimed = {h for ctx in contexts for h in ctx.handles_for(wm.name)}
+    home = wm.home_handle()
+    if home:
+        claimed.add(home)
+    return claimed
 
 
 @traced(log)

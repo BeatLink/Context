@@ -424,13 +424,23 @@ is a file, not an option. Constraints recorded in CLAUDE.md under "Theming".
 ### 17. The overview — *in progress*
 
 A new direction taking shape step by step, keeping the sidebar as it is. Done
-so far: an Overview button across the top of the sidebar; an `overview` command —
-one screen with the search bar on top, contexts (open, then saved) on one side
-and the installed apps on the other, where clicking an app creates a context
-around it and opens it on the spot; and parity between the two views, which
-now share their rows (`rows.py`). Both search apps as well as contexts, both
-start a context from an app or a typed name, and a context's row offers the
-same handles wherever it is listed. Next steps to be decided as it gets used.
+so far: an `overview` command — one screen with the search bar on top, contexts
+(open, then saved) on one side and the installed apps on the other, where
+clicking an app creates a context around it and opens it on the spot; and parity
+between the two views, which now share their rows (`rows.py`). Both search apps
+as well as contexts, both start a context from an app or a typed name, and a
+context's row offers the same handles wherever it is listed.
+
+**Home.** The overview now has a workspace of its own and cannot be closed, so
+"not in any context" is a place rather than a surface floating over whichever
+workspace you were on — which is the only part of the model that was not a
+workspace. It is listed with the open contexts rather than sitting on a button
+above them, and closing your last context leaves you there. Constraints recorded
+in CLAUDE.md under "Home is a place".
+
+Next steps to be decided as it gets used. Open questions: home is one workspace,
+so with two monitors only one screen has it; and nothing yet stops a stray
+window opening onto it.
 
 ### 18. A context's own menu — *done*
 
@@ -459,7 +469,7 @@ question on the GTK main loop.
 
 ### 22. Sidebar contents, and pinning — *done*
 
-Settings say which parts of the sidebar are shown: search, the overview button,
+Settings say which parts of the sidebar are shown: search, the overview row,
 saved contexts, apps. And when the sidebar expands itself on hover, the header
 button pins rather than collapses — it was the only control that did the
 opposite of what it looked like, closing the sidebar under the pointer that was

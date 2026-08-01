@@ -5,8 +5,17 @@ and the applications installed. A context row opens that context; an
 application starts a new context around that app and opens it, which makes
 the overview the fast path from "I want to do something" to doing it.
 
-The same overlay shape as the switcher: it covers the output it is summoned
-on, takes the keyboard while it is up, and leaves on Escape.
+**Home is a place, not an overlay.** The window lives on a workspace of its
+own that Context owns, and going to the overview is a workspace switch rather
+than a surface raised over whatever you were looking at. It is never closed:
+`close-request` is refused, so the compositor's own close cannot take away the
+one screen that is always there to come back to.
+
+Being an ordinary toplevel is most of what this buys. An overlay holds the
+keyboard exclusively, so the editor and the pickers could not be opened over
+it — the overview had to close and hand the context on, and everything it did
+that way came back to a screen that was no longer there. A window on a
+workspace has the editor stack over it and is still underneath afterwards.
 """
 
 from __future__ import annotations
@@ -18,7 +27,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from context.system import backends
-from context.ui import sidebar, theme, widgets
+from context.ui import theme, widgets
 from context.state import settings, uistate
 from context.state.scratchpad import NoteStore
 from context.ui.scratchpad import ScratchpadSection
@@ -51,6 +60,12 @@ class OverviewWindow(Gtk.ApplicationWindow):
     def __init__(self, app, store, backend=None, notes=None) -> None:
         super().__init__(application=app, title="Overview")
         self.add_css_class("ctx-window")
+        # Refused rather than hidden: hiding unmaps the surface, and the next
+        # map puts it on whatever workspace is current instead of on home.
+        # Cleared by `restart`, which does have to get rid of it — an execv
+        # leaves the surface behind otherwise.
+        self.permanent = True
+        self.connect("close-request", lambda _w: self.permanent)
         self.store = store
         self.notes = notes if notes is not None else NoteStore()
         # Set by the application, the way `on_edit` is: the overview does not
@@ -73,9 +88,9 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self._live = read_live_state([], backend=self.backend)
 
         theme.install()
+        # A tiled window fills the workspace it is on, so this only decides the
+        # shape it takes where there is no window manager to tile it.
         self.set_default_size(1200, 720)
-        if not sidebar.apply_overlay(self):
-            self.fullscreen()
 
         toolbar = widgets.ToolbarView()
         toolbar.add_css_class("ctx-surface")
@@ -86,8 +101,8 @@ class OverviewWindow(Gtk.ApplicationWindow):
         header.set_show_end_title_buttons(False)
         self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
         self.back_button.add_css_class("flat")
-        self.back_button.set_tooltip_text("Back")
-        self.back_button.connect("clicked", lambda _b: self._dismiss())
+        self.back_button.set_tooltip_text("Back to where you were")
+        self.back_button.connect("clicked", lambda _b: self._leave())
         header.pack_start(self.back_button)
         toolbar.add_top_bar(header)
 
@@ -106,7 +121,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         # A focused search entry consumes Escape as stop-search, so the
         # window shortcut below never fires while typing — which is most of
         # the time. stop-search is the entry's own Escape.
-        self.entry.connect("stop-search", lambda _e: self._dismiss())
+        self.entry.connect("stop-search", lambda _e: self._escape())
         content.append(self.entry)
 
         # The same built-in row the sidebar's list carries: with a name typed
@@ -219,7 +234,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         escape.add_shortcut(
             Gtk.Shortcut.new(
                 Gtk.ShortcutTrigger.parse_string("Escape"),
-                Gtk.CallbackAction.new(lambda *_a: self._dismiss()),
+                Gtk.CallbackAction.new(lambda *_a: self._escape()),
             )
         )
         self.add_controller(escape)
@@ -284,9 +299,6 @@ class OverviewWindow(Gtk.ApplicationWindow):
         kind = MAIN_CATEGORIES.get(self.category, "")
         self.apps_label.set_label(f"{kind or 'Apps'} · {len(matches)}")
 
-        # Only offered while there is a context to add to.
-        current = self._active_context()
-
     def _fill_sections(self, sections: list[tuple[str, list[App]]]) -> None:
         child = self.sections.get_first_child()
         while child is not None:
@@ -338,18 +350,13 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.refresh()
 
     def _save_context(self, ctx) -> None:
-        """Keeping windows is housekeeping, so the overview stays up — unless
-        it was the no-context, which leaves for the editor to be named."""
         log.info("overview: saving the windows of %s", ctx.title)
-        if is_no_context(ctx):
-            self.close()
         self.on_save(ctx)
         self.refresh()
 
     def _add_app_to_context(self, ctx) -> None:
         """Hand app-picking to the application, which owns the picker."""
         log.info("overview: adding an app to %s", ctx.title)
-        self.close()
         self.on_add_app(ctx)
 
     def _app_row(self, info: App) -> AppRow:
@@ -361,10 +368,12 @@ class OverviewWindow(Gtk.ApplicationWindow):
         which meant the same question was asked differently in the two views and
         a tile had nowhere to put the second answer.
         """
+        current = self._active_context()
         return AppRow(
             info,
             self._open_app,
-            self._open_app_here if self._active_context() else None,
+            self._open_app_here if current is not None else None,
+            into=current.title if current is not None else "",
         )
 
     # -- acting --------------------------------------------------------------
@@ -378,9 +387,16 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return counts
 
     def _active_context(self):
-        if self._active_id is None:
+        """The context an application row would open into.
+
+        `current_id`, not `active_id`: standing on home nothing is active, and
+        that is exactly when the question is asked — you came here to find an
+        app to add to what you were doing. See `launcher.current_context`.
+        """
+        current = self._live.current_id
+        if current is None:
             return None
-        return next((c for c in self.store.contexts if c.id == self._active_id), None)
+        return next((c for c in self.store.contexts if c.id == current), None)
 
     def _on_sort(self, selected: int) -> None:
         if 0 <= selected < len(self.sort_keys):
@@ -427,28 +443,26 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self._edit_context(self.store.create(title), is_new=True)
 
     def _open_context(self, ctx) -> None:
+        """Opening a context is a workspace switch, which takes you off home.
+
+        Nothing is dismissed: the overview is still on its own workspace when
+        you come back, with the search you typed and the grid where you left it.
+        """
         log.info("overview: opening context %s", ctx.title)
-        self.close()
         self.on_context(ctx)
 
     def _edit_context(self, ctx, is_new: bool = False) -> None:
-        """Hand editing to the launcher, and get out of its way.
+        """Hand editing to the launcher, which owns the editor.
 
-        The editor is an overlay that takes the keyboard exclusively, and so is
-        this — two of them stacked leaves the top one typed into and the bottom
-        one still covering the screen.
+        The editor is a layer-shell overlay and covers this, which is the point
+        of the overview no longer being one: it opens on top and the overview is
+        still underneath when it closes.
         """
         log.info("overview: editing context %s", ctx.title)
-        self.close()
         self.on_edit(ctx, is_new)
 
     def _close_context(self, ctx) -> None:
-        """Close a context without leaving the overview.
-
-        Unlike opening or editing, this is housekeeping: you close a couple of
-        contexts and carry on choosing, so the list stays up and re-reads
-        itself instead.
-        """
+        """Close a context without leaving the overview."""
         log.info("overview: closing context %s", ctx.title)
         self.on_close(ctx)
         self.refresh()
@@ -462,21 +476,37 @@ class OverviewWindow(Gtk.ApplicationWindow):
         it is the answer that works whether or not anything is open."""
         ctx = context_for_app(self.store, info)
         log.info("overview: new context around %s", info.id)
-        self.close()
         self.on_context(ctx)
 
     def _open_app_here(self, info: App) -> None:
-        """This app added to the context you are in."""
+        """This app added to the context you came from."""
         current = self._active_context()
         if current is None:
             self._open_app(info)
             return
         log.info("overview: %s into %s", info.id, current.title)
-        self.close()
         self.on_app_into(current, info)
 
-    def _dismiss(self) -> bool:
-        self.close()
+    def _escape(self) -> bool:
+        """Clear the search, or leave if there is nothing to clear.
+
+        Escape used to close the overview, which is no longer a thing that can
+        happen — so it does the two things left that mean "not this": undo the
+        filtering, then go back where you came from.
+        """
+        if self.entry.get_text():
+            self.entry.set_text("")
+            return True
+        return self._leave()
+
+    def _leave(self) -> bool:
+        """Back to the context you came from, if it is still open.
+
+        Nothing happens when there is nowhere to go. Home is where a desktop
+        with nothing running is, so leaving it for an empty workspace would be
+        leaving the only screen that has anything on it.
+        """
+        self.on_leave()
         return True
 
     def _sync_scratchpad(self, context_id, shown: bool) -> None:
@@ -502,8 +532,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
 
     def _open_note(self, showing=None) -> None:
         # Handed to the launcher rather than opened here, the same way editing a
-        # context is: the scratchpad editor is an overlay and so is this.
-        self._dismiss()
+        # context is: the launcher owns the editors, not the views that ask.
         if self.on_note is not None:
             self.on_note(showing)
 
@@ -525,4 +554,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return None
 
     def on_app_into(self, ctx, info) -> None:
+        return None
+
+    def on_leave(self) -> None:
         return None

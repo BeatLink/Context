@@ -182,6 +182,47 @@ screenshot, never by looking up a colour. A colour can resolve correctly and
 be painted over, which is what made two light-mode attempts look like they had
 worked.
 
+## Home is a place
+
+The overview lives on a workspace of its own (`ctx-home`, via
+`backend.home_handle()`) and is an ordinary toplevel, not a layer-shell overlay.
+It was an overlay, and the model had a hole in it: every other thing you do is a
+workspace, while "not in any context" was a surface floating over whichever one
+you happened to be on. `launcher.home_context()` is a `Context` that is never
+stored — the same trick `loose_context()` plays — so the rows and lists already
+know how to show it.
+
+What holds it up:
+
+- **Switch to home, *then* present the window.** A window maps on the active
+  workspace, so this is the whole of the placement — no window rule, no matching
+  a mapped window by title, no moving it afterwards. Measured on 0.56: a window
+  presented after `dispatch workspace name:ctx-home` maps there, tiled.
+- **`close-request` returns True, and that really does refuse.** Also measured:
+  `hyprctl dispatch closewindow` on a window whose handler returns True leaves it
+  running. `restart` is the one exception and clears `permanent` first, because
+  an execv leaves the surface behind otherwise.
+- **Home's handle has to be *claimed*.** `_claimed_handles()` adds it, or the
+  overview's own window reads as a window belonging nowhere: it listed itself
+  under "No context" and offered to be adopted into a context of its own.
+- **A context called "Home" derives `ctx-home`.** `ensure_workspace` bumps a
+  derived name that collides, so opening that context does not put its apps on
+  the overview.
+- **"The context you are in" is not `active_context` any more.** On home nothing
+  is focused, which is exactly when "open this app here" gets asked — you came
+  here to find something to add to what you were doing. `current_context()` (and
+  `LiveState.current_id`) fall back to the last-visited context that is *still
+  open*, and the button names it rather than saying "here", which on home would
+  mean the overview.
+- **The overview is not the `switcher` slot.** That slot is whatever overlay is
+  up at the moment; home outlives all of them. It is also excluded from
+  `_covered()`, or the "nothing is open, go home" transition never fires twice.
+
+Because it is no longer an overlay it no longer has to dismiss itself to hand
+work on: the editor, the pickers and the note editor are still overlays and now
+simply stack on top of it. Everything the overview did used to come back to a
+screen that was no longer there.
+
 ## Two views of the same thing
 
 The sidebar and the overview list the same contexts and the same applications,

@@ -20,7 +20,7 @@ from context.ui import widgets
 from context.system.apps import App
 from context.state.layout import preset_for
 from context.state.resources import Resource
-from context.system.launcher import is_no_context
+from context.system.launcher import is_home_context, is_no_context
 from context.state.store import Context, ContextStore
 
 
@@ -113,7 +113,12 @@ class ContextRow(widgets.ActionRow):
         self.set_activatable(True)
 
         self.is_virtual = is_no_context(ctx)
-        if self.is_virtual:
+        self.is_home = is_home_context(ctx)
+        if self.is_home:
+            # No age and no app count: home is not a context that was made at
+            # some point and holds things, it is the place that is always there.
+            subtitle = ["everything you can open, on one screen"]
+        elif self.is_virtual:
             count = len(getattr(ctx, "windows", []))
             subtitle = [
                 f"{count} window{'s' if count != 1 else ''} in no context",
@@ -129,8 +134,12 @@ class ContextRow(widgets.ActionRow):
                 subtitle.append("ephemeral")
         self.set_subtitle(" · ".join(subtitle))
 
+        # The grid the overview draws, for home. The running marker would be a
+        # lie on the one row that is never not there.
         icon = Gtk.Image.new_from_icon_name(
-            "dialog-question-symbolic"
+            "view-grid-symbolic"
+            if self.is_home
+            else "dialog-question-symbolic"
             if self.is_virtual
             else ("media-playback-start-symbolic" if is_open else "view-grid-symbolic")
         )
@@ -280,9 +289,14 @@ class AppRow(widgets.ActionRow):
     and the editor you are about to work in does not.
     """
 
-    def __init__(self, info: App, on_new, on_current=None) -> None:
+    def __init__(self, info: App, on_new, on_current=None, into: str = "") -> None:
         super().__init__()
         self.app_info = info
+        # The context the second answer means, by name. It used to read "this
+        # context", which stopped being true the moment the overview became a
+        # place of its own: standing on it, "here" is the overview, and the app
+        # is going somewhere else.
+        self.into = into
         self.set_title(info.name)
         self.set_subtitle(info.description or "")
         self.set_activatable(True)
@@ -296,7 +310,7 @@ class AppRow(widgets.ActionRow):
 
         # The same pair the overview's tiles carry, so the two views teach one
         # thing rather than each inventing its own icons and words.
-        buttons = _open_buttons(info, on_new, on_current)
+        buttons = _open_buttons(info, on_new, on_current, into)
         self.here, self.fresh = buttons.here, buttons.fresh
         self.add_suffix(buttons)
 
@@ -330,7 +344,11 @@ class AppRow(widgets.ActionRow):
 
         item("new", "Open in a new context", run(self.on_new))
         if self.on_current is not None:
-            item("here", "Open in this context", run(self.on_current))
+            item(
+                "here",
+                f"Open in “{self.into}”" if self.into else "Open in this context",
+                run(self.on_current),
+            )
 
         self.menu = popover
         popover.popup()
@@ -361,13 +379,17 @@ OPEN_HERE_ICON = "media-playback-start-symbolic"
 OPEN_NEW_ICON = "send-to-symbolic"
 
 
-def _open_buttons(info: App, on_new, on_current) -> Gtk.Box:
+def _open_buttons(info: App, on_new, on_current, into: str = "") -> Gtk.Box:
     """The choice of where an application opens, as the row and the tile share."""
     box = Gtk.Box(spacing=0, halign=Gtk.Align.CENTER)
     box.add_css_class("linked")
 
     here = Gtk.Button(icon_name=OPEN_HERE_ICON, valign=Gtk.Align.CENTER)
-    here.set_tooltip_text(f"Open “{info.name}” in this context")
+    here.set_tooltip_text(
+        f"Open “{info.name}” in “{into}”"
+        if into
+        else f"Open “{info.name}” in this context"
+    )
     here.connect("clicked", lambda _b: on_current and on_current(info))
     # Only where there is a context to open it in. Without one the button would
     # mean the same as its neighbour and say something untrue. Set as well as

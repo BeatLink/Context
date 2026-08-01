@@ -73,6 +73,16 @@ class Backend(Protocol):
     def available(self) -> bool:
         """Whether this backend can drive the running session."""
 
+    def home_handle(self) -> str | None:
+        """The workspace the overview lives on, or None where there is no such
+        thing.
+
+        Home is a container Context owns rather than a context it stores, so the
+        backend names it the way it names any other and nothing else may claim
+        it. None means the session has no workspaces at all, and the overview
+        falls back to being an ordinary window.
+        """
+
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace | None:
         """Find the workspace for `handle`, or create one labelled `title`.
 
@@ -171,6 +181,9 @@ class NullBackend:
 
     def available(self) -> bool:
         return True
+
+    def home_handle(self) -> str | None:
+        return None
 
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace | None:
         return None

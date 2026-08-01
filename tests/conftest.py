@@ -90,6 +90,9 @@ class FakeBackend:
     def available(self) -> bool:
         return True
 
+    def home_handle(self) -> str | None:
+        return "ctx-home"
+
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace:
         name = handle or f"ctx-{title.strip().casefold().replace(' ', '-')}"
         created = name not in self.workspaces

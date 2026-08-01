@@ -171,18 +171,18 @@ def test_a_row_offers_the_same_handles_as_the_sidebar(
         window.close = lambda: dismissed.append(True)
         row = _rows(window.open_list)[0]
         row.close.emit("clicked")
-        seen["still_up"] = dismissed == []
         row.edit.emit("clicked")
-        seen["left_for_the_editor"] = dismissed == [True]
+        seen["still_up"] = dismissed == []
         app.quit()
 
     run_app(gtk_app, body)
     assert seen["closed"] == [ctx]
-    # Closing is housekeeping — you carry on choosing, so the overview stays.
-    assert seen["still_up"] is True
-    assert seen["left_for_the_editor"] is True
-    # Editing hands over to the launcher, which owns the editor overlay.
+    # Editing hands over to the launcher, which owns the editor overlay — and
+    # the overview stays where it is now that it is a place rather than an
+    # overlay of its own. It used to close first, so everything done through it
+    # came back to a screen that was no longer there.
     assert seen["edited"] == [(ctx, False)]
+    assert seen["still_up"] is True
 
 
 def test_enter_starts_a_context_by_the_name_typed(gtk_app, isolated_store, fake_apps, backend):
@@ -516,3 +516,89 @@ def test_the_overview_opens_with_the_keyboard_in_the_search_box(gtk_app, isolate
 
     run_app(gtk_app, body)
     assert seen["in_entry"] is True, f"focus was on {seen['focus_type']}"
+
+
+@needs_display
+def test_the_overview_refuses_to_be_closed(gtk_app, isolated_store, backend, fake_apps):
+    """Home is the one screen always there to come back to, so the
+    compositor's own close cannot take it away. `restart` is the exception —
+    an execv leaves the surface behind otherwise."""
+    from context.state.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        window.present()
+        window.close()
+        seen["survived"] = window.get_visible()
+
+        window.permanent = False
+        window.close()
+        seen["released"] = window.get_visible()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["survived"] is True
+    assert seen["released"] is False
+
+
+@needs_display
+def test_escape_clears_the_search_before_leaving(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    """Closing is no longer a thing that can happen, so Escape does the two
+    things left that mean "not this": undo the filtering, then go back."""
+    from context.state.store import ContextStore
+
+    seen = {"left": 0}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        window.on_leave = lambda: seen.update(left=seen["left"] + 1)
+        window.entry.set_text("something")
+        window._escape()
+        seen["text"] = window.entry.get_text()
+        seen["left_while_typing"] = seen["left"]
+        window._escape()
+        seen["left_when_empty"] = seen["left"]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["text"] == ""
+    assert seen["left_while_typing"] == 0
+    assert seen["left_when_empty"] == 1
+
+
+@needs_display
+def test_an_app_names_the_context_it_came_from(
+    gtk_app, isolated_store, backend, fake_apps
+):
+    """Standing on home nothing is active, which is exactly when "open this
+    app here" is asked — so it means the context you came from, by name."""
+    from context.state import uistate
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    ctx = store.create("Work on Context")
+    ctx.set_handle("fake", "ctx-work")
+    backend.place_windows("ctx-work", "firefox.desktop")
+    # Standing on home, having come from that context.
+    backend.current = backend.home_handle()
+    uistate.note_visit(ctx.id)
+    seen = {"into": []}
+
+    def body(app):
+        window = _build(app, store, backend)
+        window.on_app_into = lambda c, info: seen["into"].append((c.title, info.id))
+        window.refresh()
+        row = _tiles(window)[0]
+        seen["offered"] = row.here.get_visible()
+        seen["named"] = row.here.get_tooltip_text()
+        row.here.emit("clicked")
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["offered"] is True
+    assert "Work on Context" in seen["named"]
+    assert seen["into"] and seen["into"][0][0] == "Work on Context"
