@@ -624,7 +624,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         """Show only the parts of the sidebar that are switched on."""
         live = settings.current()
         self.entry.set_visible(live.show_search)
-        self.create_list.set_visible(live.show_search)
+        self.create_list.set_visible(live.show_new_context)
         self.overview_button.set_visible(live.show_overview_button)
 
     def _sync_collapse_button(self) -> None:

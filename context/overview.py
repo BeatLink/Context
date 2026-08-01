@@ -18,8 +18,8 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from . import backends, sidebar, theme, widgets
-from .apps import MAIN_CATEGORIES, App, categories_of, in_category
-from .apps import installed_apps, search_apps
+from .apps import MAIN_CATEGORIES, SORTS, App, categories_of, in_category
+from .apps import installed_apps, search_apps, sort_apps
 from .launcher import is_no_context, loose_context, read_live_state
 from .logging_setup import get_logger
 from .rows import ContextRow, app_tile, context_for_app
@@ -39,6 +39,8 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self._active_id: str | None = None
         # Which kind of application the grid is showing; "" is all of them.
         self.category = ""
+        # And in what order — the first of SORTS, which is by name.
+        self.sort = next(iter(SORTS))
         self._live = read_live_state([], backend=self.backend)
 
         theme.install()
@@ -142,6 +144,19 @@ class OverviewWindow(Gtk.ApplicationWindow):
         category_scroller.set_child(self.category_chooser)
         right.append(category_scroller)
 
+        # And in what order. Buttons again rather than a dropdown, for the same
+        # reason: a popover on an overlay never keeps what is clicked in it.
+        sort_row = Gtk.Box(spacing=8)
+        sort_label = Gtk.Label(label="Sort", xalign=0.0)
+        sort_label.add_css_class("dim-label")
+        sort_row.append(sort_label)
+        self.sort_keys = list(SORTS)
+        self.sort_chooser = widgets.SegmentedChoice(self._on_sort)
+        for key in self.sort_keys:
+            self.sort_chooser.add(SORTS[key])
+        sort_row.append(self.sort_chooser)
+        right.append(sort_row)
+
         self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE)
         self.flow.set_valign(Gtk.Align.START)
         self.flow.set_max_children_per_line(30)
@@ -202,7 +217,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
 
         self.flow.remove_all()
         within = in_category(self.apps, self.category)
-        matches = search_apps(within, query)
+        matches = sort_apps(search_apps(within, query), self.sort, self._app_counts())
         for info in matches:
             self.flow.append(self._app_tile(info))
         kind = MAIN_CATEGORIES.get(self.category, "")
@@ -250,6 +265,20 @@ class OverviewWindow(Gtk.ApplicationWindow):
         return app_tile(info, self._open_app)
 
     # -- acting --------------------------------------------------------------
+
+    def _app_counts(self) -> dict[str, int]:
+        """How many contexts each application belongs to."""
+        counts: dict[str, int] = {}
+        for ctx in self.store.contexts:
+            for app_id in set(ctx.apps):
+                counts[app_id] = counts.get(app_id, 0) + 1
+        return counts
+
+    def _on_sort(self, selected: int) -> None:
+        if 0 <= selected < len(self.sort_keys):
+            self.sort = self.sort_keys[selected]
+            log.debug("sorting apps by %s", self.sort)
+            self.refresh()
 
     def _on_category(self, selected: int) -> None:
         if 0 <= selected < len(self.categories):

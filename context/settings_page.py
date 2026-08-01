@@ -355,9 +355,14 @@ class SettingsPage(widgets.NavigationPage):
         for title, subtitle, field in (
             (
                 "Search",
-                "The box, and the row that starts a context from what is typed "
-                "in it.",
+                "The box that filters the list, and searches applications.",
                 "show_search",
+            ),
+            (
+                "New context row",
+                "The row that starts a context — from what is typed in the "
+                "search box, or from the editor when nothing is.",
+                "show_new_context",
             ),
             (
                 "Overview button",

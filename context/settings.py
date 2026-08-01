@@ -110,6 +110,10 @@ class Settings:
     # essential — a sidebar that is only the open contexts is a perfectly good
     # sidebar, and at 380px every section costs the others room.
     show_search: bool = True
+    # The built-in "New context" row. Separate from the search box: the row
+    # works on its own — blank, it opens the editor to be named — and the box
+    # is useful without it.
+    show_new_context: bool = True
     show_overview_button: bool = True
     show_saved: bool = True
     show_apps: bool = True
@@ -191,6 +195,7 @@ class Settings:
             collapse_delay_ms=_clamp(self.collapse_delay_ms, 0, 5000, 400),
             notifications=bool(self.notifications),
             show_search=bool(self.show_search),
+            show_new_context=bool(self.show_new_context),
             show_overview_button=bool(self.show_overview_button),
             show_saved=bool(self.show_saved),
             show_apps=bool(self.show_apps),

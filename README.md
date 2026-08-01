@@ -85,6 +85,12 @@ Windows are listed most recently focused first, each labelled with the context
 it belongs to. The window picker starts scoped to the context you are in and
 switches to all of them from its header.
 
+The **overview** puts everything on one screen: one search over the contexts
+you have — open ones first, with the same handles the sidebar gives them — and
+the applications installed, each one a new context around it. The grid filters
+by kind and can be ordered A–Z, by how many contexts an app is already in, or
+by kind.
+
 ## The editor
 
 Creating or editing a context opens a full-screen editor: the window arrangement
@@ -250,7 +256,8 @@ need a restart say so.
 | Refresh interval | How often the open list is re-checked |
 | Ask to save | When to offer to keep a context's changes |
 | Notifications | Report launches, closes and drift to the desktop |
-| Search | Show the sidebar's search box and its "New context" row |
+| Search | Show the sidebar's search box |
+| New context row | Show the row that starts a context |
 | Overview button | Show the Overview button at the top of the sidebar |
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |

@@ -2418,6 +2418,7 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         monkeypatch,
         isolated_store,
         show_search=False,
+        show_new_context=False,
         show_overview_button=False,
         show_saved=False,
         show_apps=False,
@@ -2435,10 +2436,13 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         seen["apps"] = window.apps_listbox.get_visible()
 
         window.entry.set_text("")
+        # Each part is its own switch: the search box comes back without the
+        # row that used to be tied to it.
         settings.update(show_search=True, show_saved=True)
         window.settings_changed()
         seen["search_again"] = window.entry.get_visible()
         seen["saved_again"] = window.saved_expander.get_visible()
+        seen["create_still_off"] = window.create_list.get_visible() is False
         app.quit()
 
     store = ContextStore()
@@ -2452,4 +2456,5 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         "apps": False,
         "search_again": True,
         "saved_again": True,
+        "create_still_off": True,
     }

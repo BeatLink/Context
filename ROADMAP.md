@@ -465,10 +465,13 @@ button pins rather than collapses — it was the only control that did the
 opposite of what it looked like, closing the sidebar under the pointer that was
 holding it open.
 
-### 23. App categories in the overview — *done*
+### 23. Finding an app in the overview — *done*
 
 The grid filters by the freedesktop main categories, offering only the ones
-something is actually filed under.
+something is actually filed under, and orders itself A–Z, by how many contexts
+an application is already in, or by kind. Nothing that would need usage
+tracking Context does not do: the contexts that exist are the record of what
+these applications are for.
 
 ### 20. Choosing on an overlay — *done*
 

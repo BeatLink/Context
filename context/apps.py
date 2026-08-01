@@ -83,6 +83,34 @@ def in_category(apps: list[App], category: str) -> list[App]:
     return [app for app in apps if category in app.categories]
 
 
+# How the grid can be ordered. Deliberately nothing that would need usage
+# tracking Context does not do: "In contexts" is counted from the contexts
+# that exist, which is the only record of what these applications are for.
+SORTS: dict[str, str] = {
+    "name": "A–Z",
+    "contexts": "In contexts",
+    "category": "By kind",
+}
+
+
+def sort_apps(apps: list[App], order: str, counts: dict[str, int] | None = None):
+    """Order the grid. Unknown orders fall back to by name."""
+    counts = counts or {}
+    if order == "contexts":
+        return sorted(
+            apps, key=lambda a: (-counts.get(a.id, 0), a.name.casefold())
+        )
+    if order == "category":
+        return sorted(
+            apps,
+            key=lambda a: (
+                MAIN_CATEGORIES.get(a.categories[0], "~") if a.categories else "~",
+                a.name.casefold(),
+            ),
+        )
+    return sorted(apps, key=lambda a: a.name.casefold())
+
+
 def search_apps(apps: list[App], query: str) -> list[App]:
     q = query.strip().casefold()
     if not q:

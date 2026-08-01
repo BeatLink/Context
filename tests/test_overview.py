@@ -315,3 +315,44 @@ def test_the_no_context_is_listed_with_the_open_ones(
     assert seen["offers_save"] is True
     assert [c.id for c in seen["saved"]] == [NO_CONTEXT_ID]
     assert [c.id for c in seen["closed"]] == [NO_CONTEXT_ID]
+
+
+def test_the_grid_can_be_reordered(gtk_app, isolated_store, backend, monkeypatch):
+    """Alphabetical is a poor default once you have contexts: what you put in
+    them is what you reach for."""
+    from context import overview
+    from context.apps import App
+    from context.resources import Resource
+    from context.store import ContextStore
+
+    apps = [
+        App(id="a.desktop", name="Ardour", description="", icon=None,
+            categories=("AudioVideo",)),
+        App(id="z.desktop", name="Zed", description="", icon=None,
+            categories=("Development",)),
+        App(id="m.desktop", name="Meld", description="", icon=None,
+            categories=("Development",)),
+    ]
+    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    store = ContextStore()
+    store.create("one", resources=[Resource(app_id="z.desktop")])
+    store.create("two", resources=[Resource(app_id="z.desktop")])
+    store.create("three", resources=[Resource(app_id="m.desktop")])
+    seen = {}
+
+    def body(app):
+        window = _build(app, store, backend)
+        seen["by_name"] = [t.app_info.name for t in _tiles(window.flow)]
+        window._on_sort(window.sort_keys.index("contexts"))
+        seen["by_use"] = [t.app_info.name for t in _tiles(window.flow)]
+        window._on_sort(window.sort_keys.index("category"))
+        seen["by_kind"] = [t.app_info.name for t in _tiles(window.flow)]
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["by_name"] == ["Ardour", "Meld", "Zed"]
+    # Zed is in two contexts, Meld in one, Ardour in none.
+    assert seen["by_use"] == ["Zed", "Meld", "Ardour"]
+    # Development before Media, alphabetically within each.
+    assert seen["by_kind"] == ["Meld", "Zed", "Ardour"]
