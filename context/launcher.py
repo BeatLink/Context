@@ -231,7 +231,6 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
     if not geometry:
         return LiveState(open_ids=open_ids, active_id=active_id)
 
-    outputs = _outputs(wm)
     claimed = {h for ctx in contexts for h in ctx.handles_for(wm.name)}
     loose = [
         window
@@ -247,7 +246,7 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
         # comparing one against no windows would say every one had.
         if not handles or not any(geometry.get(handle) for handle in handles):
             continue
-        if _drifted(ctx, handles, geometry, outputs):
+        if _drifted(ctx, handles, geometry):
             drifted.add(ctx.id)
 
     return LiveState(
@@ -689,22 +688,16 @@ def capture_arrangement(
     if not handles:
         return 0, 0
 
-    # By id, because that is what a window reports. Taking the monitor from the
-    # screen index instead was wrong whenever a context's screen 0 was not
-    # monitor 0 — every slot came out at x=1.0, off the right-hand edge.
-    by_id = {m.id: m for m in _outputs(wm)}
-    outputs = _outputs(wm)
     screens: list[Layout] = []
     assignments: dict[int, int] = {}
     resources: list = []
 
     for screen, handle in enumerate(handles):
         clients = _clients_on(wm, handle)
+        box = tiled_box(clients)
         slots = []
-        fallback = outputs[screen] if screen < len(outputs) else None
         for client in clients:
-            monitor = by_id.get(client.get("monitor_id"), fallback)
-            slots.append(_slot_from(client, monitor))
+            slots.append(_slot_from(client, box))
             assignments[len(resources)] = screen
             existing = ctx.resource_for(client.get("app_id", ""))
             resources.append(
@@ -730,15 +723,32 @@ def _clients_on(wm: Backend, handle: str) -> list[dict]:
     return reader(handle)
 
 
-def _slot_from(client: dict, monitor) -> "Slot":
-    """One window's position as fractions of the screen it is on."""
+def tiled_box(clients: list[dict]) -> tuple[float, float, float, float]:
+    """The rectangle the windows span, as (x, y, width, height).
+
+    This is what a layout's fractions are *of*. Not the monitor: bars, the
+    sidebar, the compositor's gaps and hyprbars' titlebars all sit between the
+    panel and the windows, so a maximised window measured against the screen
+    came out at 0.006 from the left and 0.911 tall — never equal to the 0,0,1,1
+    it was launched from, so every context read as moved the moment anything
+    reserved a different amount of space. The launch path already works in
+    these terms: `apply_ratios` proportions the area the windows occupy.
+    """
+    if not clients:
+        return (0.0, 0.0, 1.0, 1.0)
+    lefts = [c.get("x", 0) for c in clients]
+    tops = [c.get("y", 0) for c in clients]
+    rights = [c.get("x", 0) + c.get("width", 0) for c in clients]
+    bottoms = [c.get("y", 0) + c.get("height", 0) for c in clients]
+    x, y = min(lefts), min(tops)
+    return (x, y, max(1.0, max(rights) - x), max(1.0, max(bottoms) - y))
+
+
+def _slot_from(client: dict, box: tuple[float, float, float, float]) -> "Slot":
+    """One window's position as fractions of the area the windows span."""
     from .layout import Slot
 
-    width = getattr(monitor, "width", 0) or 1920
-    height = getattr(monitor, "height", 0) or 1080
-    origin_x = getattr(monitor, "x", 0)
-    origin_y = getattr(monitor, "y", 0)
-
+    origin_x, origin_y, width, height = box
     x = (client.get("x", 0) - origin_x) / width
     y = (client.get("y", 0) - origin_y) / height
     return Slot(
@@ -763,7 +773,7 @@ def has_drifted(ctx: Context, backend: Backend | None = None) -> bool:
     if not handles:
         return False
     geometry = {handle: _clients_on(wm, handle) for handle in handles}
-    return _drifted(ctx, handles, geometry, _outputs(wm))
+    return _drifted(ctx, handles, geometry)
 
 
 @traced(log)
@@ -782,7 +792,6 @@ def drifted_ids(contexts, backend: Backend | None = None) -> set[str]:
     if not geometry:
         return set()
 
-    outputs = _outputs(wm)
     drifted = set()
     for ctx in contexts:
         handles = ctx.handles_for(wm.name)
@@ -790,13 +799,12 @@ def drifted_ids(contexts, backend: Backend | None = None) -> set[str]:
         # comparing one against no windows would say everything had.
         if not handles or not any(geometry.get(handle) for handle in handles):
             continue
-        if _drifted(ctx, handles, geometry, outputs):
+        if _drifted(ctx, handles, geometry):
             drifted.add(ctx.id)
     return drifted
 
 
-def _drifted(ctx: Context, handles, geometry: dict, outputs) -> bool:
-    by_id = {m.id: m for m in outputs}
+def _drifted(ctx: Context, handles, geometry: dict) -> bool:
     saved = ctx.arrangement_for(len(handles))
 
     for screen, handle in enumerate(handles):
@@ -806,12 +814,11 @@ def _drifted(ctx: Context, handles, geometry: dict, outputs) -> bool:
             return True
 
         slots = saved.layout_for(screen).slots
-        fallback = outputs[screen] if screen < len(outputs) else None
+        box = tiled_box(clients)
         for position, client in enumerate(clients):
             if position >= len(slots):
                 return True
-            live = _slot_from(client, by_id.get(client.get("monitor_id"), fallback))
-            if not _slots_match(live, slots[position]):
+            if not _slots_match(_slot_from(client, box), slots[position]):
                 return True
     return False
 

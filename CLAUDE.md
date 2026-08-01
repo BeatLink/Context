@@ -177,6 +177,22 @@ and hands the context to `app.edit_context`, which routes to the launcher.
 Closing a context is the exception that stays put: it is housekeeping done
 while you carry on choosing, so the overview refreshes rather than dismissing.
 
+## Slots are fractions of the windows, not of the screen
+
+`tiled_box()` is the rectangle the windows on a workspace span, and every slot
+— captured or compared — is a fraction of *that*. Not of the monitor: the
+bars, the sidebar, the compositor's gaps and hyprbars' titlebars all sit
+between the panel and the windows, so a maximised window measured against the
+screen came out at 0.006 from the left and 0.911 tall. It never equalled the
+`0,0,1,1` it was launched from, and every context read as drifted the moment
+anything reserved a different amount of space — collapsing the sidebar was
+enough. The launch path already worked in these terms (`apply_ratios`
+proportions the area the windows occupy), so this is the two ends agreeing.
+
+The consequence to know: **a lone tiled window cannot drift in position** — it
+*is* the whole box wherever the compositor put it. Only its count, or the
+proportions between two or more windows, can change.
+
 ## What is live, in one pass
 
 `launcher.read_live_state` answers everything the list needs — which contexts

@@ -50,6 +50,7 @@ class MonitorInfo:
         return self.width / self.height if self.height else 16 / 9
 
 
+
 @dataclass(frozen=True)
 class WindowInfo:
     """One open window, as much as a backend can say about it.

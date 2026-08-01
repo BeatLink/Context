@@ -2282,28 +2282,35 @@ def test_a_drifted_context_offers_to_be_saved(gtk_app, isolated_store, backend):
     from context.window import LauncherWindow
 
     store = ContextStore()
-    ctx = store.create("work", resources=[Resource(app_id="a.desktop")])
+    ctx = store.create(
+        "work",
+        resources=[Resource(app_id="a.desktop"), Resource(app_id="b.desktop")],
+    )
     ctx.set_handle("fake", "ctx-work")
-    ctx.layout = Layout(slots=[Slot(0.0, 0.0, 1.0, 1.0)])
-    backend.workspaces["ctx-work"] = 1
+    ctx.layout = Layout(slots=[Slot(0.0, 0.0, 0.5, 1.0), Slot(0.5, 0.0, 0.5, 1.0)])
+    backend.workspaces["ctx-work"] = 2
     seen = {"saved": []}
 
     def body(app):
         app.backend = backend
         app.save_context = seen["saved"].append
-        # Where the window actually is matches what was saved.
+        # Where the windows actually are matches what was saved.
         backend.geometry["ctx-work"] = [
             {"id": "0x1", "app_id": "a.desktop", "x": 0, "y": 0,
-             "width": 1920, "height": 1080}
+             "width": 960, "height": 1080},
+            {"id": "0x2", "app_id": "b.desktop", "x": 960, "y": 0,
+             "width": 960, "height": 1080},
         ]
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
         window.refresh_open_state()
         seen["settled"] = _list_rows(window.open_listbox)[0].save.get_visible()
 
-        # Half the screen now: that is drift.
+        # The split has been dragged: that is drift.
         backend.geometry["ctx-work"] = [
             {"id": "0x1", "app_id": "a.desktop", "x": 0, "y": 0,
-             "width": 960, "height": 1080}
+             "width": 1400, "height": 1080},
+            {"id": "0x2", "app_id": "b.desktop", "x": 1400, "y": 0,
+             "width": 520, "height": 1080},
         ]
         window.refresh_open_state()
         row = _list_rows(window.open_listbox)[0]

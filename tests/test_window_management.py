@@ -260,43 +260,31 @@ def test_a_windows_assigned_screen_is_honoured_whatever_is_focused(
     assert backend.placements["ctx-work-s2"] == "right"
 
 
-def test_capture_uses_the_monitor_a_window_is_actually_on():
-    """Taking the monitor from the screen index is wrong when they differ.
+def test_capture_is_relative_to_the_windows_wherever_they_are():
+    """Which monitor they are on cannot come into it.
 
-    A context whose screen 0 sits on monitor 1 had every slot computed against
-    monitor 0's origin, so they all came out at x=1.0 — off the right-hand
-    edge. Windows report a monitor *id*; that is what has to be matched.
+    Slots are fractions of the area the windows span, so a context on the
+    second monitor captures the same numbers as the same arrangement on the
+    first — 1200px into the desktop is the left-hand window either way.
     """
     ctx = Context(title="work")
     ctx.set_handle("fake", "ctx-work")
 
-    class OffsetBackend(GeometryBackend):
-        def monitors(self):
-            return [
-                MonitorInfo(name="A", width=1000, height=1000, x=0, id=0),
-                MonitorInfo(name="B", width=1000, height=1000, x=1000, id=1),
-            ]
-
-    wm = OffsetBackend(
+    wm = GeometryBackend(
         {
             "ctx-work": [
-                {
-                    "app_id": "a",
-                    "x": 1200,
-                    "y": 0,
-                    "width": 500,
-                    "height": 1000,
-                    "monitor_id": 1,
-                }
+                {"app_id": "a", "x": 1200, "y": 0, "width": 400, "height": 1000},
+                {"app_id": "b", "x": 1600, "y": 0, "width": 400, "height": 1000},
             ]
         }
     )
 
     launcher.capture_arrangement(ctx, backend=wm)
 
-    slot = ctx.arrangement_for(1).layout_for(0).slots[0]
-    # 200px into a monitor that starts at 1000, not 1200px into the first.
-    assert slot.x == pytest.approx(0.2)
+    slots = ctx.arrangement_for(1).layout_for(0).slots
+    assert slots[0].x == pytest.approx(0.0)
+    assert slots[1].x == pytest.approx(0.5)
+    assert slots[0].width == pytest.approx(0.5)
 
 
 # -- drift -------------------------------------------------------------------
@@ -312,7 +300,30 @@ def test_a_context_that_matches_its_layout_has_not_drifted(ctx):
     assert not launcher.has_drifted(ctx, backend=wm)
 
 
-def test_a_moved_window_counts_as_drift(ctx):
+def test_a_resized_split_counts_as_drift(ctx):
+    wm = GeometryBackend(
+        {
+            "ctx-work": [
+                {"app_id": "a", "x": 0, "y": 0, "width": 500, "height": 1000},
+                {"app_id": "b", "x": 500, "y": 0, "width": 500, "height": 1000},
+            ]
+        }
+    )
+    ctx.set_handle("fake", "ctx-work")
+    launcher.capture_arrangement(ctx, backend=wm)
+
+    wm.geometry["ctx-work"] = [
+        {"app_id": "a", "x": 0, "y": 0, "width": 700, "height": 1000},
+        {"app_id": "b", "x": 700, "y": 0, "width": 300, "height": 1000},
+    ]
+    assert launcher.has_drifted(ctx, backend=wm)
+
+
+def test_one_tiled_window_cannot_drift_where_it_sits(ctx):
+    """Slots are fractions of the area the windows span, and a lone window is
+    that whole area — wherever the compositor put it. Which is the point: the
+    bars, the sidebar and the gaps all move it about without the context
+    having changed at all."""
     wm = GeometryBackend(
         {"ctx-work": [{"app_id": "a", "x": 0, "y": 0, "width": 1000, "height": 1000}]}
     )
@@ -320,9 +331,9 @@ def test_a_moved_window_counts_as_drift(ctx):
     launcher.capture_arrangement(ctx, backend=wm)
 
     wm.geometry["ctx-work"] = [
-        {"app_id": "a", "x": 500, "y": 0, "width": 500, "height": 1000}
+        {"app_id": "a", "x": 60, "y": 48, "width": 900, "height": 900}
     ]
-    assert launcher.has_drifted(ctx, backend=wm)
+    assert not launcher.has_drifted(ctx, backend=wm)
 
 
 def test_a_new_window_counts_as_drift(ctx):
