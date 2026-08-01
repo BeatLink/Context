@@ -170,9 +170,12 @@ the arrangement for however many screens you have now, so reopening rebuilds
 what you actually had. What each app opens is kept.
 
 **Or put it back.** A drifted context's card offers both: keep the windows as
-they are, or move them back to where the context was saved. Restoring is
-positions only — a window closed since is not relaunched and an extra one is not
-shut, so a context that has drifted by *what is open* stays that way.
+they are, or put them back the way the context was saved. Restoring reopens
+whatever was closed and then moves everything to where it belongs.
+
+It never closes anything. A window you opened since is your work, so a context
+that has drifted by having *more* than it was saved with stays that way —
+missing is recoverable, surplus is not.
 
 Context can also offer this itself, at whichever moment suits — whenever a
 context changes, when you switch away from it, or when you close it. **Ask to

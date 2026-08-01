@@ -465,9 +465,9 @@ def test_restoring_puts_the_windows_back_where_they_were_saved(backend):
     ctx.layout = Layout(slots=[Slot(0.0, 0.0, 0.5, 1.0), Slot(0.5, 0.0, 0.5, 1.0)])
     backend.add_window("ctx-work", 2)
 
-    moved, screens = restore_arrangement(ctx, backend=backend)
+    launched, moved, screens = restore_arrangement(ctx, backend=backend)
 
-    assert screens == 1
+    assert (launched, screens) == (0, 1)
     assert ("ratios", "ctx-work", 2) in backend.calls
     assert moved == 1
 
@@ -476,5 +476,88 @@ def test_restoring_a_context_that_is_not_open_does_nothing(backend):
     from context.state.store import Context
     from context.system.launcher import restore_arrangement
 
-    assert restore_arrangement(Context(title="closed"), backend=backend) == (0, 0)
+    assert restore_arrangement(Context(title="closed"), backend=backend) == (0, 0, 0)
     assert not [c for c in backend.calls if c[0] == "ratios"]
+
+
+def test_restoring_reopens_what_was_closed(backend, monkeypatch):
+    """The half the button was missing: a context whose editor was closed came
+    back with the editor still gone, which is not "put it back"."""
+    from context.state.layout import Layout, Slot
+    from context.state.resources import Resource
+    from context.state.store import Context
+    from context.system import launcher
+    from context.system.launcher import restore_arrangement
+
+    opened: list[str] = []
+
+    class StubAdapter:
+        def launch(self, resource, context_id):
+            opened.append(resource.app_id)
+            backend.place_windows("ctx-work", resource.app_id)
+
+    monkeypatch.setattr(launcher.adapters, "adapter_for", lambda r: StubAdapter())
+
+    ctx = Context(title="work")
+    ctx.set_handle("fake", "ctx-work")
+    ctx.resources = [
+        Resource(app_id="firefox.desktop"),
+        Resource(app_id="codium.desktop"),
+    ]
+    ctx.layout = Layout(slots=[Slot(0.0, 0.0, 0.5, 1.0), Slot(0.5, 0.0, 0.5, 1.0)])
+    # Only one of the two is still open.
+    backend.place_windows("ctx-work", "firefox.desktop")
+
+    launched, _moved, _screens = restore_arrangement(ctx, backend=backend)
+
+    assert opened == ["codium.desktop"]
+    assert launched == 1
+
+
+def test_restoring_leaves_what_is_already_there_alone(backend, monkeypatch):
+    """Every live window is claimed by at most one resource, so two Firefox
+    windows against two Firefox resources leaves nothing missing rather than
+    matching both against the first and launching a third."""
+    from context.state.resources import Resource
+    from context.state.store import Context
+    from context.system import launcher
+    from context.system.launcher import restore_arrangement
+
+    opened: list[str] = []
+
+    class StubAdapter:
+        def launch(self, resource, context_id):
+            opened.append(resource.app_id)
+
+    monkeypatch.setattr(launcher.adapters, "adapter_for", lambda r: StubAdapter())
+
+    ctx = Context(title="work")
+    ctx.set_handle("fake", "ctx-work")
+    ctx.resources = [
+        Resource(app_id="firefox.desktop"),
+        Resource(app_id="firefox.desktop"),
+    ]
+    backend.place_windows("ctx-work", "firefox.desktop", "firefox.desktop")
+
+    launched, _moved, _screens = restore_arrangement(ctx, backend=backend)
+
+    assert opened == []
+    assert launched == 0
+
+
+def test_restoring_never_closes_a_surplus_window(backend, monkeypatch):
+    """Missing is recoverable and surplus is somebody's work, which is the whole
+    of why the two are treated differently."""
+    from context.state.resources import Resource
+    from context.state.store import Context
+    from context.system.launcher import restore_arrangement
+
+    ctx = Context(title="work")
+    ctx.set_handle("fake", "ctx-work")
+    ctx.resources = [Resource(app_id="firefox.desktop")]
+    backend.place_windows("ctx-work", "firefox.desktop", "gimp.desktop")
+
+    restore_arrangement(ctx, backend=backend)
+
+    assert backend.closed_windows == []
+    assert not [c for c in backend.calls if c[0] == "close_window"]

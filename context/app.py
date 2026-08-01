@@ -233,22 +233,52 @@ class ContextApplication(Gtk.Application):
         self._show_picker(SettingsWindow(self, self.ensure_window()))
 
     def restore_context(self, ctx: Context) -> None:
-        """Put a drifted context's windows back where they were saved."""
+        """Put a drifted context back, on a worker thread.
+
+        It relaunches whatever is missing, so it is as slow as opening a context
+        and for the same reason: each application is waited for. On the main
+        loop that froze the launcher for the duration. Nothing in the worker may
+        touch GTK; the result comes back through `idle_add`.
+        """
         if is_no_context(ctx):
             return
-        windows, screens = restore_arrangement(ctx, backend=self.backend)
+        if ctx.id in self.launching:
+            self.log.info("%s is already being launched", ctx.title)
+            return
+        self.launching.add(ctx.id)
+        threading.Thread(
+            target=self._restore_worker, args=(ctx,), daemon=True
+        ).start()
+
+    def _restore_worker(self, ctx: Context) -> None:
+        try:
+            launched, moved, screens = restore_arrangement(ctx, backend=self.backend)
+        except Exception as exc:  # pragma: no cover - depends on the compositor
+            self.log.exception("restoring %s failed", ctx.title)
+            launched, moved, screens = 0, 0, 0
+            GLib.idle_add(
+                lambda: self._restored(ctx, 0, 0, f"Could not restore “{ctx.title}”: {exc}")
+            )
+            return
+        parts = []
+        if launched:
+            parts.append(f"reopened {launched}")
+        if moved:
+            parts.append(f"moved {moved}")
+        message = (
+            f"Put “{ctx.title}” back — {', '.join(parts)}"
+            if parts
+            else f"Nothing to put back for “{ctx.title}”"
+        )
+        GLib.idle_add(lambda: self._restored(ctx, launched, moved, message))
+
+    def _restored(self, ctx: Context, launched: int, moved: int, message: str) -> bool:
+        self.launching.discard(ctx.id)
         self.asked_about.discard(ctx.id)
         notify.withdraw(self, "drift")
-        message = (
-            f"Put {windows} window{'s' if windows != 1 else ''} back for “{ctx.title}”"
-            if windows
-            else f"Nothing to move for “{ctx.title}”"
-        )
-        self.log.info(
-            "restored %s: %d window(s), %d screen(s)", ctx.title, windows, screens
-        )
         notify.send(self, "restore", message)
         self.refresh_all()
+        return False
 
     def open_app_in_context(self, ctx: Context) -> None:
         """Pick an application and open it inside an existing context.

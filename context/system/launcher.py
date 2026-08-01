@@ -773,38 +773,81 @@ def _slot_from(client: dict, box: tuple[float, float, float, float]) -> "Slot":
 @traced(log)
 def restore_arrangement(
     ctx: Context, backend: Backend | None = None
-) -> tuple[int, int]:
-    """Put the windows back where the context was saved.
+) -> tuple[int, int, int]:
+    """Put a context back the way it was saved: what was open, and where.
 
-    The inverse of `capture_arrangement`, and the same operation the launch path
-    performs: the stored slots are proportions of the box the windows span, so
-    re-applying them is exactly what opening the context would have done.
+    Two halves, in that order. Anything the context holds that has no window on
+    its workspace is launched, and then the stored slots are re-applied — the
+    same call the launch path makes, so the windows land where opening the
+    context would have put them. Doing it the other way round would tile the
+    windows that were there and then drop the new ones in beside them.
 
-    It restores *positions*, not membership. A window that was closed since is
-    not relaunched and an extra one is not shut — the first would be surprising
-    and the second destroys work, and neither is what "put it back how it was"
-    is asking for. So a context that has drifted by count stays drifted after
-    this, which is honest: the layout is what was rolled back.
+    It does not close anything. An extra window is somebody's work and this is a
+    layout button, so a context that has drifted by having *more* than it was
+    saved with stays drifted afterwards. Missing is recoverable and surplus is
+    not, which is the whole of why the two are treated differently.
 
-    Returns how many windows moved and across how many screens.
+    Returns how many windows were launched, how many moved, and across how many
+    screens. Slow — it waits for each application to map — so it belongs on a
+    worker thread, never on the main loop.
     """
     wm: Backend = backend or backends.detect()
     handles = ctx.handles_for(wm.name)
     if not handles:
-        return (0, 0)
+        return (0, 0, 0)
 
     saved = ctx.arrangement_for(len(handles))
-    ratios = getattr(wm, "apply_ratios", None)
-    if ratios is None:
-        return (0, 0)
+    launched = moved = 0
 
-    moved = 0
     for screen, handle in enumerate(handles):
+        missing = _missing_on(ctx, wm, handle, saved.indices_on(screen))
+        if missing:
+            workspace = wm.ensure_workspace(ctx.title, handle)
+            if workspace is not None:
+                wm.switch_to(workspace)
+                wm.prepare_launch(workspace)
+                opened, failed = _launch_resources(
+                    ctx, wm, handle, missing, saved.layout_for(screen)
+                )
+                launched += len(opened)
+                for app_id, why in failed:
+                    log.warning("restoring %s: %s failed: %s", ctx.title, app_id, why)
+
         slots = saved.layout_for(screen).slots
         if len(slots) > 1:
-            moved += ratios(handle, slots)
-    log.info("restored %s: %d window(s) on %d screen(s)", ctx.title, moved, len(handles))
-    return (moved, len(handles))
+            ratios = getattr(wm, "apply_ratios", None)
+            if ratios is not None:
+                moved += ratios(handle, slots)
+
+    log.info(
+        "restored %s: %d launched, %d moved, %d screen(s)",
+        ctx.title, launched, moved, len(handles),
+    )
+    return (launched, moved, len(handles))
+
+
+def _missing_on(ctx: Context, wm: Backend, handle: str, indices) -> list[int]:
+    """Which of a screen's resources have no window on it.
+
+    Matched by class through `_same_app`, the same comparison the launch path
+    uses to decide a window is the one it just started — imperfect, and the only
+    thing available: a Wayland window cannot be tied back to the process that
+    asked for it. Each live window is claimed by at most one resource, so two
+    Firefox windows against two Firefox resources leaves nothing missing rather
+    than matching both against the first.
+    """
+    live = list(wm.windows(handle))
+    missing = []
+    for index in indices:
+        if index >= len(ctx.resources):
+            continue
+        resource = ctx.resources[index]
+        match = next((w for w in live if _same_app(w, resource)), None)
+        if match is None:
+            missing.append(index)
+        else:
+            live.remove(match)
+    return missing
 
 
 def has_drifted(ctx: Context, backend: Backend | None = None) -> bool:
