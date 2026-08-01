@@ -109,3 +109,63 @@ def test_save_is_atomic(isolated_store):
     data = json.loads(store.path.read_text())
     assert data["version"] == 2
     assert not list(store.path.parent.glob("*.tmp"))
+
+
+def test_declared_contexts_are_taken_in_once(tmp_path, monkeypatch):
+    """Something else — a NixOS module, a dotfile — can declare contexts.
+
+    They are seeds, not managed state: taken in once and ordinary from then on,
+    so editing or forgetting one sticks.
+    """
+    import json
+
+    from context.store import ContextStore, declared_id
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    declared = tmp_path / "declared.json"
+    declared.write_text(
+        json.dumps(
+            {
+                "contexts": [
+                    {
+                        "title": "Work on Context",
+                        "resources": [{"app_id": "codium.desktop"}],
+                        "isolated": True,
+                    },
+                    {"title": "Music", "apps": ["quodlibet.desktop"]},
+                ]
+            }
+        )
+    )
+    monkeypatch.setenv("CONTEXT_DECLARED", str(declared))
+
+    store = ContextStore()
+    assert sorted(c.title for c in store.contexts) == ["Music", "Work on Context"]
+    work = next(c for c in store.contexts if c.title == "Work on Context")
+    assert work.id == declared_id("Work on Context")
+    assert work.isolated is True
+    assert work.apps == ["codium.desktop"]
+
+    # Forgotten stays forgotten: a fresh store does not put it back.
+    store.delete(work)
+    assert [c.title for c in ContextStore().contexts] == ["Music"]
+
+    # And a context edited after seeding is not overwritten by the declaration.
+    music = next(c for c in ContextStore().contexts if c.title == "Music")
+    music.title = "Listen"
+    store.contexts = [music]
+    store.save()
+    assert [c.title for c in ContextStore().contexts] == ["Listen"]
+
+
+def test_a_broken_declaration_is_ignored(tmp_path, monkeypatch):
+    from context.store import ContextStore
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    broken = tmp_path / "declared.json"
+    broken.write_text("{ not json")
+    monkeypatch.setenv("CONTEXT_DECLARED", str(broken))
+
+    assert ContextStore().contexts == []

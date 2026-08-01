@@ -110,9 +110,13 @@ def _row_switch(title, subtitle, active, on_change) -> widgets.Row:
 class SettingsPage(widgets.NavigationPage):
     """A preferences page hosted in the launcher's navigation stack."""
 
-    def __init__(self, window) -> None:
+    def __init__(self, window, on_back=None) -> None:
         super().__init__(title="Settings", tag="settings")
         self.window = window
+        # Where "back" goes. As a page inside the sidebar that was popping the
+        # navigation stack; as a full-screen view of its own it is closing the
+        # window, and the page should not have to know which it is in.
+        self.on_back = on_back or (lambda: window.nav.pop())
 
         toolbar = widgets.ToolbarView()
         header = widgets.HeaderBar(title="Settings")
@@ -124,11 +128,11 @@ class SettingsPage(widgets.NavigationPage):
         self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
         self.back_button.add_css_class("flat")
         self.back_button.set_tooltip_text("Back")
-        self.back_button.connect("clicked", lambda _b: self.window.nav.pop())
+        self.back_button.connect("clicked", lambda _b: self.on_back())
         header.pack_start(self.back_button)
         toolbar.add_top_bar(header)
 
-        page = widgets.Page()
+        page = widgets.Page(max_width=760)
         page.add(self._appearance())
         page.add(self._sidebar_contents())
         page.add(self._screens())

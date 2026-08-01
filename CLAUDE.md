@@ -208,6 +208,16 @@ show and act on it with the row they already have. `is_no_context(ctx)` is the
 guard every action needs — it has no workspace to switch to, no definition to
 edit, and saving it means *becoming* a context rather than capturing one.
 
+## Declared contexts are seeds
+
+`$XDG_CONFIG_HOME/context/contexts.json` is what something else — the NixOS
+module, a dotfile repo — writes to declare contexts. `ContextStore.seed_declared`
+takes each one in *once*, recording its id in `uistate` under
+`seeded_contexts`. That record is the whole design: without it a forgotten
+context comes back at the next start, and an edited one is overwritten by the
+declaration. Ids are derived from the title (`declared:work-on-context`) so the
+same declaration is the same context across machines.
+
 ## Notifications, not toasts
 
 What the launcher reports goes to the desktop's notification daemon through

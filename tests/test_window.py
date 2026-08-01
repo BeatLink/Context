@@ -506,24 +506,25 @@ def test_the_active_context_outranks_merely_being_open(gtk_app, isolated_store):
     assert "ctx-active" not in seen["classes"]["elsewhere"]
 
 
-def test_the_settings_page_opens_and_is_not_duplicated(gtk_app, isolated_store):
+def test_settings_open_as_a_screen_of_their_own(gtk_app, isolated_store):
+    """They outgrew the sidebar: twenty-odd controls in a 380px column meant
+    scrolling past three groups to reach the fourth."""
     from context.store import ContextStore
     from context.window import LauncherWindow
 
     store = ContextStore()
-    seen = {}
+    opened = []
 
     def body(app):
+        app.open_settings = lambda: opened.append(True)
         window = LauncherWindow(app, store, lambda c: None, lambda c: None)
-        window.open_settings()
-        seen["first"] = window.nav.get_visible_page().get_tag()
-        window.open_settings()
-        seen["second"] = window.nav.get_visible_page().get_tag()
+        window.settings_button.emit("clicked")
+        # And not as a page pushed over the list.
+        opened.append(window.nav.find_page("settings") is None)
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["first"] == "settings"
-    assert seen["second"] == "settings"
+    assert opened == [True, True]
 
 
 def test_changing_a_width_resizes_without_a_restart(gtk_app, isolated_store, monkeypatch):
@@ -2458,3 +2459,95 @@ def test_the_sidebar_shows_only_what_is_switched_on(
         "saved_again": True,
         "create_still_off": True,
     }
+
+
+def test_the_overview_appears_when_the_last_context_closes(gtk_app, isolated_store):
+    """An empty desktop is what the overview is for — but only on the way to
+    empty, not every couple of seconds afterwards."""
+    import logging
+
+    from context.app import ContextApplication
+
+    seen = {"opened": 0}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.overview-when-empty")
+        holder.switcher = None
+        holder._had_open = True
+        holder.get_windows = lambda: []
+        holder.window = None
+        holder.extra_windows = []
+        holder.open_overview = lambda: seen.update(opened=seen["opened"] + 1)
+
+        holder.note_open_contexts(2)      # still working
+        seen["while_open"] = seen["opened"]
+        holder.note_open_contexts(0)      # the last one closed
+        seen["on_empty"] = seen["opened"]
+        holder.note_open_contexts(0)      # and stays closed
+        seen["still_empty"] = seen["opened"]
+        holder.note_open_contexts(1)      # something opened again
+        holder.note_open_contexts(0)      # and closed again
+        seen["second_time"] = seen["opened"]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["while_open"] == 0
+    assert seen["on_empty"] == 1
+    assert seen["still_empty"] == 1
+    assert seen["second_time"] == 2
+
+
+def test_nothing_opens_over_an_editor(gtk_app, isolated_store):
+    """The overview is an overlay that takes the keyboard; over an editor it
+    would take it from what the user is in the middle of."""
+    import logging
+
+    from context.app import ContextApplication
+
+    seen = {"opened": 0}
+
+    class Visible:
+        def get_visible(self):
+            return True
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.overview-covered")
+        holder.switcher = None
+        holder._had_open = True
+        holder.window = None
+        holder.extra_windows = []
+        holder.get_windows = lambda: [Visible()]
+        holder.open_overview = lambda: seen.update(opened=seen["opened"] + 1)
+
+        holder.note_open_contexts(0)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["opened"] == 0
+
+
+def test_the_settings_screen_carries_the_page(gtk_app, isolated_store, monkeypatch):
+    """Same page, new home: its back button closes the screen rather than
+    popping a stack that is not there."""
+    from context.settings_window import SettingsWindow
+    from context.store import ContextStore
+    from context.window import LauncherWindow
+
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(app, ContextStore(), lambda c: None, lambda c: None)
+        screen = SettingsWindow(app, window)
+        closed = []
+        screen.close = lambda: closed.append(True)
+        seen["titles"] = _row_titles(screen.page)
+        screen.page.back_button.emit("clicked")
+        seen["closed"] = closed
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert "Collapse mode" in seen["titles"]
+    assert "Notifications" in seen["titles"]
+    assert seen["closed"] == [True]

@@ -80,6 +80,11 @@ class Theme:
     """Colours, as CSS colour strings so style.css and Cairo read the same."""
 
     accent: str = "#5ac0c0"
+    # The card every Context surface is drawn as. Transparency lives here:
+    # give it an alpha — `rgba(30, 30, 30, 0.75)` or `#1e1e1ebf` — and the
+    # desktop shows through, the same way a bar's stylesheet does it. The
+    # window behind the card is transparent already, and nothing else paints
+    # the full surface, so the alpha is not compounded.
     surface: str = "#1e1e1e"
     on_surface: str = "#ffffff"
 
@@ -329,8 +334,11 @@ window.ctx-window entry {
     font-weight: bold;
 }
 
+/* Transparent rather than the surface colour: the card behind it already
+   paints that, and painting it twice compounds the alpha — a translucent
+   surface came out noticeably more solid wherever a page sat on it. */
 .ctx-page {
-    background-color: @ctx_surface;
+    background-color: transparent;
 }
 
 .ctx-group-title {

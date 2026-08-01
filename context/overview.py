@@ -27,6 +27,20 @@ from .rows import ContextRow, app_tile, context_for_app
 
 log = get_logger("overview")
 
+# Enough for the longest of the three, so the controls line up under one another.
+LABEL_WIDTH = 74
+
+
+def _labelled(text: str, control: Gtk.Widget) -> Gtk.Box:
+    """One of the grid's controls, behind the word for what it decides."""
+    row = Gtk.Box(spacing=8)
+    label = Gtk.Label(label=text, xalign=0.0)
+    label.add_css_class("dim-label")
+    label.set_size_request(LABEL_WIDTH, -1)
+    row.append(label)
+    row.append(control)
+    return row
+
 
 class OverviewWindow(Gtk.ApplicationWindow):
     """Contexts on one side, applications on the other, one search over both."""
@@ -134,20 +148,6 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.apps_label.add_css_class("dim-label")
         right.append(self.apps_label)
 
-        # What clicking an application does. Starting a context around it is
-        # the overview's own answer; adding it to the context you are already
-        # in is the other half of the same question, and doing that from here
-        # saves going through the row's menu for something the grid is showing
-        # anyway.
-        target_row = Gtk.Box(spacing=8)
-        target_label = Gtk.Label(label="Opens", xalign=0.0)
-        target_label.add_css_class("dim-label")
-        target_row.append(target_label)
-        self.target_chooser = widgets.SegmentedChoice(self._on_target)
-        self.target_chooser.add("In a new context")
-        self.target_chooser.add("In this context")
-        target_row.append(self.target_chooser)
-        right.append(target_row)
 
         # What is installed, by kind. Buttons rather than a dropdown, like
         # everything else on an overlay, and only the categories something is
@@ -156,25 +156,22 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.category_chooser = widgets.SegmentedChoice(self._on_category)
         for key in self.categories:
             self.category_chooser.add(MAIN_CATEGORIES.get(key, "All"))
+        # The categories outrun the column on a full desktop, so this one
+        # scrolls where the other two rows do not.
         category_scroller = Gtk.ScrolledWindow(
             propagate_natural_width=True, hexpand=True
         )
         category_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
         category_scroller.set_child(self.category_chooser)
-        right.append(category_scroller)
+        right.append(_labelled("Category", category_scroller))
 
         # And in what order. Buttons again rather than a dropdown, for the same
         # reason: a popover on an overlay never keeps what is clicked in it.
-        sort_row = Gtk.Box(spacing=8)
-        sort_label = Gtk.Label(label="Sort", xalign=0.0)
-        sort_label.add_css_class("dim-label")
-        sort_row.append(sort_label)
         self.sort_keys = list(SORTS)
         self.sort_chooser = widgets.SegmentedChoice(self._on_sort)
         for key in self.sort_keys:
             self.sort_chooser.add(SORTS[key])
-        sort_row.append(self.sort_chooser)
-        right.append(sort_row)
+        right.append(_labelled("Sort", self.sort_chooser))
 
         # One section per group, each with its own grid: a heading cannot sit
         # inside a FlowBox, and the groups are the point of the ordering.
@@ -184,6 +181,14 @@ class OverviewWindow(Gtk.ApplicationWindow):
         right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         right_scroller.set_child(self.sections)
         right.append(right_scroller)
+
+        # What clicking an application does. Under the grid rather than over
+        # it: it is what happens *after* you have found something, and the
+        # question you answer first should be the one nearest the top.
+        self.target_chooser = widgets.SegmentedChoice(self._on_target)
+        self.target_chooser.add("New context")
+        self.target_chooser.add("Current context")
+        right.append(_labelled("Opens", self.target_chooser))
 
         columns.append(left)
         columns.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
@@ -247,12 +252,8 @@ class OverviewWindow(Gtk.ApplicationWindow):
         kind = MAIN_CATEGORIES.get(self.category, "")
         self.apps_label.set_label(f"{kind or 'Apps'} · {len(matches)}")
 
-        # The second choice names what it would add to, and is only offered
-        # while there is something to add to.
+        # Only offered while there is a context to add to.
         current = self._active_context()
-        self.target_chooser.set_choice_label(
-            1, f"Into “{current.title}”" if current else "In this context"
-        )
         self.target_chooser.set_choice_sensitive(1, current is not None)
         if current is None and self.target == "current":
             self.target = "new"

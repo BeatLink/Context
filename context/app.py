@@ -16,6 +16,7 @@ from . import backends, notify, switcher, uistate
 from .resources import Resource
 from .backends import Workspace
 from .launcher import active_context, adopt_loose, capture_arrangement, close_loose
+from .launcher import open_state
 from .launcher import has_drifted, is_no_context
 from .launcher import move_window_to_context, move_window_to_screen
 from .launcher import unmanaged_windows
@@ -42,7 +43,7 @@ COMMANDS = {
     "switch-window": lambda app: app.switch_window(),
     "switch-window-all": lambda app: app.switch_window_all(),
     "previous": lambda app: app.previous_context(),
-    "settings": lambda app: app.ensure_window().open_settings(),
+    "settings": lambda app: app.open_settings(),
     "overview": lambda app: app.open_overview(),
     "toggle-rail": lambda app: app.toggle_collapsed(),
     "restart": lambda app: app.restart(),
@@ -87,6 +88,9 @@ class ContextApplication(Gtk.Application):
         # Held so the monitor list is not collected while it is being watched.
         self._monitor_model = None
         self._monitor_settle = 0
+        # Whether anything was open last time it was looked at, so the overview
+        # appears when the last context closes rather than on every check.
+        self._had_open = True
 
     def do_command_line(self, command_line) -> int:
         """Entry point for every launch, first or subsequent.
@@ -195,6 +199,20 @@ class ContextApplication(Gtk.Application):
         if window is not None:
             window.edit_context(ctx, is_new=is_new)
 
+    def open_settings(self) -> None:
+        """The settings screen, replacing whatever picker is up.
+
+        The same keybind again puts it away, the way the overview does.
+        """
+        from .settings_window import SettingsWindow
+
+        existing = self.switcher
+        if isinstance(existing, SettingsWindow):
+            existing.close()
+            self.switcher = None
+            return
+        self._show_picker(SettingsWindow(self, self.ensure_window()))
+
     def open_app_in_context(self, ctx: Context) -> None:
         """Pick an application and open it inside an existing context.
 
@@ -221,6 +239,34 @@ class ContextApplication(Gtk.Application):
         # what is missing, so an open context gains the new window and a closed
         # one opens properly instead of stranding a window on its own.
         self.launch_context(ctx)
+
+    def note_open_contexts(self, count: int) -> None:
+        """Open the overview when the last context closes, and only then.
+
+        On the transition, not on every check: once it is up, or once you have
+        dismissed it, an empty desktop should stay empty until something opens
+        and closes again.
+        """
+        if count:
+            self._had_open = True
+            return
+        if not self._had_open:
+            return
+        self._had_open = False
+        if self.switcher is not None or self._covered():
+            # Something of Context's is already on the screen — an editor, a
+            # picker — and opening an overlay over it would take the keyboard
+            # from what the user is in the middle of.
+            return
+        self.log.info("nothing is open; showing the overview")
+        self.open_overview()
+
+    def _covered(self) -> bool:
+        """Whether any Context window other than the launchers is on screen."""
+        docked = set(self.launchers)
+        return any(
+            window.get_visible() for window in self.get_windows() if window not in docked
+        )
 
     def restart(self) -> None:
         """Replace this process with a fresh one.
@@ -426,6 +472,11 @@ class ContextApplication(Gtk.Application):
             self._watch_monitors()
         for launcher_window in self.launchers:
             launcher_window.present()
+        # Nothing running is the one moment Context has nothing to show, so it
+        # shows everything: the overview is what a desktop with no windows on
+        # it is for.
+        open_ids, _active = open_state(self.store.contexts, backend=self.backend)
+        self.note_open_contexts(len(open_ids))
 
     def _watch_monitors(self) -> None:
         """Rebuild the launchers when a monitor is plugged in or unplugged.

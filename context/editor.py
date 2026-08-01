@@ -603,7 +603,18 @@ class EditorPage(widgets.NavigationPage):
 
         content.append(details)
 
-        # --- layout preview, top half -----------------------------------------
+        # Apps on one side, the arrangement on the other. Stacked, the preview
+        # got a strip of a screen that is wider than it is tall and the grid
+        # got four rows; side by side each gets the height of the window, which
+        # is what a full-screen editor has to spend.
+        columns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+        columns.set_vexpand(True)
+        apps_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        apps_column.set_hexpand(True)
+        layout_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        layout_column.set_hexpand(True)
+
+        # --- the arrangement, on the right ------------------------------------
         layout_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         heading = Gtk.Label(label="Window layout", xalign=0.0, hexpand=True)
         heading.add_css_class("heading")
@@ -615,7 +626,7 @@ class EditorPage(widgets.NavigationPage):
         self.preset_options: list[tuple[str, list[Slot]]] = []
         self._preset_for_count = -1
         layout_header.append(self.preset_chooser)
-        content.append(layout_header)
+        layout_column.append(layout_header)
 
         hint = Gtk.Label(
             label="Drag a window to move it, or its bottom-right corner to resize.",
@@ -624,7 +635,7 @@ class EditorPage(widgets.NavigationPage):
         )
         hint.add_css_class("dim-label")
         hint.add_css_class("caption")
-        content.append(hint)
+        layout_column.append(hint)
 
         # A context holds a layout per screen count, and this edits one of
         # them. The mode defaults to what is attached now, but any of them can
@@ -648,14 +659,14 @@ class EditorPage(widgets.NavigationPage):
             )
         self.mode_chooser.set_selected(self.screen_count - 1, notify=False)
         mode_row.append(self.mode_chooser)
-        content.append(mode_row)
+        layout_column.append(mode_row)
 
         self.screens_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.screens_box.set_vexpand(True)
-        content.append(self.screens_box)
+        layout_column.append(self.screens_box)
         self._build_previews()
 
-        # --- app grid, bottom half --------------------------------------------
+        # --- the app grid, on the left ----------------------------------------
         apps_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.count_label = Gtk.Label(xalign=0.0, hexpand=True)
         self.count_label.add_css_class("heading")
@@ -665,13 +676,13 @@ class EditorPage(widgets.NavigationPage):
         self.search.set_size_request(240, -1)
         self.search.connect("search-changed", lambda _e: self.refresh_apps())
         apps_header.append(self.search)
-        content.append(apps_header)
+        apps_column.append(apps_header)
 
         self.flow = Gtk.FlowBox(
             selection_mode=Gtk.SelectionMode.NONE,
             homogeneous=True,
-            min_children_per_line=4,
-            max_children_per_line=10,
+            min_children_per_line=3,
+            max_children_per_line=8,
             row_spacing=4,
             column_spacing=4,
             valign=Gtk.Align.START,
@@ -680,7 +691,12 @@ class EditorPage(widgets.NavigationPage):
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroller.set_size_request(-1, 240)
         scroller.set_child(self.flow)
-        content.append(scroller)
+        apps_column.append(scroller)
+
+        columns.append(apps_column)
+        columns.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        columns.append(layout_column)
+        content.append(columns)
 
         toolbar.set_content(content)
         self.set_child(toolbar)

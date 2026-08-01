@@ -91,10 +91,11 @@ the applications installed. Clicking an application either starts a context
 around it or adds it to the one you are in, whichever the toggle above the grid
 says.
 
-The grid filters by kind, and groups itself three ways: **Recent** by how long
+The grid filters by kind, and groups itself four ways: **Recent** by how long
 ago you last opened each (just now, 3 hours ago, 2 days ago…), **A–Z** under
-letter headings, and **In contexts**, which splits what you actually work in
-from everything else.
+letter headings, **By kind** under the categories the desktop entries claim,
+and **In contexts**, which splits what you actually work in from everything
+else.
 
 ## The editor
 
@@ -309,6 +310,29 @@ Because it is one CSS file with `@define-color` names, whatever generates the
 rest of the desktop's colours — matugen, pywal, a home-manager template — can
 emit Context's theme the same way it emits waybar's.
 
+## Declared contexts
+
+Anything that can write a file can declare contexts — a NixOS module, a
+dotfile repository, a script. Put them in
+`$XDG_CONFIG_HOME/context/contexts.json`:
+
+```json
+{
+  "contexts": [
+    {
+      "title": "Work on Context",
+      "resources": [{"app_id": "codium.desktop"}, {"app_id": "firefox.desktop"}],
+      "isolated": true
+    }
+  ]
+}
+```
+
+They are seeds, not managed state: each is taken into the store once and is an
+ordinary context from then on, so editing or forgetting one sticks rather than
+being undone at the next start. A context with no layout gets the preset for
+however many applications it holds.
+
 ## Where things are kept
 
 | Path | Contents |
@@ -318,6 +342,7 @@ emit Context's theme the same way it emits waybar's.
 | `$XDG_STATE_HOME/context/context.log` | Log, rotated |
 | `$XDG_STATE_HOME/context/ui.json` | Whether the sidebar is collapsed |
 | `$XDG_CONFIG_HOME/context/settings.json` | Settings |
+| `$XDG_CONFIG_HOME/context/contexts.json` | Contexts declared elsewhere, taken in once |
 | `$XDG_CONFIG_HOME/context/style.css` | Stylesheet loaded over the built-in one |
 
 ## Window managers

@@ -417,7 +417,7 @@ def test_an_app_can_go_into_the_context_you_are_in(
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["offers"] == "Into “work”"
+    assert seen["offers"] == "Current context"
     assert seen["into"] == [("work", "firefox.desktop")]
     assert [c.title for c in seen["opened"]] == ["KiCad"]
 
@@ -431,11 +431,38 @@ def test_there_is_nothing_to_add_to_without_a_context(
 
     def body(app):
         window = _build(app, ContextStore(), backend)
-        seen["label"] = window.target_chooser._buttons[1].get_label()
         seen["offered"] = window.target_chooser._buttons[1].get_sensitive()
         window.close()
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["label"] == "In this context"
     assert seen["offered"] is False
+
+
+def test_by_kind_groups_under_the_categories(gtk_app, isolated_store, backend, monkeypatch):
+    from context import overview
+    from context.apps import App
+    from context.store import ContextStore
+
+    apps = [
+        App(id="a.desktop", name="Ardour", description="", icon=None,
+            categories=("AudioVideo",)),
+        App(id="b.desktop", name="Builder", description="", icon=None,
+            categories=("Development", "Utility")),
+        App(id="c.desktop", name="Chores", description="", icon=None),
+    ]
+    monkeypatch.setattr(overview, "installed_apps", lambda: apps)
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        window._on_sort(window.sort_keys.index("kind"))
+        seen["headings"] = _headings(window)
+        seen["order"] = [t.app_info.name for t in _tiles(window)]
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    # Filed under the first category it claims, never under both.
+    assert seen["headings"] == ["Media", "Development", "Everything else"]
+    assert seen["order"] == ["Ardour", "Builder", "Chores"]

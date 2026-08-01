@@ -431,3 +431,23 @@ def test_saving_the_no_context_gathers_its_windows_in(backend):
     # And it is the workspace you are looking at, since that is where the
     # compositor tiles them.
     assert backend.current == handle
+
+
+def test_the_context_you_are_in_is_open_even_with_no_windows(backend):
+    """A context with no apps, or one whose windows you have just closed while
+    standing in it, was listed as not running while you looked straight at it."""
+    from context import launcher
+    from context.store import ContextStore
+
+    store = ContextStore()
+    empty = store.create("blank")
+    empty.set_handle("fake", "ctx-blank")
+    backend.current = "ctx-blank"
+
+    open_ids, active_id = launcher.open_state(store.contexts, backend=backend)
+    assert open_ids == {empty.id}
+    assert active_id == empty.id
+
+    # Switch away and it is not running any more: there is nothing to go back to.
+    backend.current = None
+    assert launcher.open_state(store.contexts, backend=backend)[0] == set()

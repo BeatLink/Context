@@ -117,6 +117,11 @@ def open_state(contexts, backend: Backend | None = None) -> tuple[set[str], str 
             open_ids.add(ctx.id)
         if current is not None and current in handles:
             active_id = ctx.id
+            # Being *in* a context is being in it whether or not anything has
+            # opened yet: a context with no apps, or one whose windows have all
+            # been closed while you stand in it, was listed as not running
+            # while you were looking straight at it.
+            open_ids.add(ctx.id)
     return open_ids, active_id
 
 

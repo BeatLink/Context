@@ -108,8 +108,10 @@ class ContextRow(widgets.ActionRow):
         # A context drifts as it is used — windows opened, moved, closed. The
         # button is the offer to keep how it looks now, and appears only while
         # there is something to keep, so its presence is the whole prompt.
+        # A floppy disk rather than `document-save-symbolic`, which Adwaita
+        # draws as an arrow into a tray — indistinguishable from a download.
         self.save = Gtk.Button(
-            icon_name="document-save-symbolic", valign=Gtk.Align.CENTER
+            icon_name="media-floppy-symbolic", valign=Gtk.Align.CENTER
         )
         self.save.add_css_class("flat")
         self.save.add_css_class("accent")

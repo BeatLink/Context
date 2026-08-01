@@ -91,6 +91,7 @@ def in_category(apps: list[App], category: str) -> list[App]:
 SORTS: dict[str, str] = {
     "recent": "Recent",
     "name": "A–Z",
+    "kind": "By kind",
     "contexts": "In contexts",
 }
 
@@ -101,6 +102,9 @@ OUTSIDE_CONTEXTS = "Not in a context"
 # And for the tail of the recency grouping: everything Context has never seen
 # launched, which on a fresh install is everything.
 NOT_YET_OPENED = "Not opened yet"
+
+# For applications whose desktop entry claims no registered category.
+UNCATEGORISED = "Everything else"
 
 HOUR = 3600
 DAY = 86400
@@ -138,6 +142,9 @@ def arrange_apps(
     if order == "recent":
         return by_recency(apps, times or {}, now=now)
 
+    if order == "kind":
+        return by_kind(apps)
+
     if order == "contexts":
         counts = counts or {}
         inside = [a for a in apps if counts.get(a.id)]
@@ -151,6 +158,25 @@ def arrange_apps(
         ]
 
     return by_initial(apps)
+
+
+def by_kind(apps: list[App]) -> list[tuple[str, list[App]]]:
+    """Grouped under the categories the desktop entries claim.
+
+    An application in two categories is filed under the first of them rather
+    than listed twice: the grid is a place to look, and the same icon in two
+    groups makes it a place to look twice.
+    """
+    groups: dict[str, list[App]] = {}
+    for app in sorted(apps, key=lambda a: a.name.casefold()):
+        key = app.categories[0] if app.categories else ""
+        groups.setdefault(key, []).append(app)
+    sections = [
+        (MAIN_CATEGORIES[key], groups[key]) for key in MAIN_CATEGORIES if key in groups
+    ]
+    if "" in groups:
+        sections.append((UNCATEGORISED, groups[""]))
+    return sections
 
 
 def by_recency(

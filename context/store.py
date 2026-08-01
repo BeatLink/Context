@@ -10,8 +10,12 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 from .arrangement import Arrangement
+from .logging_setup import get_logger
 from .layout import Layout
 from .resources import Resource, parse_resources
+
+
+log = get_logger("store")
 
 
 def data_dir() -> Path:
@@ -153,11 +157,72 @@ class Context:
         return data
 
 
+# Contexts declared outside Context — by a NixOS module, a dotfile, anything
+# that writes the config directory. They are seeds, not managed state: each is
+# copied into the store once and is an ordinary context from then on, so
+# editing or forgetting one sticks rather than being undone at the next start.
+DECLARED_NAME = "contexts.json"
+SEEDED_KEY = "seeded_contexts"
+
+
+def declared_path() -> Path:
+    from .settings import config_dir
+
+    override = os.environ.get(ENV_DECLARED)
+    return Path(override) if override else config_dir() / DECLARED_NAME
+
+
+ENV_DECLARED = "CONTEXT_DECLARED"
+
+
+def declared_contexts() -> list[Context]:
+    """Contexts written into the config directory by something else.
+
+    The same shape as the store's own file, minus the bookkeeping: a title, the
+    applications, and whatever options were meant. An id is derived from the
+    title when none is given, so the same declaration is the same context
+    across machines and across rewrites of the file.
+    """
+    path = declared_path()
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError:
+        return []
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("ignoring %s: %s", path, exc)
+        return []
+
+    entries = raw.get("contexts", []) if isinstance(raw, dict) else raw
+    if not isinstance(entries, list):
+        log.warning("ignoring %s: expected a list of contexts", path)
+        return []
+
+    found = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not str(entry.get("title", "")).strip():
+            continue
+        entry = dict(entry)
+        entry.setdefault("id", declared_id(str(entry["title"])))
+        found.append(Context.from_dict(entry))
+    return found
+
+
+def declared_id(title: str) -> str:
+    slug = "".join(
+        c if (c.isalnum() or c in "-_") else "-" for c in title.strip().casefold()
+    ).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return f"declared:{slug or 'untitled'}"
+
+
 class ContextStore:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, seed: bool = True) -> None:
         self.path = path or (data_dir() / "contexts.json")
         self.contexts: list[Context] = []
         self.load()
+        if seed:
+            self.seed_declared()
 
     def load(self) -> None:
         try:
@@ -168,6 +233,36 @@ class ContextStore:
         entries = raw.get("contexts", []) if isinstance(raw, dict) else []
         self.contexts = [Context.from_dict(e) for e in entries if isinstance(e, dict)]
         self._sort()
+
+    def seed_declared(self) -> list[Context]:
+        """Take in any declared context this store has not seen before.
+
+        Once, and only once: a context that was seeded and then forgotten stays
+        forgotten, which it could not if the declaration were re-applied every
+        start. What has been taken in is recorded in `uistate` rather than in
+        the store, since it is a fact about this machine and not about any
+        context.
+        """
+        from . import uistate
+
+        declared = declared_contexts()
+        if not declared:
+            return []
+
+        seen = {i for i in uistate.get(SEEDED_KEY, []) if isinstance(i, str)}
+        known = {c.id for c in self.contexts}
+        added = []
+        for ctx in declared:
+            if ctx.id in known or ctx.id in seen:
+                continue
+            self.contexts.append(ctx)
+            added.append(ctx)
+        if added:
+            uistate.save(**{SEEDED_KEY: sorted(seen | {c.id for c in added})})
+            self._sort()
+            self.save()
+            log.info("took in %d declared context(s)", len(added))
+        return added
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -233,3 +233,17 @@ def test_reinstall_picks_up_an_edit(gtk_app):
     run_app(gtk_app, body)
     assert seen["before"] != seen["after"]
     assert seen["after"] == "rgb(0,255,0)"
+
+
+def test_a_translucent_surface_reaches_the_widgets(monkeypatch, tmp_path):
+    """Transparency is the surface colour's alpha: there is nowhere else to put
+    it, since GTK's `alpha()` takes a literal rather than a named colour."""
+    style = tmp_path / "style.css"
+    style.write_text("@define-color ctx_surface rgba(30, 30, 30, 0.75);\n")
+    monkeypatch.setenv(theme.ENV_STYLE, str(style))
+    monkeypatch.setattr(theme, "_current", None)
+
+    live = theme.current()
+    assert live.rgba("surface") == pytest.approx((30 / 255, 30 / 255, 30 / 255, 0.75))
+    # And the stylesheet hands the same value to the widgets.
+    assert b"rgba(30, 30, 30, 0.75)" in live.css()

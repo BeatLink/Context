@@ -382,15 +382,16 @@ class LauncherWindow(Gtk.ApplicationWindow):
         app = self.get_application()
         if app is not None and hasattr(app, "offer_to_save"):
             app.offer_to_save("change")
+        if app is not None and hasattr(app, "note_open_contexts"):
+            app.note_open_contexts(len(self._open_ids))
         return True
 
     def open_settings(self) -> None:
-        from .settings_page import SettingsPage
-
-        if self.nav.find_page("settings") is None:
-            self.nav.push(SettingsPage(self))
-        else:
-            self.nav.pop_to_tag("settings")
+        """Settings are a screen of their own, not a page in this column."""
+        app = self.get_application()
+        if app is not None and hasattr(app, "open_settings"):
+            self._release_keyboard()
+            app.open_settings()
 
     def settings_changed(self, needs_restart: bool = False, changed=None) -> None:
         """Honour what can be applied now; say so for what cannot."""
