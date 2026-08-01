@@ -204,3 +204,23 @@ def test_the_hover_delays_and_notifications_are_settings():
     assert clamped.collapse_delay_ms == 5000
     assert Settings(collapse_delay_ms=-5).validated().collapse_delay_ms == 0
     assert Settings(notifications=False).validated().notifications is False
+
+
+def test_the_overview_sorts_match_the_grid():
+    """`settings.OVERVIEW_SORTS` spells out the keys of `apps.SORTS` rather than
+    importing them, since settings must load without a display. That is only
+    safe while the two agree."""
+    from context.system.apps import SORTS
+
+    assert tuple(SORTS) == settings.OVERVIEW_SORTS
+
+
+def test_the_overview_opens_the_same_way_every_time():
+    live = Settings().validated()
+    assert live.overview_sort == "recent"
+    assert live.overview_target == "new"
+    assert live.overview_scratchpad is True
+
+    odd = Settings(overview_sort="sideways", overview_target="nowhere").validated()
+    assert odd.overview_sort == "recent"
+    assert odd.overview_target == "new"

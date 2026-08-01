@@ -106,7 +106,11 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.header.set_show_start_title_buttons(False)
             self.header.set_show_end_title_buttons(False)
 
-        self.settings_button = Gtk.Button(icon_name="preferences-system-symbolic")
+        # A cogwheel. `preferences-system-symbolic` is the sliders glyph in
+        # Adwaita 50, which reads as an equaliser rather than as settings;
+        # `applications-system-symbolic` is the gear, and is the current name
+        # for it — `emblem-system-symbolic` is the same drawing under legacy/.
+        self.settings_button = Gtk.Button(icon_name="applications-system-symbolic")
         self.settings_button.add_css_class("flat")
         self.settings_button.set_tooltip_text("Settings")
         self.settings_button.connect("clicked", lambda _b: self.open_settings())

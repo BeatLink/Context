@@ -24,6 +24,14 @@ EDGE_LABELS = ("Left", "Right", "Top", "Bottom")
 LEVEL_LABELS = ("Debug", "Info", "Warning", "Error", "Critical")
 BACKEND_LABELS = ("Detect automatically", "Hyprland", "None")
 COLLAPSE_LABELS = ("A rail of icons", "Hidden entirely", "Never collapse")
+# The overview grid's orderings, by the key `settings.OVERVIEW_SORTS` holds.
+SORT_LABELS = {
+    "recent": "Recent",
+    "name": "A–Z",
+    "kind": "By kind",
+    "contexts": "In contexts",
+}
+
 SAVE_LABELS = (
     "Never",
     "Whenever it changes",
@@ -146,18 +154,54 @@ class SettingsPage(widgets.NavigationPage):
         header.pack_start(self.back_button)
         toolbar.add_top_bar(header)
 
-        page = widgets.Page(max_width=760)
-        page.add(self._appearance())
-        page.add(self._sidebar_contents())
-        page.add(self._scratchpad())
-        page.add(self._screens())
-        page.add(self._behaviour())
-        page.add(self._saving())
-        page.add(self._advanced())
-        page.add(self._layers())
-        page.add(self._files())
+        # Three tabs, by which part of Context a setting belongs to. One column
+        # of nine groups meant scrolling past the sidebar's settings to reach
+        # the log level, and the two are not related in any way worth the trip.
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_vexpand(True)
 
-        toolbar.set_content(page)
+        for name, title, groups in (
+            (
+                "overview",
+                "Overview Window",
+                [self._overview()],
+            ),
+            (
+                "sidebar",
+                "Sidebar",
+                [
+                    self._appearance(),
+                    self._sidebar_contents(),
+                    self._sidebar_scratchpad(),
+                    self._behaviour(),
+                ],
+            ),
+            (
+                "general",
+                "General",
+                [
+                    self._scratchpad(),
+                    self._screens(),
+                    self._saving(),
+                    self._advanced(),
+                    self._layers(),
+                    self._files(),
+                ],
+            ),
+        ):
+            page = widgets.Page(max_width=760)
+            for group in groups:
+                page.add(group)
+            self.stack.add_titled(page, name, title)
+
+        # A stack switcher rather than a dropdown: the settings screen is a
+        # layer-shell overlay, and a popover on one throws the click away.
+        switcher = Gtk.StackSwitcher(stack=self.stack)
+        switcher.set_halign(Gtk.Align.CENTER)
+        header.set_title_widget(switcher)
+
+        toolbar.set_content(self.stack)
         self.set_child(toolbar)
 
     # -- groups --------------------------------------------------------------
@@ -417,7 +461,55 @@ class SettingsPage(widgets.NavigationPage):
         self._sync_sidebar_rows()
         return group
 
+    def _overview(self) -> widgets.Group:
+        """The overview screen: how it opens, every time it opens.
+
+        It is summoned to do one thing and dismissed again, so what it looks
+        like on opening is a decision made once here rather than a state it
+        drifts into. The category filter is deliberately not among them —
+        narrowing is done in the moment, and an overview that opened filtered
+        would look like half the applications had gone missing.
+        """
+        live = settings.current()
+        group = widgets.Group(
+            title="Overview Window",
+            description="Everything Context can open, on one screen. These are "
+            "how it starts each time it is opened.",
+        )
+        group.add(
+            _row_combo(
+                "Sort applications by",
+                "How the grid is ordered when it opens.",
+                tuple(SORT_LABELS[k] for k in settings.OVERVIEW_SORTS),
+                settings.OVERVIEW_SORTS,
+                live.overview_sort,
+                lambda v: self._apply(overview_sort=v),
+            )
+        )
+        group.add(
+            _row_combo(
+                "Applications open in",
+                "What clicking an application does. The current context takes "
+                "it in; without one open, a new context is made either way.",
+                ("A new context", "The current context"),
+                settings.APP_TARGETS,
+                live.overview_target,
+                lambda v: self._apply(overview_target=v),
+            )
+        )
+        group.add(
+            _row_switch(
+                "Scratchpad",
+                "Show the scratchpad beneath the contexts, with the room the "
+                "overview has and the sidebar does not.",
+                live.overview_scratchpad,
+                lambda v: self._apply(overview_scratchpad=v),
+            )
+        )
+        return group
+
     def _scratchpad(self) -> widgets.Group:
+        """Which scratchpads there are. Not where they are drawn."""
         live = settings.current()
         group = widgets.Group(
             title="Scratchpad",
@@ -446,10 +538,32 @@ class SettingsPage(widgets.NavigationPage):
                 "a switch above the scratchpad moves between them.",
                 "scratchpad_per_context",
             ),
+        ):
+            row = _row_switch(
+                title,
+                subtitle,
+                getattr(live, field),
+                lambda value, name=field: self._apply(**{name: value}, resync=True),
+            )
+            group.add(row)
+            self.scratchpad_rows.append(row)
+        self._sync_scratchpad_rows()
+        return group
+
+    def _sidebar_scratchpad(self) -> widgets.Group:
+        """How the scratchpad is drawn in the narrow column."""
+        live = settings.current()
+        group = widgets.Group(
+            title="Scratchpad",
+            description="Which scratchpads there are is under General; this is "
+            "how they are shown in the sidebar.",
+        )
+        self.sidebar_scratchpad_rows = []
+        for title, subtitle, field in (
             (
-                "In the sidebar",
-                "The scratchpad in the narrow list. The overview shows it "
-                "either way.",
+                "Show in the sidebar",
+                "The scratchpad in the narrow list. The overview has its own "
+                "switch for the same thing.",
                 "show_notes",
             ),
             (
@@ -466,11 +580,12 @@ class SettingsPage(widgets.NavigationPage):
                 lambda value, name=field: self._apply(**{name: value}, resync=True),
             )
             group.add(row)
-            self.scratchpad_rows.append(row)
+            self.sidebar_scratchpad_rows.append(row)
+
         self.scratchpad_height_row = _row_spin(
             "Writing area height",
-            "How tall the box is in the sidebar, in pixels. Per scratchpad, so "
-            "showing both is twice this.",
+            "How tall the box is, in pixels. Per scratchpad, so showing both is "
+            "twice this.",
             live.scratchpad_height,
             settings.MIN_SCRATCHPAD_HEIGHT,
             settings.MAX_SCRATCHPAD_HEIGHT,
@@ -478,8 +593,7 @@ class SettingsPage(widgets.NavigationPage):
             lambda v: self._apply(scratchpad_height=v, resync=True),
         )
         group.add(self.scratchpad_height_row)
-        self.scratchpad_rows.append(self.scratchpad_height_row)
-        self._sync_scratchpad_rows()
+        self.sidebar_scratchpad_rows.append(self.scratchpad_height_row)
         return group
 
     def _sync_scratchpad_rows(self) -> None:
@@ -487,6 +601,8 @@ class SettingsPage(widgets.NavigationPage):
         # question at all while the scratchpad is off.
         live = settings.current()
         for row in getattr(self, "scratchpad_rows", []):
+            row.set_sensitive(live.scratchpad)
+        for row in getattr(self, "sidebar_scratchpad_rows", []):
             row.set_sensitive(live.scratchpad)
 
     def _sync_sidebar_rows(self) -> None:

@@ -73,6 +73,15 @@ ALL_MONITORS = "*"
 # the moments you were leaving anyway, which is where a prompt costs least.
 SAVE_PROMPTS = ("never", "change", "switch", "close")
 
+# Where an app opens from: a context of its own, or the one you are standing in.
+APP_TARGETS = ("new", "current")
+
+# How the overview's application grid is ordered. Mirrors the keys of
+# `system.apps.SORTS`, spelled out rather than imported: that module reads
+# desktop entries through Gio, and settings have to load without a display.
+# `test_the_overview_sorts_match_the_grid` pins the two together.
+OVERVIEW_SORTS = ("recent", "name", "kind", "contexts")
+
 # Below this the sidebar cannot show a list, and above it stops being a rail.
 MIN_SIDEBAR_WIDTH = 200
 MAX_SIDEBAR_WIDTH = 1200
@@ -232,6 +241,13 @@ class Settings:
     show_overview_button: bool = True
     show_saved: bool = True
     show_apps: bool = True
+    # The overview's grid, as it should be every time it opens rather than as
+    # it was left. It is reached to do one thing and dismissed, so what it
+    # remembers between openings is a setting rather than a habit it picks up.
+    overview_sort: str = "recent"
+    overview_target: str = "new"
+    # Whether the overview shows the scratchpad beneath the contexts.
+    overview_scratchpad: bool = True
     # Notes, kept as an append-only history. The master switch; with it off the
     # notes are still on disk and nothing lists them.
     scratchpad: bool = True
@@ -324,6 +340,17 @@ class Settings:
             show_overview_button=bool(self.show_overview_button),
             show_saved=bool(self.show_saved),
             show_apps=bool(self.show_apps),
+            overview_sort=(
+                self.overview_sort.strip().lower()
+                if self.overview_sort.strip().lower() in OVERVIEW_SORTS
+                else "recent"
+            ),
+            overview_target=(
+                self.overview_target.strip().lower()
+                if self.overview_target.strip().lower() in APP_TARGETS
+                else "new"
+            ),
+            overview_scratchpad=bool(self.overview_scratchpad),
             scratchpad=bool(self.scratchpad),
             scratchpad_global=bool(self.scratchpad_global),
             scratchpad_per_context=bool(self.scratchpad_per_context),

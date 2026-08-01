@@ -61,11 +61,14 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.apps = installed_apps()
         self._active_id: str | None = None
         # Which kind of application the grid is showing; "" is all of them.
+        # Not a setting: it is narrowing done in the moment, and an overview
+        # that opened filtered would look like half your applications had gone.
         self.category = ""
-        # And in what order — the first of SORTS, which is most recent first.
-        self.sort = next(iter(SORTS))
-        # What clicking an app does: "new" starts a context around it.
-        self.target = "new"
+        # The order and the target are settings, so the overview opens the same
+        # way every time rather than however it was left.
+        live = settings.current()
+        self.sort = live.overview_sort if live.overview_sort in SORTS else next(iter(SORTS))
+        self.target = live.overview_target
         self.flows: list[Gtk.FlowBox] = []
         self._live = read_live_state([], backend=self.backend)
 
@@ -191,6 +194,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.sort_chooser = widgets.SegmentedChoice(self._on_sort)
         for key in self.sort_keys:
             self.sort_chooser.add(SORTS[key])
+        self.sort_chooser.set_selected(self.sort_keys.index(self.sort), notify=False)
         right.append(_labelled("Sort", self.sort_chooser))
 
         # What clicking an application does, with the other two things that
@@ -201,6 +205,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.target_chooser = widgets.SegmentedChoice(self._on_target)
         self.target_chooser.add("New context")
         self.target_chooser.add("Current context")
+        self.target_chooser.set_selected(1 if self.target == "current" else 0, notify=False)
         right.append(_labelled("Opens", self.target_chooser))
 
         # One section per group, each with its own grid: a heading cannot sit
@@ -266,7 +271,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self.saved_list.append(self._context_row(ctx, is_open=False))
 
         live_settings = settings.current()
-        shown = live_settings.scratchpad
+        shown = live_settings.scratchpad and live_settings.overview_scratchpad
         self._sync_scratchpad(self._active_id, shown)
         self.notes_label.set_visible(shown)
         self.scratchpad_box.set_visible(shown)
