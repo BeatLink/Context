@@ -154,6 +154,7 @@ class SettingsPage(widgets.NavigationPage):
         page.add(self._behaviour())
         page.add(self._saving())
         page.add(self._advanced())
+        page.add(self._layers())
         page.add(self._files())
 
         toolbar.set_content(page)
@@ -576,6 +577,70 @@ class SettingsPage(widgets.NavigationPage):
         )
         return group
 
+    def _layers(self) -> widgets.Group:
+        """The settings chain, and what each file in it decides.
+
+        Worth showing rather than leaving implicit: with a setting declared by a
+        NixOS or home-manager module, "I changed this and it went back" has a
+        real explanation, and this is where it is.
+        """
+        chain = settings.layers()
+        writable = chain[-1]
+        where = settings.origins()
+        declared = sorted(k for k, path in where.items() if path != writable)
+        own = sorted(settings.overrides())
+
+        group = widgets.Group(
+            title="Where settings come from",
+            description="Read in order, and the last file to mention a setting "
+            "decides it. Context only ever writes the last one, and only the "
+            "settings you have actually changed.",
+        )
+        for path in chain:
+            keys = sorted(k for k, source in where.items() if source == path)
+            row = widgets.ActionRow(title=str(path))
+            row.add_css_class("property")
+            if path == writable:
+                row.set_subtitle(
+                    f"Written by Context · {len(keys)} setting"
+                    f"{'s' if len(keys) != 1 else ''} changed here"
+                    if keys
+                    else "Written by Context · nothing changed here yet"
+                )
+            elif not path.exists():
+                row.set_subtitle("Not present")
+            else:
+                row.set_subtitle(
+                    f"Declared · {len(keys)} setting{'s' if len(keys) != 1 else ''}"
+                )
+            group.add(row)
+
+        self.reset_button = Gtk.Button(
+            label="Reset to what is declared", halign=Gtk.Align.START
+        )
+        self.reset_button.add_css_class("destructive-action")
+        self.reset_button.connect("clicked", lambda _b: self._reset())
+        self.reset_button.set_sensitive(bool(own))
+        group.add(
+            _stacked(
+                "Reset your changes",
+                "Forget everything changed on this screen, so every setting "
+                f"follows the files above again. {len(own)} changed here, "
+                f"{len(declared)} declared elsewhere.",
+                self.reset_button,
+            )
+        )
+        return group
+
+    def _reset(self) -> None:
+        settings.reset()
+        app = self.window.get_application()
+        targets = getattr(app, "launchers", None) or [self.window]
+        for window in targets:
+            window.settings_changed(needs_restart=False, changed={})
+        self.reset_button.set_sensitive(False)
+        self._sync_rows()
+
     def _files(self) -> widgets.Group:
         """Where things live, so the hand-editable files can be found."""
         from context.state.store import data_dir
@@ -587,7 +652,6 @@ class SettingsPage(widgets.NavigationPage):
             description="Everything here can also be edited by hand.",
         )
         for title, path in (
-            ("Settings", settings.settings_path()),
             ("Style", theme.style_path()),
             ("Contexts", data_dir() / "contexts.json"),
             ("Interface state", state_path()),

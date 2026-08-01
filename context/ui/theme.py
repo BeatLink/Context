@@ -34,8 +34,41 @@ def config_dir() -> Path:
 
 
 def style_path() -> Path:
+    """The stylesheet the user owns, and the one "write the style file" writes."""
     override = os.environ.get(ENV_STYLE)
     return Path(override) if override else config_dir() / "style.css"
+
+
+def style_paths() -> list[Path]:
+    """Every stylesheet, in the order they are loaded. The last one wins.
+
+    The same chain the settings follow, for the same reason: a NixOS module
+    declares a look in /etc/xdg and the user's own file still overrides it. CSS
+    needs no merging rule of its own — a later `@define-color` redefinition
+    beats an earlier one, which is the behaviour the whole theming contract
+    already rests on.
+    """
+    override = os.environ.get(ENV_STYLE)
+    if override:
+        return [Path(override)]
+    from context.state.settings import system_dirs
+
+    found = [directory / "context" / "style.css" for directory in reversed(system_dirs())]
+    found.append(config_dir() / "style.css")
+    return found
+
+
+def style_text() -> str:
+    """Every stylesheet that exists, concatenated in load order."""
+    parts = []
+    for path in style_paths():
+        try:
+            parts.append(path.read_text())
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            log.warning("ignoring %s: %s", path, exc)
+    return "\n".join(parts)
 
 
 # One definition per palette entry, tolerant of whatever spacing the file uses.
@@ -133,13 +166,8 @@ class Theme:
                 style_path(),
             )
 
-        path = style_path()
-        try:
-            text = path.read_text()
-        except FileNotFoundError:
-            return cls()
-        except OSError as exc:
-            log.warning("ignoring %s: %s", path, exc)
+        text = style_text()
+        if not text.strip():
             return cls()
 
         known = {f.name for f in fields(cls)}
@@ -660,11 +688,7 @@ def install() -> bool:
 
 
 def _load_user_css() -> None:
-    try:
-        text = style_path().read_text()
-    except OSError:
-        text = ""
-    _user_provider.load_from_data(text.encode())
+    _user_provider.load_from_data(style_text().encode())
 
 
 def _watch() -> None:

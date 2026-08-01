@@ -165,6 +165,13 @@ DECLARED_NAME = "contexts.json"
 SEEDED_KEY = "seeded_contexts"
 
 
+ENV_DECLARED = "CONTEXT_DECLARED"
+
+# Drop-ins beside the declaration file, so more than one thing can declare
+# contexts — a NixOS module and a dotfile repo do not have to share a file.
+DECLARED_DIR = "contexts.d"
+
+
 def declared_path() -> Path:
     from context.state.settings import config_dir
 
@@ -172,7 +179,28 @@ def declared_path() -> Path:
     return Path(override) if override else config_dir() / DECLARED_NAME
 
 
-ENV_DECLARED = "CONTEXT_DECLARED"
+def declared_paths() -> list[Path]:
+    """Every file declaring contexts, in the order they are read.
+
+    Unlike settings, these do not overwrite one another: declarations are a set
+    of contexts rather than a set of keys, so reading two files means having
+    both. Order only decides which wins if two declare the same id.
+    """
+    override = os.environ.get(ENV_DECLARED)
+    if override:
+        return [Path(override)]
+    from context.state.settings import config_dir, system_dirs
+
+    found: list[Path] = []
+    # The same chain the settings follow, so a NixOS module declaring contexts
+    # in /etc/xdg is read the same way one declaring settings there is.
+    for directory in reversed(system_dirs()):
+        base = directory / "context"
+        found.extend(sorted((base / DECLARED_DIR).glob("*.json")))
+        found.append(base / DECLARED_NAME)
+    found.extend(sorted((config_dir() / DECLARED_DIR).glob("*.json")))
+    found.append(config_dir() / DECLARED_NAME)
+    return found
 
 
 def declared_contexts() -> list[Context]:
@@ -183,7 +211,19 @@ def declared_contexts() -> list[Context]:
     title when none is given, so the same declaration is the same context
     across machines and across rewrites of the file.
     """
-    path = declared_path()
+    found: list[Context] = []
+    seen: dict[str, int] = {}
+    for path in declared_paths():
+        for ctx in _declared_in(path):
+            if ctx.id in seen:
+                found[seen[ctx.id]] = ctx
+            else:
+                seen[ctx.id] = len(found)
+                found.append(ctx)
+    return found
+
+
+def _declared_in(path: Path) -> list[Context]:
     try:
         raw = json.loads(path.read_text())
     except FileNotFoundError:

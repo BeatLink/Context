@@ -222,6 +222,30 @@ show and act on it with the row they already have. `is_no_context(ctx)` is the
 guard every action needs — it has no workspace to switch to, no definition to
 edit, and saving it means *becoming* a context rather than capturing one.
 
+## Settings are a chain, and only what changed is written
+
+`settings.layers()` is an ordered list of files — `/etc/xdg` drop-ins, the
+system file, home drop-ins, then the one Context writes — merged key by key with
+the last mention winning. Two rules hold the whole thing up, and breaking either
+one silently destroys it rather than causing an error:
+
+- **`update()` writes only the keys it was given.** `Settings.save()`, which
+  writes them all, is deliberately not what the settings screen uses. A layer
+  that mentions every key overrides every layer beneath it, so a full snapshot
+  detaches the machine from its declaration permanently — and looks like
+  nothing at all going wrong.
+- **A Nix module writes only what was set.** Every option in `nix/options.nix`
+  is `nullOr` with a `null` default, and `declaredSettings` drops the nulls. Give
+  them ordinary defaults and enabling the home-manager module quietly undoes a
+  NixOS declaration.
+
+Anything declaring settings owns a drop-in; `settings.json` belongs to Context.
+That is why the home-manager module does not need `force`, and why a rebuild no
+longer reverts what was changed on the settings screen.
+
+Both config directories get both forms. Scanning `settings.d` only in the home
+directory left the NixOS module writing a file nothing read.
+
 ## Declared contexts are seeds
 
 `$XDG_CONFIG_HOME/context/contexts.json` is what something else — the NixOS

@@ -6,6 +6,25 @@ hand as well as from the settings page.
 
 Environment variables still win, so a one-off `CONTEXT_SIDEBAR_WIDTH=520` for a
 single run behaves the way it always did.
+
+Settings are read from a **chain of files rather than one**, merged key by key
+in order, and the last file to mention a key decides it:
+
+    /etc/xdg/context/settings.json          every XDG_CONFIG_DIRS entry, least
+                                            important first
+    ~/.config/context/settings.d/*.json     drop-ins, in name order
+    ~/.config/context/settings.json         the file Context itself writes
+
+That last file is the only one Context writes, and it records **only what was
+actually changed** — not a snapshot of every setting. The distinction is the
+whole reason the chain works: a full snapshot would name every key, so every
+declared value below would be shadowed by a copy of its own default and no
+declaration could ever take effect again.
+
+So a NixOS or home-manager module owns a drop-in, the settings screen owns the
+last file, and the two compose: what you change by hand wins, and everything you
+have not touched keeps following the declaration. `reset()` drops an override
+and lets the declared value come back.
 """
 
 from __future__ import annotations
@@ -19,7 +38,16 @@ from context.system.logging_setup import get_logger
 
 log = get_logger("settings")
 
+# Replaces the whole chain with one file. A single-run override, and what the
+# tests use to get a settings file of their own.
 ENV_PATH = "CONTEXT_SETTINGS"
+# The whole chain, spelled out and lowest priority first, so a packaged Context
+# can be told exactly where to look rather than inferring it.
+ENV_LAYERS = "CONTEXT_SETTINGS_PATH"
+
+# Drop-ins beside the writable file. Anything declaring settings owns a file
+# here rather than the one Context writes, so the two never fight over it.
+DROP_IN_DIR = "settings.d"
 
 EDGES = ("left", "right", "top", "bottom")
 LOG_LEVELS = ("debug", "info", "warning", "error", "critical")
@@ -69,9 +97,90 @@ def config_dir() -> Path:
     return Path(base) / "context"
 
 
-def settings_path() -> Path:
+def system_dirs() -> list[Path]:
+    """The system config directories, most important first, as XDG orders them."""
+    raw = os.environ.get("XDG_CONFIG_DIRS") or "/etc/xdg"
+    return [Path(part) for part in raw.split(os.pathsep) if part.strip()]
+
+
+def layers() -> list[Path]:
+    """Every settings file, in the order they are merged. The last one wins.
+
+    Files that do not exist are still listed: the settings screen shows the
+    chain, and "this is where a declaration would go" is worth seeing.
+    """
     override = os.environ.get(ENV_PATH)
-    return Path(override) if override else config_dir() / "settings.json"
+    if override:
+        return [Path(override)]
+
+    explicit = os.environ.get(ENV_LAYERS)
+    if explicit:
+        return [Path(part) for part in explicit.split(os.pathsep) if part.strip()]
+
+    found: list[Path] = []
+    # XDG_CONFIG_DIRS is most-important-first and this list is least-important
+    # first, because merging takes the last mention of a key.
+    for directory in reversed(system_dirs()):
+        found.extend(_drop_ins(directory / "context"))
+        found.append(directory / "context" / "settings.json")
+    found.extend(_drop_ins(config_dir()))
+    found.append(config_dir() / "settings.json")
+    return found
+
+
+def _drop_ins(base: Path) -> list[Path]:
+    """The drop-ins in one directory, in name order.
+
+    Every config directory has them, not just the home one: a NixOS module
+    declares into /etc/xdg and needs a file of its own there as much as a
+    home-manager module does in the home directory.
+    """
+    return sorted((base / DROP_IN_DIR).glob("*.json"))
+
+
+def settings_path() -> Path:
+    """The one file Context writes: the last link in the chain."""
+    return layers()[-1]
+
+
+def read_layer(path: Path) -> dict:
+    """One settings file, or nothing if it is missing or unusable."""
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        # A broken file must not stop the launcher starting, and must not take
+        # the rest of the chain down with it either.
+        log.warning("ignoring %s: %s", path, exc)
+        return {}
+    if not isinstance(raw, dict):
+        log.warning("ignoring %s: expected an object", path)
+        return {}
+    return raw
+
+
+def merged() -> dict:
+    """Every layer, flattened. Later files overwrite earlier ones key by key."""
+    values: dict = {}
+    for path in layers():
+        values.update(read_layer(path))
+    return values
+
+
+def origins() -> dict[str, Path]:
+    """Which file last set each key.
+
+    What the settings screen needs to say where a value came from, and what
+    `reset` needs to know whether dropping an override changes anything.
+    """
+    where: dict[str, Path] = {}
+    known = {f.name for f in fields(Settings)}
+    for path in layers():
+        for key in read_layer(path):
+            if key in known:
+                where[key] = path
+    return where
 
 
 @dataclass(frozen=True)
@@ -144,19 +253,7 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        path = settings_path()
-        try:
-            raw = json.loads(path.read_text())
-        except FileNotFoundError:
-            raw = {}
-        except (OSError, json.JSONDecodeError) as exc:
-            # Broken settings must not stop the launcher starting.
-            log.warning("ignoring %s: %s", path, exc)
-            raw = {}
-        if not isinstance(raw, dict):
-            log.warning("ignoring %s: expected an object", path)
-            raw = {}
-        return cls(**cls._coerce(raw))
+        return cls(**cls._coerce(merged()))
 
     @classmethod
     def _coerce(cls, raw: dict) -> dict:
@@ -242,18 +339,14 @@ class Settings:
         )
 
     def save(self) -> None:
-        path = settings_path()
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps(
-                    {f.name: getattr(self, f.name) for f in fields(self)}, indent=2
-                )
-            )
-            temporary.replace(path)
-        except OSError as exc:
-            log.warning("could not write %s: %s", path, exc)
+        """Write every setting into the writable layer.
+
+        Deliberately not what `update` uses. This spells out the whole of the
+        current configuration, which shadows every layer beneath it — useful for
+        pinning a machine to what it is doing right now, and exactly what must
+        not happen on an ordinary settings change.
+        """
+        write_overrides({f.name: getattr(self, f.name) for f in fields(self)})
 
 
 def _clamp(value, low: int, high: int, fallback: int) -> int:
@@ -262,6 +355,22 @@ def _clamp(value, low: int, high: int, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return max(low, min(high, number))
+
+
+def overrides() -> dict:
+    """What has been set in the writable layer, and nothing else."""
+    return read_layer(settings_path())
+
+
+def write_overrides(values: dict) -> None:
+    path = settings_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(values, indent=2, sort_keys=True))
+        temporary.replace(path)
+    except OSError as exc:
+        log.warning("could not write %s: %s", path, exc)
 
 
 _current: Settings | None = None
@@ -281,9 +390,36 @@ def reload() -> Settings:
 
 
 def update(**changes) -> Settings:
-    """Apply changes, persist them, and make them the live settings."""
+    """Record these changes in the writable layer and make them live.
+
+    Only the keys named here are written. Writing the whole of `Settings` would
+    put a value against every key, and a layer that mentions every key overrides
+    every layer below it — one visit to the settings screen would detach the
+    machine from its declaration for good.
+    """
     global _current
-    _current = current().replace(**changes)
-    _current.save()
+    stored = overrides()
+    stored.update(Settings._coerce(changes))
+    write_overrides(stored)
+    _current = Settings.load().validated()
     log.info("settings updated: %s", ", ".join(sorted(changes)))
+    return _current
+
+
+def reset(*names: str) -> Settings:
+    """Drop overrides, letting whatever the layers below say come back.
+
+    With no names, drops all of them: the machine goes back to being exactly
+    what was declared for it.
+    """
+    global _current
+    stored = overrides()
+    if names:
+        for name in names:
+            stored.pop(name, None)
+    else:
+        stored = {}
+    write_overrides(stored)
+    _current = Settings.load().validated()
+    log.info("settings reset: %s", ", ".join(sorted(names)) if names else "all")
     return _current

@@ -312,16 +312,86 @@ Settings that do nothing in the current collapse mode are not shown: the
 collapsed width only appears for a rail, and the hover settings disappear when
 collapsing is off.
 
-Settings are stored in `$XDG_CONFIG_HOME/context/settings.json` and can be
-edited by hand. Environment variables override them for a single run:
+### Where settings come from
+
+Settings are read from several files, merged setting by setting, and the last
+file to mention a setting decides it:
+
+| Read | File | Owned by |
+| --- | --- | --- |
+| 1 | `/etc/xdg/context/settings.d/*.json` | A NixOS module |
+| 2 | `/etc/xdg/context/settings.json` | Hand-edited system config |
+| 3 | `$XDG_CONFIG_HOME/context/settings.d/*.json` | A home-manager module, or you |
+| 4 | `$XDG_CONFIG_HOME/context/settings.json` | Context itself |
+
+Every entry in `XDG_CONFIG_DIRS` is read, least important first; drop-ins within
+a directory are read in name order, so `50-` beats `20-`.
+
+The last file is the only one Context writes, and it records **only the settings
+you have actually changed**. Everything you have not touched keeps following the
+files above it, so a declared configuration and the settings screen compose
+instead of overwriting each other. **Reset your changes** in the settings screen
+empties that file, and every setting goes back to what was declared.
+
+The settings screen lists the whole chain and says how many settings each file
+decides, so "I changed this and it went back" always has an answer on screen.
+
+Environment variables override for a single run:
 
 | Variable | Meaning |
 | --- | --- |
+| `CONTEXT_SETTINGS` | One file, replacing the whole chain |
+| `CONTEXT_SETTINGS_PATH` | The chain itself, `:`-separated, least important first |
 | `CONTEXT_SIDEBAR_EDGE` | `left`, `right`, `top`, or `bottom` |
 | `CONTEXT_SIDEBAR_WIDTH` | Expanded thickness in px |
 | `CONTEXT_RAIL_WIDTH` | Collapsed thickness in px |
 | `CONTEXT_BACKEND` | `hyprland` or `none` |
 | `CONTEXT_LOG_LEVEL` | `debug`, `info`, `warning`, `error` or `critical` |
+
+## NixOS
+
+The flake provides a package, an overlay, a NixOS module and a home-manager
+module.
+
+```nix
+{
+  inputs.context.url = "github:BeatLink/Context";
+
+  # NixOS
+  imports = [ inputs.context.nixosModules.default ];
+  programs.context = {
+    enable = true;
+    settings.collapse_mode = "hidden";
+    contexts = [
+      { title = "Work on Context"; apps = [ "codium.desktop" "firefox.desktop" ]; }
+    ];
+  };
+}
+```
+
+`inputs.context.homeModules.default` takes the same options and writes into the
+home directory instead.
+
+Both write a **drop-in**, never `settings.json`, so neither fights Context for
+that file and neither has to be forced. Only the settings you actually set are
+written, which is what lets the two modules and the settings screen stack:
+
+| Layer | `priority` default | Beaten by |
+| --- | --- | --- |
+| NixOS module | 20 | The home-manager module, and you |
+| home-manager module | 50 | You |
+| The settings screen | — | Nothing |
+
+`priority` changes the filename and therefore the position in the load order.
+
+Declared contexts stack the same way, except that they add rather than override:
+two files declaring contexts means having both, and only a repeated id is
+resolved by order. Each declaration is taken in once and is an ordinary context
+from then on, so editing or forgetting one in the launcher sticks.
+
+`nix run github:BeatLink/Context` runs it without installing. The package does
+not depend on Hyprland: `hyprctl` belongs to the compositor already running, and
+Context falls back to no window manager when it is absent.
 
 ## Theming
 
@@ -386,8 +456,11 @@ as a translucent strip along an edge.
 | `$XDG_DATA_HOME/context/firefox-profiles/` | Per-context browser profiles |
 | `$XDG_STATE_HOME/context/context.log` | Log, rotated |
 | `$XDG_STATE_HOME/context/ui.json` | Whether the sidebar is collapsed |
-| `$XDG_CONFIG_HOME/context/settings.json` | Settings |
+| `$XDG_CONFIG_HOME/context/settings.json` | The settings you have changed |
+| `$XDG_CONFIG_HOME/context/settings.d/*.json` | Settings declared elsewhere |
 | `$XDG_CONFIG_HOME/context/contexts.json` | Contexts declared elsewhere, taken in once |
+| `$XDG_CONFIG_HOME/context/contexts.d/*.json` | The same, one file per declaring thing |
+| `/etc/xdg/context/` | The system-wide copy of all four |
 | `$XDG_CONFIG_HOME/context/style.css` | Stylesheet loaded over the built-in one |
 
 ## Window managers
