@@ -602,3 +602,61 @@ def test_an_app_names_the_context_it_came_from(
     assert seen["offered"] is True
     assert "Work on Context" in seen["named"]
     assert seen["into"] and seen["into"][0][0] == "Work on Context"
+
+
+@needs_display
+def test_the_card_paints_the_padding_it_holds(gtk_app, isolated_store, backend, fake_apps):
+    """`.ctx-surface` is what paints — the window itself is transparent — and a
+    margin falls outside the box it is set on. Carrying the class and the inset
+    on one box left an unpainted band inside the window's own rounded edge.
+
+    So: the window's child is the card, it has no margins of its own, and the
+    inset lives on a box inside it.
+    """
+    from context.state.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        card = window.get_child()
+        seen["paints"] = card.has_css_class("ctx-surface")
+        # Opaque, whatever the surface alpha says: a haze over a whole output
+        # is not the same thing as a translucent strip at the edge.
+        seen["solid"] = card.has_css_class("ctx-solid")
+        seen["card_margins"] = [
+            card.get_margin_top(), card.get_margin_bottom(),
+            card.get_margin_start(), card.get_margin_end(),
+        ]
+        inner = card.get_first_child()
+        seen["inner_margins"] = [
+            inner.get_margin_top(), inner.get_margin_bottom(),
+            inner.get_margin_start(), inner.get_margin_end(),
+        ]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["paints"] is True
+    assert seen["solid"] is True
+    # The card reaches the window's edge; the padding is inside what it paints.
+    assert seen["card_margins"] == [0, 0, 0, 0]
+    assert seen["inner_margins"] == [18, 18, 18, 18]
+
+
+@needs_display
+def test_the_overview_carries_no_titlebar(gtk_app, isolated_store, backend, fake_apps):
+    """Home is a fixture: nothing to close, nowhere else for it to go. The
+    compositor's half is a window rule; this is the toolkit's."""
+    from context.state.store import ContextStore
+
+    seen = {}
+
+    def body(app):
+        window = _build(app, ContextStore(), backend)
+        seen["decorated"] = window.get_decorated()
+        seen["titlebar"] = window.get_titlebar()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["decorated"] is False
+    assert seen["titlebar"] is None

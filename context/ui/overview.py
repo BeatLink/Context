@@ -104,10 +104,12 @@ class OverviewWindow(Gtk.ApplicationWindow):
         # always able to get to, and the back button offered to leave the one
         # place that cannot be left empty — Escape and the sidebar's own list
         # are the ways out, and both were already there.
+        # The card and the inset it holds are two boxes, not one. `.ctx-surface`
+        # is what paints — the window itself is transparent — and a margin is
+        # outside the thing it is set on, so a single box carrying both the
+        # class and the 18px left that band unpainted: a transparent border
+        # inside the window's own rounded edge.
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        content.add_css_class("ctx-surface")
-        content.add_css_class("ctx-solid")
-        content.set_overflow(Gtk.Overflow.HIDDEN)
         for setter in (
             "set_margin_top",
             "set_margin_bottom",
@@ -228,7 +230,16 @@ class OverviewWindow(Gtk.ApplicationWindow):
         columns.append(right)
         content.append(columns)
 
-        self.set_child(content)
+        # Fills the window, so the rounding and the inset ring `.ctx-surface`
+        # draws are the window's own edge. Overflow hidden clips the lists to
+        # those corners.
+        self.surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.surface.add_css_class("ctx-surface")
+        self.surface.add_css_class("ctx-solid")
+        self.surface.set_overflow(Gtk.Overflow.HIDDEN)
+        content.set_vexpand(True)
+        self.surface.append(content)
+        self.set_child(self.surface)
 
         escape = Gtk.ShortcutController()
         escape.add_shortcut(
