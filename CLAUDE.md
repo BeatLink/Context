@@ -148,6 +148,12 @@ The contract, and the constraints holding it up:
   reads a colour back synchronously after `reinstall()` reads the old value
   and proves nothing; present the window and wait.
 
+Transparency is the alpha of `ctx_surface` — GTK's `alpha()` takes a literal
+rather than a named colour, so there is nowhere else to put it. The full-screen
+views wear `.ctx-solid` and paint `@ctx_surface_solid`, which `_defines()`
+derives from the surface with the alpha taken off: a haze over the whole output
+is not the same thing as a translucent strip at the edge.
+
 **Do not add a light/dark scheme system back.** One existed and was removed:
 three attempts at a built-in light mode failed while libadwaita resolved
 light/dark before the application got a say, and the scheme machinery that

@@ -44,6 +44,7 @@ class EditorWindow(Gtk.Window):
 
         self.nav = widgets.NavigationView()
         self.nav.add_css_class("ctx-surface")
+        self.nav.add_css_class("ctx-solid")
         self.nav.set_overflow(Gtk.Overflow.HIDDEN)
         self.page = EditorPage(
             ctx,

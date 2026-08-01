@@ -34,6 +34,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
 
         self.nav = widgets.NavigationView()
         self.nav.add_css_class("ctx-surface")
+        self.nav.add_css_class("ctx-solid")
         self.nav.set_overflow(Gtk.Overflow.HIDDEN)
         self.page = SettingsPage(launcher, on_back=lambda: self.close())
         self.nav.add(self.page)

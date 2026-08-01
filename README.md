@@ -333,6 +333,11 @@ ordinary context from then on, so editing or forgetting one sticks rather than
 being undone at the next start. A context with no layout gets the preset for
 however many applications it holds.
 
+Transparency is the alpha of `ctx_surface` — `rgba(30, 30, 30, 0.75)` or
+`#1e1e1ebf`. The docked sidebar honours it; the editor, overview, settings and
+pickers stay opaque, since a haze over the whole screen is not the same thing
+as a translucent strip along an edge.
+
 ## Where things are kept
 
 | Path | Contents |

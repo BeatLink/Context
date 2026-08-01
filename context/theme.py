@@ -169,10 +169,19 @@ class Theme:
         return _rgba(getattr(self, name, default), _rgba(default, (1, 1, 1, 1)))
 
     def _defines(self) -> str:
-        return "\n".join(
-            f"@define-color ctx_{f.name} {getattr(self, f.name)};"
-            for f in fields(self)
+        lines = [
+            f"@define-color ctx_{f.name} {getattr(self, f.name)};" for f in fields(self)
+        ]
+        # The surface with its transparency taken off, for the views that cover
+        # the whole screen. Derived rather than declared, so a style.css that
+        # sets one translucent colour gets both — and it can still be named
+        # outright, since a redefinition in that file wins over this.
+        red, green, blue, _alpha = self.rgba("surface")
+        lines.append(
+            "@define-color ctx_surface_solid "
+            f"rgb({round(red * 255)}, {round(green * 255)}, {round(blue * 255)});"
         )
+        return "\n".join(lines)
 
     def css(self) -> bytes:
         """The built-in stylesheet.
@@ -311,6 +320,14 @@ window.ctx-window {
        the rail's minimum width by its two edges; a shadow only draws. */
     box-shadow: inset 0 0 0 2px @ctx_border;
     border-radius: 10px;
+}
+
+/* A view that covers the whole screen is opaque, whatever the surface's alpha
+   says. Transparency is for a strip at the edge, where seeing what is behind
+   it is the point; spread over the entire output it is a haze between the user
+   and what they are reading. */
+.ctx-surface.ctx-solid {
+    background-color: @ctx_surface_solid;
 }
 
 /* Text colour has to reach every descendant, not just direct children.

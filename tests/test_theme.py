@@ -247,3 +247,17 @@ def test_a_translucent_surface_reaches_the_widgets(monkeypatch, tmp_path):
     assert live.rgba("surface") == pytest.approx((30 / 255, 30 / 255, 30 / 255, 0.75))
     # And the stylesheet hands the same value to the widgets.
     assert b"rgba(30, 30, 30, 0.75)" in live.css()
+
+
+def test_a_full_screen_view_is_opaque(monkeypatch, tmp_path):
+    """Transparency is for a strip at the edge. Spread over the whole output it
+    is a haze between the user and what they are reading."""
+    style = tmp_path / "style.css"
+    style.write_text("@define-color ctx_surface rgba(20, 30, 40, 0.5);\n")
+    monkeypatch.setenv(theme.ENV_STYLE, str(style))
+    monkeypatch.setattr(theme, "_current", None)
+
+    css = theme.current().css().decode()
+    # Derived from whatever the surface is, so one translucent colour gives both.
+    assert "@define-color ctx_surface_solid rgb(20, 30, 40);" in css
+    assert ".ctx-surface.ctx-solid" in css
