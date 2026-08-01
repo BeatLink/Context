@@ -28,20 +28,6 @@ from context.system.logging_setup import get_logger
 
 log = get_logger("catalogue")
 
-# Enough for the longer of the two, so the controls line up under one another.
-LABEL_WIDTH = 74
-
-
-def _labelled(text: str, control: Gtk.Widget) -> Gtk.Box:
-    """One of the controls, behind the word for what it decides."""
-    row = Gtk.Box(spacing=8)
-    label = Gtk.Label(label=text, xalign=0.0)
-    label.add_css_class("dim-label")
-    label.set_size_request(LABEL_WIDTH, -1)
-    row.append(label)
-    row.append(control)
-    return row
-
 
 class AppCatalogue(Gtk.Box):
     """The application list, with the search and the two controls over it.
@@ -77,14 +63,16 @@ class AppCatalogue(Gtk.Box):
         self.flows: list[Gtk.ListBox] = []
         self._rows: dict[str, Gtk.Widget] = {}
 
-        self.entry = widgets.SearchBar(placeholder)
-        self.entry.connect("search-changed", lambda _e: self.refresh())
-        self.append(self.entry)
-
+        # The heading first, then the box that narrows it: "Apps · 93" is what
+        # you are looking at, and the search is what you do to it.
         self.label = Gtk.Label(label=heading, xalign=0.0)
         self.label.add_css_class("heading")
         self.label.add_css_class("dim-label")
         self.append(self.label)
+
+        self.entry = widgets.SearchBar(placeholder)
+        self.entry.connect("search-changed", lambda _e: self.refresh())
+        self.append(self.entry)
 
         # Buttons rather than a dropdown: both callers can be covered by a
         # layer-shell overlay, where a popover throws the click away. Only the
@@ -101,14 +89,21 @@ class AppCatalogue(Gtk.Box):
         )
         category_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
         category_scroller.set_child(self.category_chooser)
-        self.append(_labelled("Category", category_scroller))
+        # No "Category" label in front of it. The words in the buttons are the
+        # categories, which says what the row is more directly than a label
+        # would, and in a column that is half the editor the label was costing
+        # the buttons the room they need.
+        self.append(category_scroller)
 
         self.sort_keys = list(SORTS)
         self.sort_chooser = widgets.SegmentedChoice(self._on_sort)
         for key in self.sort_keys:
             self.sort_chooser.add(SORTS[key])
         self.sort_chooser.set_selected(self.sort_keys.index(self.sort), notify=False)
-        self.append(_labelled("Sort", self.sort_chooser))
+        # Left rather than stretched: without the label beside it there is
+        # nothing holding it to its natural width.
+        self.sort_chooser.set_halign(Gtk.Align.START)
+        self.append(self.sort_chooser)
 
         # One section per group, each with its own list: a heading cannot sit
         # inside a list, and the groups are the point of the ordering.
