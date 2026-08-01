@@ -227,7 +227,16 @@ class OverviewWindow(Gtk.ApplicationWindow):
         )
         self.add_controller(escape)
 
+        # Typing is what the overview is for, so the search box holds the
+        # keyboard from the moment it appears rather than after a click. On map
+        # rather than in the constructor: grabbing focus on a widget that has
+        # not been realised does nothing at all.
+        self.connect("map", lambda _w: self.focus_search())
+
         self.refresh()
+
+    def focus_search(self) -> None:
+        self.entry.grab_focus()
 
     # -- contents ------------------------------------------------------------
 

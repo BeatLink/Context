@@ -466,3 +466,45 @@ def test_by_kind_groups_under_the_categories(gtk_app, isolated_store, backend, m
     # Filed under the first category it claims, never under both.
     assert seen["headings"] == ["Media", "Development", "Everything else"]
     assert seen["order"] == ["Ardour", "Builder", "Chores"]
+
+
+@needs_display
+def test_the_overview_opens_with_the_keyboard_in_the_search_box(gtk_app, isolated_store):
+    """Typing is what it is for, so it should not need a click first."""
+    from context.state.store import ContextStore
+    from context.ui.overview import OverviewWindow
+
+    seen = {}
+
+    def body(app):
+        from gi.repository import GLib
+
+        store = ContextStore()
+        store.create("Work on Context")
+        window = OverviewWindow(app, store)
+        window.present()
+
+        # Focus lands when the window maps, which is not synchronous with
+        # present() — reading it straight back tests nothing.
+        context = GLib.MainContext.default()
+        deadline = GLib.get_monotonic_time() + 2_000_000
+        while not window.get_mapped() and GLib.get_monotonic_time() < deadline:
+            context.iteration(False)
+        while (
+            window.get_focus() is None and GLib.get_monotonic_time() < deadline
+        ):
+            context.iteration(False)
+
+        focus = window.get_focus()
+        # A GtkSearchEntry is composite: grab_focus() lands on the GtkText
+        # inside it, so `entry.has_focus()` is False even when it has it.
+        # Asserting on the entry itself passes only when nothing works.
+        seen["in_entry"] = focus is not None and (
+            focus is window.entry or focus.is_ancestor(window.entry)
+        )
+        seen["focus_type"] = type(focus).__name__ if focus is not None else None
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["in_entry"] is True, f"focus was on {seen['focus_type']}"
