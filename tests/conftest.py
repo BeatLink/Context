@@ -101,6 +101,10 @@ class FakeBackend:
         self.calls.append(("hide-titlebar", app_id, title))
         return True
 
+    def open_floating(self, app_id: str, title: str, width: int, height: int) -> bool:
+        self.calls.append(("float", app_id, title, width, height))
+        return True
+
     def ensure_workspace(self, title: str, handle: str | None) -> Workspace:
         name = handle or f"ctx-{title.strip().casefold().replace(' ', '-')}"
         created = name not in self.workspaces

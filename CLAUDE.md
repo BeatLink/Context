@@ -547,10 +547,15 @@ launching real applications, and point `XDG_DATA_DIRS` at it.
 
   This note used to end "the sidebar is not affected; the settings page's
   combos work", and that stopped being true the moment settings moved out of
-  the sidebar into a window of its own. Every combo in the application was dead
-  for as long as nobody tried one. **A widget is safe or not by where it ends
-  up, not by where it was written** — if a view can be an overlay, treat its
-  controls as overlay controls.
+  the sidebar into a full-screen overlay. Every combo in the application was
+  dead for as long as nobody tried one. **A widget is safe or not by where it
+  ends up, not by where it was written** — if a view can be an overlay, treat
+  its controls as overlay controls.
+
+  Settings is an ordinary window again, and that is most of why it moved: a
+  screen made entirely of controls does not belong on the one surface where
+  controls do not work. Popovers are safe there. They are still not safe in the
+  editor, the pickers, the adopt window or the note editor, which are overlays.
 - **A GTK label shows what it is given.** `markup_escape_text` on a title that
   is *not* parsed as markup spells the entities out — every context row but the
   current one read "Review todos &amp; notes", because only the active row is

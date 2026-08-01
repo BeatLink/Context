@@ -320,9 +320,11 @@ text as widgets where a box is something you click.
 
 ## Settings
 
-The cogwheel in the launcher's header, in five tabs — **Launcher**,
-**Overview**, **Scratchpad**, **Contexts** and **System**. Changes apply as you
-make them; the few that need a restart say so.
+The cogwheel in the launcher's header opens a window, in five tabs —
+**Launcher**, **Overview**, **Scratchpad**, **Contexts** and **System**. It
+floats over whatever you are working in rather than tiling into it, so opening
+it does not rearrange the context you are standing in. Changes apply as you make
+them; the few that need a restart say so.
 
 | Setting | Meaning |
 | --- | --- |

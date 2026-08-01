@@ -3125,3 +3125,76 @@ def test_the_scratchpad_master_switch_still_holds_on_home(
     # The placement is forced on; the feature being off still wins.
     assert seen["forced"] is True
     assert seen["shown"] is False
+
+
+def test_settings_is_a_window_not_an_overlay(gtk_app, isolated_store, monkeypatch):
+    """A layer-shell overlay throws away the click that lands in a popover, and
+    settings is nothing but controls. It was an overlay, which is what made
+    every combo in the application dead until somebody tried one."""
+    from context.ui import sidebar
+    from context.state.store import ContextStore
+    from context.ui.settings_window import SettingsWindow
+    from context.ui.window import LauncherWindow
+
+    overlaid = []
+    monkeypatch.setattr(
+        sidebar, "apply_overlay", lambda w: overlaid.append(w) or False
+    )
+    seen = {}
+
+    def body(app):
+        launcher = LauncherWindow(app, ContextStore(), lambda c: None, lambda c: None)
+        window = SettingsWindow(app, launcher)
+        seen["overlaid"] = overlaid
+        # Not fullscreened either: it is a window you open, change and close.
+        seen["fullscreen"] = window.is_fullscreen()
+        window.close()
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["overlaid"] == []
+    assert seen["fullscreen"] is False
+
+
+def test_settings_asks_to_float_before_its_window_exists(
+    gtk_app, isolated_store, backend
+):
+    """A rule decides how a window maps, so one installed afterwards applies to
+    the next window rather than this one. And the same keybind puts it away."""
+    from context.app import ContextApplication, SETTINGS_TITLE
+    from context.ui.settings_window import SIZE
+
+    seen = {}
+
+    def body(app):
+        app.log = __import__("logging").getLogger("test.settings-window")
+        app.backend = backend
+        app.settings_window = None
+        app._settings_ruled = False
+        app.switcher = None
+        app.ensure_window = lambda: None
+        app._on_settings_closed = lambda w: ContextApplication._on_settings_closed(
+            app, w
+        )
+        backend.calls.clear()
+
+        ContextApplication.open_settings(app)
+        seen["ruled"] = [c for c in backend.calls if c[0] == "float"]
+        seen["opened"] = app.settings_window is not None
+        # The rule goes in before the window is built, not after it maps.
+        seen["ruled_first"] = backend.calls[0][0] == "float"
+
+        ContextApplication.open_settings(app)
+        seen["closed"] = app.settings_window is None
+        # Installed once, not once per opening.
+        seen["installs"] = len([c for c in backend.calls if c[0] == "float"])
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["ruled"] == [
+        ("float", gtk_app.get_application_id(), SETTINGS_TITLE, *SIZE)
+    ]
+    assert seen["opened"] is True
+    assert seen["ruled_first"] is True
+    assert seen["closed"] is True
+    assert seen["installs"] == 1

@@ -136,3 +136,31 @@ def test_the_null_backend_decorates_nothing_and_has_no_home():
     wm = NullBackend()
     assert wm.hide_titlebar("a", "b") is False
     assert wm.bind_to_home("a", "b") is False
+
+
+def test_settings_floats_by_rule_rather_than_after_the_fact():
+    """Tiled, it would join the layout of whatever context you are standing in
+    — re-tiling that context's windows and drifting it — for a visit measured
+    in seconds. `float` and `center` take a value; `size` takes its two."""
+    from context.system.backends.hyprland import HyprlandBackend
+
+    wm = HyprlandBackend()
+    sent = []
+
+    class Result:
+        returncode = 0
+
+    wm._run = lambda *a: sent.append(a) or Result()
+
+    assert wm.open_floating("io.beatlink.Context", "Settings", 900, 760) is True
+    rules = [call[2] for call in sent]
+    assert all(call[:2] == ("keyword", "windowrule") for call in sent)
+    assert rules[0].startswith("float on,")
+    assert rules[1].startswith("size 900 760,")
+    assert rules[2].startswith("center on,")
+    for rule in rules:
+        assert "match:class io.beatlink.Context" in rule
+        assert "match:title Settings" in rule
+
+    assert wm.open_floating("", "Settings", 900, 760) is False
+    assert wm.open_floating("io.beatlink.Context", "", 900, 760) is False

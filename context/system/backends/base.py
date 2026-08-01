@@ -83,6 +83,16 @@ class Backend(Protocol):
         active workspace out from under the map.
         """
 
+    def open_floating(
+        self, app_id: str, title: str, width: int, height: int
+    ) -> bool:
+        """Float a window like this when it maps, at a size, centred.
+
+        For a window you open, change and close. Tiled, it would join the
+        layout of whatever context you are standing in — re-tiling that
+        context's windows and drifting it — for a visit measured in seconds.
+        """
+
     def hide_titlebar(self, app_id: str, title: str) -> bool:
         """Ask the compositor not to decorate this window.
 
@@ -201,6 +211,21 @@ class NullBackend:
         return True
 
     def bind_to_home(self, app_id: str, title: str) -> bool:
+        return False
+
+    def open_floating(
+        self, app_id: str, title: str, width: int, height: int
+    ) -> bool:
+        """Float a window like this when it maps, at a size, centred.
+
+        For a window you open, change and close. Tiled, it would join the
+        layout of whatever context you are standing in — re-tiling that
+        context's windows and drifting it — for a visit measured in seconds.
+        """
+
+    def open_floating(
+        self, app_id: str, title: str, width: int, height: int
+    ) -> bool:
         return False
 
     def hide_titlebar(self, app_id: str, title: str) -> bool:

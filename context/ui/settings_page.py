@@ -108,12 +108,16 @@ def _row_spin(title, subtitle, value, low, high, step, on_change) -> widgets.Row
 def _row_combo(title, subtitle, labels, values, current_value, on_change):
     """One of several, as buttons rather than a dropdown.
 
-    A `Gtk.DropDown` opens a popover, and this page is a layer-shell overlay:
-    the popup closes with the old value still selected, so a dropdown here does
-    nothing at all. The editor hit this first and the note recording it said the
-    settings page was exempt — which stopped being true the day settings moved
-    out of the sidebar into a window of its own, and went unnoticed until every
-    combo in the application was dead.
+    A dropdown would work here now: this page is a window, and a popover only
+    throws its click away on a layer-shell overlay. It was an overlay, which is
+    what made every combo in the application dead until somebody tried one, and
+    moving settings off one is most of why they moved.
+
+    The buttons stay because for three to five fixed choices they are better,
+    not because a dropdown is unsafe: one click against two, and the options are
+    readable without opening anything. Somewhere with an unbounded list — the
+    monitor pickers, which grow with what is plugged in — a dropdown is now the
+    right control and can be used.
     """
     choice = widgets.SegmentedChoice(lambda index: on_change(values[index]))
     for label in labels:
@@ -158,14 +162,15 @@ class SettingsPage(widgets.NavigationPage):
 
         toolbar = widgets.ToolbarView()
         header = widgets.HeaderBar(title="Settings")
-        # Nothing to minimise, maximise or close: this is a page inside the
-        # docked launcher, and its own back button is the way out. Every other
-        # header in Context suppresses them for the same reason.
+        # Context draws its own header rather than using the toolkit's window
+        # controls, everywhere. The compositor decorates this window like any
+        # other, so there is a close button on it as well — this one is what
+        # works in a session that draws no decorations at all.
         header.set_show_start_title_buttons(False)
         header.set_show_end_title_buttons(False)
         self.back_button = Gtk.Button(icon_name="go-previous-symbolic")
         self.back_button.add_css_class("flat")
-        self.back_button.set_tooltip_text("Back")
+        self.back_button.set_tooltip_text("Close")
         self.back_button.connect("clicked", lambda _b: self.on_back())
         header.pack_start(self.back_button)
         toolbar.add_top_bar(header)

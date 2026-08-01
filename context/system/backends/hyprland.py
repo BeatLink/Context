@@ -116,6 +116,29 @@ class HyprlandBackend:
         return result is not None and result.returncode == 0
 
     @traced(log)
+    def open_floating(
+        self, app_id: str, title: str, width: int, height: int
+    ) -> bool:
+        """Float, size and centre a window by rule rather than after the fact.
+
+        Three rules, because they are three fields. `float` and `center` take a
+        value — `float` alone is answered "missing a value" — while `size` takes
+        its two and no more. Measured, along with the result: the window comes
+        up floating and centred at the size asked for, and the tiled windows on
+        the workspace it opened over are left where they were.
+        """
+        if not app_id or not title:
+            return False
+        match = f"match:class {app_id}, match:title {title}"
+        rules = (f"float on, {match}", f"size {width} {height}, {match}",
+                 f"center on, {match}")
+        ok = True
+        for rule in rules:
+            result = self._run("keyword", "windowrule", rule)
+            ok = ok and result is not None and result.returncode == 0
+        return ok
+
+    @traced(log)
     def hide_titlebar(self, app_id: str, title: str) -> bool:
         """Suppress hyprbars' titlebar on the overview.
 
@@ -458,12 +481,6 @@ class HyprlandBackend:
         if not self.focus_window(window_id):
             return False
         result = self._run("dispatch", "moveoutofgroup")
-        return result is not None and result.returncode == 0
-
-    @traced(log)
-    def float_window(self, address: str) -> bool:
-        """Float one window, by address."""
-        result = self._run("dispatch", "setfloating", f"address:{address}")
         return result is not None and result.returncode == 0
 
     @traced(log)

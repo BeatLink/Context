@@ -127,7 +127,9 @@ Twenty-eight settings to about seventeen:
 | `scratchpad_global`, `scratchpad_per_context`, `scratchpad_show_both` | Collapse to on and off. There are exactly two scratchpads and no way to make more; which of them is on screen is not four settings' worth of question. |
 
 And **settings becomes a window rather than an overlay** — a task with duration,
-made entirely of controls, on a surface where controls do not work.
+made entirely of controls, on a surface where controls do not work. **Done.** It
+floats by a compositor rule rather than tiling, so opening it does not rearrange
+the context being stood in; measured, with the windows behind it unmoved.
 
 ## The test
 

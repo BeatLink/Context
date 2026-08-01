@@ -356,9 +356,12 @@ their right-hand display opened on the left whenever they launched from there.
 
 ### 9. Settings — *page done, per-context visibility planned*
 
-**Shipped.** A settings page reached from the launcher's header, covering the
-sidebar edge, both widths, hover-to-expand and its delay, the backend, the
-refresh interval and the log level. Settings live in
+**Shipped.** A settings *window* reached from the launcher's header, covering
+the sidebar edge, both widths, hover-to-expand and its delay, the backend, the
+refresh interval and the log level. A window rather than the full-screen overlay
+it was: a screen made entirely of controls does not belong on the one surface
+where a popover throws its click away. It floats by a compositor rule, so
+opening it does not re-tile the context being stood in. Settings live in
 `$XDG_CONFIG_HOME/context/settings.json` and are hand-editable; environment
 variables still override them for a single run. The page also lists where every
 file lives and can write out the style file.

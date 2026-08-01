@@ -40,9 +40,12 @@ from context.ui.window import LauncherWindow
 # tears the launchers down mid-change.
 MONITOR_SETTLE_MS = 400
 
-# The overview window's title. The compositor matches on it to place the window
-# on home, so it is one constant rather than a string in two places.
+# The window titles the compositor matches on to decide how each one opens —
+# the overview onto home, settings floating. One constant each rather than the
+# same string written in two places, since a rule that does not match is a rule
+# that silently does nothing.
 OVERVIEW_TITLE = "Overview"
+SETTINGS_TITLE = "Settings"
 
 
 # Commands a keybind can send to the running instance. `python3 -m context
@@ -103,6 +106,11 @@ class ContextApplication(Gtk.Application):
         # `switcher` slot: that is whatever overlay is up at the moment, and
         # home is a place that outlives all of them.
         self.overview = None
+        # Settings is a window rather than an overlay, so it gets a slot of its
+        # own: `switcher` is whatever overlay is up at the moment.
+        self.settings_window = None
+        # Whether the compositor has been told how the settings window opens.
+        self._settings_ruled = False
         # Held so the monitor list is not collected while it is being watched.
         self._monitor_model = None
         self._monitor_settle = 0
@@ -231,6 +239,11 @@ class ContextApplication(Gtk.Application):
 
     def _on_overview_destroyed(self, _window) -> None:
         self.overview = None
+        # Settings is a window rather than an overlay, so it gets a slot of its
+        # own: `switcher` is whatever overlay is up at the moment.
+        self.settings_window = None
+        # Whether the compositor has been told how the settings window opens.
+        self._settings_ruled = False
 
     def prepare_home(self) -> None:
         """Put the overview on home before anything asks for it.
@@ -291,18 +304,37 @@ class ContextApplication(Gtk.Application):
             window._open_note(showing)
 
     def open_settings(self) -> None:
-        """The settings screen, replacing whatever picker is up.
+        """The settings window. The same keybind again puts it away."""
+        from context.ui.settings_window import SIZE, SettingsWindow
 
-        The same keybind again puts it away, the way the overview does.
-        """
-        from context.ui.settings_window import SettingsWindow
-
-        existing = self.switcher
-        if isinstance(existing, SettingsWindow):
-            existing.close()
-            self.switcher = None
+        if self.settings_window is not None:
+            self.settings_window.close()
+            self.settings_window = None
             return
-        self._show_picker(SettingsWindow(self, self.ensure_window()))
+
+        if not self._settings_ruled:
+            # Before the window exists, the same way home's rules are: a rule
+            # decides how a window maps, so one installed afterwards applies to
+            # the next window rather than this one.
+            self._settings_ruled = self.backend.open_floating(
+                self.get_application_id(), SETTINGS_TITLE, *SIZE
+            )
+
+        # A layer-shell overlay is composited above every ordinary window, so
+        # anything up would hide this one completely rather than merely cover
+        # part of it.
+        if self.switcher is not None:
+            self.switcher.close()
+            self.switcher = None
+
+        window = SettingsWindow(self, self.ensure_window())
+        window.connect("close-request", self._on_settings_closed)
+        self.settings_window = window
+        window.present()
+
+    def _on_settings_closed(self, _window) -> bool:
+        self.settings_window = None
+        return False
 
     def restore_context(self, ctx: Context) -> None:
         """Put a drifted context back, on a worker thread.
