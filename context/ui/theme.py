@@ -496,37 +496,6 @@ window.ctx-window stackswitcher > button:not(:first-child) {
     border-left-width: 0;
 }
 
-/* Two controls stacked into one, down the column rather than across it.
-   `.linked` is horizontal — left and right radii, and a dropped left border —
-   so a vertical group needs its own rule rather than a reuse of that one.
-
-   Same two traps as `.linked`: it has to come after the general button, entry
-   and `.boxed-list` plates or it loses the specificity tie and the corners
-   stay round, and it has to carry the window scope. The children here are an
-   entry inside a box and a `.boxed-list`, so both are named. */
-window.ctx-window .ctx-joined > * {
-    border-radius: 0;
-}
-window.ctx-window .ctx-joined > * entry,
-window.ctx-window .ctx-joined > .boxed-list {
-    border-radius: 0;
-}
-window.ctx-window .ctx-joined > *:first-child entry,
-window.ctx-window .ctx-joined > .boxed-list:first-child {
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-}
-window.ctx-window .ctx-joined > *:last-child entry,
-window.ctx-window .ctx-joined > .boxed-list:last-child {
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-}
-/* One border along the join rather than two touching. */
-window.ctx-window .ctx-joined > *:not(:first-child) entry,
-window.ctx-window .ctx-joined > .boxed-list:not(:first-child) {
-    border-top-width: 0;
-}
-
 /* A row's menu, on its own surface above everything.
 
    `ctx_surface` carries the launcher's transparency, so a menu painted with it

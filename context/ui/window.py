@@ -164,6 +164,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.top_row = Gtk.Box()
         self.top_row.add_css_class("linked")
         self.top_row.append(self.entry)
+        content.append(self.top_row)
 
         # A built-in way to start something new, always in the list. With a
         # name typed it starts that context; blank, it goes to the overview to
@@ -177,18 +178,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.create_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.create_list.add_css_class("boxed-list")
         self.create_list.append(self.create_row)
-
-        # The search box and the row under it are two halves of the same
-        # question — find me something, or start something — so with both on
-        # they are drawn as one control rather than two cards with a gap. Down
-        # the column rather than across it: the sidebar has width for one thing
-        # at a time, which is what a search box and a row with a subtitle each
-        # want all of. `_apply_sections` joins and unjoins them, since a lone
-        # survivor has to get its own corners back.
-        self.start_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.start_group.append(self.top_row)
-        self.start_group.append(self.create_list)
-        content.append(self.start_group)
+        content.append(self.create_list)
 
         self.list_label = Gtk.Label(xalign=0.0)
         self.list_label.add_css_class("heading")
@@ -732,13 +722,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.entry.set_visible(live.show_search)
         self.create_list.set_visible(live.show_new_context)
         self.top_row.set_visible(live.show_search)
-        joined = live.show_search and live.show_new_context
-        self.start_group.set_visible(live.show_search or live.show_new_context)
-        for widget, css in ((self.start_group, "ctx-joined"),):
-            if joined:
-                widget.add_css_class(css)
-            else:
-                widget.remove_css_class(css)
 
     def _sync_collapse_button(self) -> None:
         """What the header's button means, which depends on how it collapses.
