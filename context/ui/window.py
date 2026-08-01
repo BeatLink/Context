@@ -20,8 +20,9 @@ from context.system.launcher import loose_context, read_live_state
 from context.state.layout import Layout
 from context.system.logging_setup import get_logger
 from context.state.resources import Resource
-from context.ui.rows import AppRow, ContextRow, NoteRow, context_for_app, relative_time
-from context.state.scratchpad import Note, NoteStore
+from context.ui.rows import AppRow, ContextRow, context_for_app, relative_time
+from context.state.scratchpad import NoteStore
+from context.ui.scratchpad import ScratchpadView
 from context.state.store import Context, ContextStore
 
 log = get_logger("window")
@@ -34,10 +35,6 @@ from context.ui.rail import MIN_RAIL_ICON, RAIL_ICON_PADDING, RAIL_MARGIN, rail_
 # hundreds of rows rebuilt on every keystroke, and the point of the sidebar's
 # search is the first few hits; the heading says when there are more.
 APP_RESULTS = 8
-
-# How many notes the sidebar lists. The overview has room for all of them; a
-# narrow column showing every note would bury the contexts it is mainly for.
-NOTE_RESULTS = 6
 
 # How often the cursor is asked for while the sidebar waits to retract. It has
 # left the surface by then, so there are no motion events to go on.
@@ -219,23 +216,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.apps_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.apps_listbox.add_css_class("boxed-list")
 
-        # Notes. The global ones and the current context's are listed together
-        # and told apart by a tag on the row, rather than split into two groups:
-        # at sidebar width a second heading costs more than it explains.
-        self.notes_label = Gtk.Label(xalign=0.0)
+        # The scratchpad, typed into here rather than opened first. It is meant
+        # to be reached faster than anything you would have written the note on,
+        # so a row that opens an editor would have missed the point.
+        self.notes_label = Gtk.Label(label="Scratchpad", xalign=0.0)
         self.notes_label.add_css_class("heading")
         self.notes_label.add_css_class("dim-label")
+        self.scratchpad_view: ScratchpadView | None = None
 
-        self.notes_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        self.notes_listbox.add_css_class("boxed-list")
-
-        self.new_note_row = widgets.ActionRow(title="New note")
-        self.new_note_row.set_activatable(True)
-        self.new_note_row.add_prefix(
-            Gtk.Image.new_from_icon_name("document-new-symbolic")
-        )
-        self.new_note_row.set_subtitle("A blank note, in the scratchpad")
-        self.new_note_row.connect("activated", lambda _r: self._new_note())
+        self.scratchpad_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         groups.append(self.open_label)
@@ -243,8 +232,6 @@ class LauncherWindow(Gtk.ApplicationWindow):
         groups.append(self.saved_expander)
         groups.append(self.apps_label)
         groups.append(self.apps_listbox)
-        groups.append(self.notes_label)
-        groups.append(self.notes_listbox)
 
         self.empty_state = widgets.StatusPage(
             icon_name="view-grid-symbolic",
@@ -260,6 +247,13 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.stack.add_named(scroller, "list")
         self.stack.add_named(self.empty_state, "empty")
         content.append(self.stack)
+
+        # Under the stack rather than inside it. The scratchpad is not part of
+        # the context list and must not disappear with it: a launcher with no
+        # contexts yet is exactly when somewhere to jot something is worth most,
+        # and inside the stack it was hidden behind the empty state.
+        content.append(self.notes_label)
+        content.append(self.scratchpad_box)
 
         # Collapsed, the sidebar is the rail — see context/rail.py. The old
         # names stay as aliases so callers keep working: `rail` is the strip of
@@ -793,32 +787,13 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.apps_label.set_visible(bool(app_matches))
         self.apps_listbox.set_visible(bool(app_matches))
 
-        # Notes for wherever you are standing: the global ones, plus this
-        # context's if both are switched on. `visible` is what reads the
-        # settings, so the sidebar and the overview cannot disagree about it.
-        notes = (
-            self.notes.search(query, active.id if active else None)
-            if live.scratchpad and live.show_notes
-            else []
-        )
-        self.notes_listbox.remove_all()
-        for note in notes[:NOTE_RESULTS]:
-            self.notes_listbox.append(
-                NoteRow(note, self._open_note, self._delete_note)
-            )
+        # The scratchpad for wherever you are standing. Rebuilt only when the
+        # context changes: it holds a live text buffer, so replacing it on every
+        # poll would take the cursor out from under whatever is being typed.
         notes_shown = live.scratchpad and live.show_notes
-        if notes_shown and not searching:
-            # Not while searching: the row would start a note named after a
-            # query that was meant to find one.
-            self.notes_listbox.append(self.new_note_row)
+        self._sync_scratchpad(active.id if active else None, notes_shown)
         self.notes_label.set_visible(notes_shown)
-        self.notes_listbox.set_visible(notes_shown)
-        shown_notes = min(len(notes), NOTE_RESULTS)
-        self.notes_label.set_label(
-            f"Notes · {shown_notes} of {len(notes)}"
-            if len(notes) > shown_notes
-            else f"Notes · {len(notes)}"
-        )
+        self.scratchpad_box.set_visible(notes_shown)
 
         self.open_label.set_visible(bool(opened or loose))
         self.open_listbox.set_visible(bool(opened or loose))
@@ -834,11 +809,11 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.saved_expander.set_expanded(should_expand)
             self._suppress_toggle = False
 
-        # Notes count only when there are some. The section is on by default, so
-        # letting it alone stand for "there is something to show" meant the
-        # empty state — the only place that says how to make a first context —
-        # could never appear again.
-        if opened or loose or app_matches or (saved and live.show_saved) or notes:
+        # The scratchpad plays no part in this. It sits below the stack rather
+        # than inside it, so it is on screen either way — and letting it stand
+        # for "there is something to show" would have hidden the empty state,
+        # which is the only place that says how to make a first context.
+        if opened or loose or app_matches or (saved and live.show_saved):
             self.stack.set_visible_child_name("list")
             return
 
@@ -1185,49 +1160,55 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.editor_window.present()
         self.editor = self.editor_window.page
 
-    def _new_note(self) -> None:
-        """Start a note where the settings say a new one belongs.
+    def _sync_scratchpad(self, context_id: str | None, shown: bool) -> None:
+        """Put the right scratchpad in the sidebar, building it only when needed.
 
-        In the context you are standing in when per-context notes are on and
-        there is one, global otherwise — so the common case needs no choice, and
-        the editor can still move it either way.
+        The view owns a text buffer and an unsaved-changes timer, so rebuilding
+        it on the poll timer would drop the cursor and could lose the last word.
+        It is replaced only when the context it belongs to actually changes.
         """
-        live = settings.current()
-        active = self._active_context()
-        owner = (
-            active.id
-            if (live.scratchpad_per_context and active is not None)
-            else scratchpad.GLOBAL
-        )
-        self._open_note(self.notes.create(context_id=owner))
+        if not shown:
+            return
+        if (
+            self.scratchpad_view is not None
+            and self.scratchpad_view.context_id == context_id
+        ):
+            self.scratchpad_view.refresh()
+            return
 
-    def _open_note(self, note: Note) -> None:
+        if self.scratchpad_view is not None:
+            self.scratchpad_view.flush()
+            self.scratchpad_box.remove(self.scratchpad_view)
+
+        active = self._active_context()
+        self.scratchpad_view = ScratchpadView(
+            self.notes,
+            context_id=context_id,
+            context_title=active.title if active is not None else "",
+            on_expand=self._open_note,
+            compact=True,
+        )
+        self.scratchpad_box.append(self.scratchpad_view)
+
+    def _open_note(self, showing: str | None = None) -> None:
+        """The same scratchpad, with room. The only thing the button does."""
         from context.ui.note_window import NoteWindow
 
         active = self._active_context()
-        log.debug("opening note %s", note.id)
         self.note_window = NoteWindow(
             self.get_application(),
             self.notes,
-            note,
             on_done=self._on_note_done,
-            context_id=active.id if active is not None else scratchpad.GLOBAL,
+            context_id=active.id if active is not None else None,
             context_title=active.title if active is not None else "",
+            showing=showing,
         )
         self.note_window.present()
 
-    def _on_note_done(self, note: Note) -> None:
-        # An untitled note that was never written into is housekeeping, not a
-        # note: opening the editor and closing it again should leave nothing
-        # behind. Anything with a version or a title is kept.
-        if not note.title and not note.body:
-            self.notes.delete(note)
-        self.refresh()
+    def _on_note_done(self) -> None:
+        if self.scratchpad_view is not None:
+            self.scratchpad_view.refresh()
         self._hand_keyboard_back()
-
-    def _delete_note(self, note: Note) -> None:
-        self.notes.delete(note)
-        self.refresh()
 
     def _cancel_new(self, ctx: Context) -> None:
         # The context was created up front to give the editor something to edit,

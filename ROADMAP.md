@@ -494,32 +494,33 @@ than to a toast over its own list, which nobody sees while it is a rail. The
 drift prompt's "Save layout" is a notification button, so the machinery has to
 carry actions, not only text. A `notifications` setting turns them off.
 
-### 24. The scratchpad — *done*
+### 24. The scratchpad — *done, then cut back*
 
-Notes, in the sidebar and the overview, edited in an overlay. Kept as an
-append-only list of versions rather than a body with an undo stack: editing an
-old version appends a new one recording what it was written from, so nothing
-between it and the tip is lost. The history is a tree stored as a flat list.
+Somewhere to type, in the sidebar itself. One global scratchpad and one per
+context; no names, no list, nothing to create or delete, saved as you type. The
+button opens the same text full-screen, which is the only difference between the
+two views.
 
-The append-only rule is the part to hold on to. An ordinary undo stack would be
-a smaller implementation and would quietly truncate the future the first time
-someone edited from history, which is exactly the thing a scratchpad must not
-do. `test_editing_from_history_keeps_the_versions_after_it` pins it.
+It shipped larger than this and was cut back the same day: named notes, a list
+to pick from, and an append-only version history where editing an old version
+appended rather than truncating. The history worked and was pinned by tests, and
+none of it earned its place — a scratchpad is competing with the back of an
+envelope, and anything you have to open, name or file has already lost. Removed
+outright rather than hidden behind a setting, and the old file format is not
+read: a hard cutover.
 
-Formatting is line markers in the text (`- `, `- [ ] `, `- [x] `, two spaces per
-nesting level) rather than a rich-text model, so the file stays readable and the
-checklist view is a rendering rather than a second document.
+What survived is the part that was never about scale: the line markers. Plain
+text with `- `, `- [ ] ` and two spaces per level, so the file stays readable
+and the checklist view is a rendering rather than a second document.
 
-Notes belong to a context or to none, with a switch for each — `visible()` is
-the one place both are read, so the sidebar and the overview cannot disagree.
+What the cut revealed: the scratchpad had been living inside the sidebar's
+list/empty stack, so it vanished exactly when there were no contexts — which is
+when somewhere to jot something is worth most. It sits below the stack now and
+is not part of what decides between the two.
 
-What this revealed: a new always-on sidebar section suppressed the empty state,
-which is the only place that says how to make a first context. Sections have to
-count as content only when they *have* content.
-
-Left for later: no search across note bodies from the launcher's main search
-box (the notes list has its own filtering), no export, and the history has no
-pruning — a note edited daily for a year is a large JSON object.
+Left for later: nothing prunes a context's scratchpad when the context is
+forgotten (`NoteStore.forget` exists and nothing calls it), and there is no
+search across scratchpads.
 
 ### 25. Packaged, with modules that merge — *done*
 

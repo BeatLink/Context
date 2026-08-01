@@ -243,16 +243,23 @@ If Context is restarted while contexts are open, it reconnects to them.
 
 ## The scratchpad
 
-Notes, listed under the contexts in the sidebar and in the overview. A note
-opens as an overlay with room to write in.
+Somewhere to type, in the sidebar itself. Not a list of notes to open first —
+click into it and write.
 
-A note belongs to a context or to none. Global notes are listed wherever you
-are; a context's own notes are listed while you are in it, tagged so the two are
-told apart in one list. **Belongs to** in the editor moves a note between them,
-and each kind can be switched off on its own in the settings.
+There is **one global scratchpad** and **one for each context**, and that is
+all of them. They have no names and there is nothing to create or delete, so
+where something went is answered by where you were when you wrote it. In a
+context you get that context's; with both switched on, a switch above the box
+moves between them.
 
-**Formatting** is plain text with markers, so a note is readable and editable as
-a file:
+It saves as you type. There is no save button and nothing to confirm.
+
+The button beside it opens the same scratchpad full-screen, which is the only
+difference between the two — more room, plus the checklist view and the buttons
+that change what a line is.
+
+**Formatting** is plain text with markers, so a scratchpad is readable and
+editable as a file:
 
 | Typed | Is |
 | --- | --- |
@@ -263,18 +270,8 @@ a file:
 
 <kbd>Enter</kbd> on a list item starts the next one with the same marker, and
 again on an empty item ends the list. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> ticks the
-checkbox on the current line. The **Checklist** view draws the same note as
-widgets, where a box is something you click; **Write** is the text itself. A row
-in the list shows how many boxes are ticked.
-
-**History.** Every edit is kept. The list beside the note is every version it
-has ever had, newest first, and selecting one shows it.
-
-Editing an old version does not throw away the newer ones. It appends: writing
-from version 2 while version 5 exists gives you version 6, and 3, 4 and 5 are
-still on the list. Nothing you do in a note can remove anything from its
-history, which is what makes reading through it safe. **Restore this version**
-is the same append, done without editing.
+checkbox on the current line. In the full view, **Checklist** draws the same
+text as widgets where a box is something you click.
 
 ## Settings
 
@@ -302,10 +299,10 @@ need a restart say so.
 | Overview button | Show the Overview button at the top of the sidebar |
 | Saved contexts | Show the saved group beneath the open one |
 | Apps | Show matching applications under the search results |
-| Notes | List notes, and let them be written |
-| Global notes | List notes that stand outside any context |
-| Context notes | List the current context's own notes |
-| Notes in the sidebar | Show the Notes section in the narrow list |
+| Scratchpad | Somewhere to type in the sidebar and the overview |
+| Global scratchpad | The one that is there wherever you are |
+| Context scratchpads | One for each context, shown while you are in it |
+| Scratchpad in the sidebar | Show it in the narrow list |
 | Log level | How much detail is written to the log |
 
 Settings that do nothing in the current collapse mode are not shown: the
@@ -452,7 +449,7 @@ as a translucent strip along an edge.
 | Path | Contents |
 | --- | --- |
 | `$XDG_DATA_HOME/context/contexts.json` | Context definitions |
-| `$XDG_DATA_HOME/context/scratchpad.json` | Notes, and every version of them |
+| `$XDG_DATA_HOME/context/scratchpad.json` | The scratchpads |
 | `$XDG_DATA_HOME/context/firefox-profiles/` | Per-context browser profiles |
 | `$XDG_STATE_HOME/context/context.log` | Log, rotated |
 | `$XDG_STATE_HOME/context/ui.json` | Whether the sidebar is collapsed |

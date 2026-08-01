@@ -1,8 +1,8 @@
-"""A note as its own overlay, the shape the editor uses.
+"""The scratchpad as its own overlay, the shape the editor uses.
 
-The sidebar lists notes; writing one needs room the sidebar does not have, so it
-opens the same way editing a context does — a layer-shell surface over the whole
-output, above the bars and outside the tiling.
+The sidebar holds a scratchpad you can type into directly; this is the same one
+with room. A layer-shell surface over the whole output, above the bars and
+outside the tiling, the way editing a context opens.
 """
 
 from __future__ import annotations
@@ -13,8 +13,7 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gtk
 
-from context.state import scratchpad
-from context.state.scratchpad import Note, NoteStore
+from context.state.scratchpad import NoteStore
 from context.ui import sidebar, theme, widgets
 from context.ui.note_editor import NoteEditorPage
 
@@ -24,17 +23,17 @@ class NoteWindow(Gtk.Window):
         self,
         app: Gtk.Application,
         store: NoteStore,
-        note: Note,
         on_done=None,
-        context_id: str = scratchpad.GLOBAL,
+        context_id: str | None = None,
         context_title: str = "",
+        showing: str | None = None,
     ) -> None:
-        super().__init__(application=app, title=note.title or "Note")
+        super().__init__(application=app, title="Scratchpad")
         self.add_css_class("ctx-window")
         self.on_done = on_done
 
         theme.install()
-        self.set_default_size(1100, 780)
+        self.set_default_size(1000, 720)
         self.set_modal(False)
         if not sidebar.apply_overlay(self):
             self.fullscreen()
@@ -45,11 +44,10 @@ class NoteWindow(Gtk.Window):
         self.nav.set_overflow(Gtk.Overflow.HIDDEN)
         self.page = NoteEditorPage(
             store,
-            note,
-            on_done=lambda n: self._finish(n),
-            on_delete=lambda n: self._finish(n),
+            on_done=self._finish,
             context_id=context_id,
             context_title=context_title,
+            showing=showing,
         )
         self.nav.add(self.page)
         self.set_child(self.nav)
@@ -65,12 +63,11 @@ class NoteWindow(Gtk.Window):
 
     def _on_escape(self) -> bool:
         # Escape saves rather than discarding. A scratchpad that loses what was
-        # typed because the wrong key ended it is not a scratchpad, and there is
-        # nothing to discard *to* — every version is kept anyway.
+        # typed because the wrong key ended it is not a scratchpad.
         self.page._finish()
         return True
 
-    def _finish(self, note: Note) -> None:
+    def _finish(self) -> None:
         self.close()
         if self.on_done is not None:
-            self.on_done(note)
+            self.on_done()

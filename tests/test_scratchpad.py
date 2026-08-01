@@ -1,8 +1,7 @@
-"""The scratchpad: the append-only history, the formatting, and both views.
+"""The scratchpad: one note for the desk, one per context, saved as you type.
 
-The history tests are the ones that matter. "Editing an old version does not
-truncate the newer ones" is the whole design, and it is exactly the behaviour a
-future refactor towards an ordinary undo stack would quietly break.
+There is nothing to create, nothing to name and nothing to choose between, so
+most of what is worth pinning is the formatting and the saving.
 """
 
 from __future__ import annotations
@@ -17,90 +16,141 @@ from context.state import scratchpad
 from context.state.scratchpad import GLOBAL, Note, NoteStore
 
 
-# -- history -----------------------------------------------------------------
+# -- one note per place ------------------------------------------------------
 
 
-def test_every_edit_appends_rather_than_replacing():
-    note = Note(title="Shopping")
-    note.revise("one")
-    note.revise("two")
-    note.revise("three")
+def test_a_context_and_the_desk_have_separate_scratchpads(tmp_path):
+    store = NoteStore(path=tmp_path / "s.json")
+    store.set_body(GLOBAL, "everywhere")
+    store.set_body("ctx-1", "just here")
 
-    assert [v.number for v in note.versions] == [1, 2, 3]
-    assert [v.body for v in note.versions] == ["one", "two", "three"]
-    assert note.body == "three"
+    assert store.body(GLOBAL) == "everywhere"
+    assert store.body("ctx-1") == "just here"
 
 
-def test_editing_from_history_keeps_the_versions_after_it():
-    """The design in one test: writing from v1 while v3 exists appends v4 and
-    leaves v2 and v3 exactly where they were."""
-    note = Note()
-    note.revise("one")
-    note.revise("two")
-    note.revise("three")
-
-    note.revise("one and a half", base=1)
-
-    assert [v.number for v in note.versions] == [1, 2, 3, 4]
-    assert note.version(2).body == "two"
-    assert note.version(3).body == "three"
-    assert note.version(4).base == 1
-    assert note.body == "one and a half"
+def test_a_context_never_typed_in_still_has_a_scratchpad(tmp_path):
+    """Nothing is created, so there is no state where a context has no note."""
+    store = NoteStore(path=tmp_path / "s.json")
+    note = store.get("brand-new")
+    assert isinstance(note, Note)
+    assert note.body == ""
+    assert note.is_empty
 
 
-def test_the_tip_is_always_the_newest_version_written():
-    note = Note()
-    note.revise("one")
-    note.revise("two")
-    note.revise("from the first", base=1)
-    assert note.current.number == 3
-    assert note.body == "from the first"
+def test_the_global_note_is_the_one_with_no_context(tmp_path):
+    store = NoteStore(path=tmp_path / "s.json")
+    assert store.get(GLOBAL).is_global
+    assert not store.get("ctx-1").is_global
 
 
-def test_restoring_appends_rather_than_rewinding():
-    note = Note()
-    note.revise("one")
-    note.revise("two")
-    restored = note.restore(1)
-
-    assert restored.number == 3
-    assert restored.base == 1
-    assert note.body == "one"
-    # The version it was restored over is still readable.
-    assert note.version(2).body == "two"
+def test_forgetting_a_context_drops_its_scratchpad(tmp_path):
+    path = tmp_path / "s.json"
+    store = NoteStore(path=path)
+    store.set_body("ctx-1", "notes about a thing")
+    store.forget("ctx-1")
+    assert NoteStore(path=path).body("ctx-1") == ""
 
 
-def test_restoring_a_version_that_is_not_there_does_nothing():
-    note = Note()
-    note.revise("one")
-    assert note.restore(9) is None
-    assert len(note.versions) == 1
+# -- saving ------------------------------------------------------------------
 
 
-def test_writing_what_the_tip_already_says_appends_nothing():
-    """Otherwise every focus-out adds a version identical to the one before it
-    and the history is mostly noise."""
-    note = Note()
-    note.revise("one")
-    again = note.revise("one")
-
-    assert len(note.versions) == 1
-    assert again.number == 1
+def test_writing_a_body_persists_it(tmp_path):
+    path = tmp_path / "s.json"
+    NoteStore(path=path).set_body("ctx-1", "- [ ] milk")
+    assert NoteStore(path=path).body("ctx-1") == "- [ ] milk"
 
 
-def test_a_base_that_does_not_exist_falls_back_to_the_root():
-    note = Note()
-    note.revise("one")
-    version = note.revise("two", base=99)
-    assert version.base == 0
+def test_writing_the_same_text_again_does_not_touch_the_note(tmp_path):
+    """The autosave timer can fire on an unchanged buffer, and rewriting the
+    file every time it does is how a scratchpad churns the disk."""
+    store = NoteStore(path=tmp_path / "s.json")
+    note = store.set_body("ctx-1", "same")
+    when = note.updated_at
+    again = store.set_body("ctx-1", "same")
+    assert again.updated_at == when
 
 
-def test_children_of_a_version_are_every_edit_made_from_it():
-    note = Note()
-    note.revise("one")
-    note.revise("two")
-    note.revise("also from one", base=1)
-    assert [v.number for v in note.children_of(1)] == [2, 3]
+def test_an_empty_scratchpad_is_not_written_to_the_file(tmp_path):
+    path = tmp_path / "s.json"
+    store = NoteStore(path=path)
+    store.set_body("ctx-1", "something")
+    store.set_body("ctx-2", "")
+    stored = json.loads(path.read_text())
+    assert set(stored["notes"]) == {"ctx-1"}
+
+
+def test_clearing_empties_the_note(tmp_path):
+    path = tmp_path / "s.json"
+    store = NoteStore(path=path)
+    store.set_body("ctx-1", "gone in a moment")
+    store.clear("ctx-1")
+    assert NoteStore(path=path).body("ctx-1") == ""
+
+
+def test_an_unreadable_file_does_not_stop_the_store_loading(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text("{ not json")
+    assert NoteStore(path=path).notes == {}
+
+
+def test_a_file_of_the_wrong_shape_is_ignored(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps({"notes": "not an object"}))
+    assert NoteStore(path=path).notes == {}
+
+
+def test_the_versioned_format_is_not_read(tmp_path):
+    """A hard cutover: the shape with titles and histories is left behind
+    rather than guessed at."""
+    path = tmp_path / "s.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "notes": [
+                    {
+                        "id": "x",
+                        "title": "Test",
+                        "context_id": "ctx-1",
+                        "versions": [{"number": 1, "body": "old"}],
+                    }
+                ],
+            }
+        )
+    )
+    assert NoteStore(path=path).notes == {}
+
+
+# -- which scratchpads exist --------------------------------------------------
+
+
+def test_the_context_scratchpad_is_offered_first(tmp_path, monkeypatch):
+    """Where you are is what you meant, so it is what a view shows by default."""
+    from context.state import settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    store = NoteStore(path=tmp_path / "s.json")
+
+    assert store.available("ctx-1") == ["ctx-1", GLOBAL]
+    assert store.available(None) == [GLOBAL]
+
+
+def test_the_settings_decide_which_scratchpads_exist(tmp_path, monkeypatch):
+    from context.state import settings
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "_current", None)
+    store = NoteStore(path=tmp_path / "s.json")
+
+    settings.update(scratchpad_global=False)
+    assert store.available("ctx-1") == ["ctx-1"]
+
+    settings.update(scratchpad_global=True, scratchpad_per_context=False)
+    assert store.available("ctx-1") == [GLOBAL]
+
+    settings.update(scratchpad=False)
+    assert store.available("ctx-1") == []
 
 
 # -- formatting --------------------------------------------------------------
@@ -125,13 +175,15 @@ def test_lines_parse_to_what_they_look_like(line, kind, text):
 
 
 def test_a_dash_without_a_space_stays_prose():
-    """A sentence beginning with a dash is not a list item."""
     assert scratchpad.parse("-5 degrees")[0].kind == scratchpad.TEXT
 
 
 def test_nesting_is_read_from_the_indent():
-    body = "- top\n  - under\n    - deeper"
-    assert [line.indent for line in scratchpad.parse(body)] == [0, 1, 2]
+    assert [l.indent for l in scratchpad.parse("- top\n  - under\n    - deeper")] == [
+        0,
+        1,
+        2,
+    ]
 
 
 def test_rendering_a_parsed_body_gives_it_back():
@@ -148,14 +200,12 @@ def test_toggling_flips_one_checkbox_and_leaves_the_rest():
 def test_toggling_something_that_is_not_a_checkbox_changes_nothing():
     body = "- milk\nplain"
     assert scratchpad.toggle(body, 0) == body
-    assert scratchpad.toggle(body, 1) == body
     assert scratchpad.toggle(body, 99) == body
 
 
 def test_changing_a_line_kind_keeps_its_words():
-    body = "- milk"
-    assert scratchpad.set_kind(body, 0, scratchpad.UNCHECKED) == "- [ ] milk"
-    assert scratchpad.set_kind(body, 0, scratchpad.TEXT) == "milk"
+    assert scratchpad.set_kind("- milk", 0, scratchpad.UNCHECKED) == "- [ ] milk"
+    assert scratchpad.set_kind("- milk", 0, scratchpad.TEXT) == "milk"
 
 
 def test_a_list_item_carries_its_marker_to_the_next_line():
@@ -165,7 +215,6 @@ def test_a_list_item_carries_its_marker_to_the_next_line():
 
 
 def test_an_empty_item_ends_the_list():
-    """A second Enter should stop the list rather than continue it forever."""
     assert scratchpad.continuation("- ") == ""
     assert scratchpad.continuation("- [ ] ") == ""
     assert scratchpad.continuation("prose") == ""
@@ -181,169 +230,138 @@ def test_the_summary_is_the_first_line_with_anything_on_it():
     assert scratchpad.summary("") == ""
 
 
-def test_a_long_summary_is_cut_rather_than_wrapped():
-    assert len(scratchpad.summary("x" * 200, limit=20)) == 20
-
-
-# -- the store ---------------------------------------------------------------
-
-
-def test_notes_survive_a_round_trip_through_the_file(tmp_path):
-    path = tmp_path / "scratchpad.json"
-    store = NoteStore(path=path)
-    note = store.create(title="Shopping", body="- [ ] milk")
-    store.revise(note, "- [x] milk")
-    store.revise(note, "- [ ] milk\n- [ ] eggs", base=1)
-
-    reloaded = NoteStore(path=path)
-    found = reloaded.get(note.id)
-    assert found is not None
-    assert [v.number for v in found.versions] == [1, 2, 3]
-    assert found.version(3).base == 1
-    assert found.body == "- [ ] milk\n- [ ] eggs"
-
-
-def test_an_unreadable_file_does_not_stop_the_store_loading(tmp_path):
-    path = tmp_path / "scratchpad.json"
-    path.write_text("{ not json")
-    assert NoteStore(path=path).notes == []
-
-
-def test_a_file_of_the_wrong_shape_is_ignored(tmp_path):
-    path = tmp_path / "scratchpad.json"
-    path.write_text(json.dumps({"notes": "not a list"}))
-    assert NoteStore(path=path).notes == []
-
-
-def test_a_version_without_a_number_is_dropped_rather_than_guessed(tmp_path):
-    path = tmp_path / "scratchpad.json"
-    path.write_text(
-        json.dumps(
-            {
-                "notes": [
-                    {
-                        "id": "n1",
-                        "title": "t",
-                        "versions": [{"body": "no number"}, {"number": 2, "body": "ok"}],
-                    }
-                ]
-            }
-        )
-    )
-    note = NoteStore(path=path).get("n1")
-    assert [v.number for v in note.versions] == [2]
-
-
-def test_notes_belong_to_a_context_or_to_none(tmp_path):
-    store = NoteStore(path=tmp_path / "s.json")
-    mine = store.create(title="mine", context_id="ctx-1")
-    everyones = store.create(title="everyones")
-
-    assert store.notes_for("ctx-1") == [mine]
-    assert store.globals() == [everyones]
-    assert everyones.is_global and not mine.is_global
-
-
-def test_the_two_settings_decide_which_notes_are_listed(tmp_path, monkeypatch):
-    from context.state import settings
-
-    store = NoteStore(path=tmp_path / "s.json")
-    store.create(title="global one")
-    store.create(title="context one", context_id="ctx-1")
-
-    settings.update(scratchpad=True, scratchpad_global=True, scratchpad_per_context=True)
-    assert {n.title for n in store.visible("ctx-1")} == {"global one", "context one"}
-
-    settings.update(scratchpad_global=False)
-    assert {n.title for n in store.visible("ctx-1")} == {"context one"}
-
-    settings.update(scratchpad_global=True, scratchpad_per_context=False)
-    assert {n.title for n in store.visible("ctx-1")} == {"global one"}
-
-    settings.update(scratchpad=False)
-    assert store.visible("ctx-1") == []
-
-
-def test_searching_looks_at_the_body_as_well_as_the_title(tmp_path):
-    store = NoteStore(path=tmp_path / "s.json")
-    store.create(title="Shopping", body="- [ ] rutabaga")
-    store.create(title="Ideas", body="- something else")
-
-    assert [n.title for n in store.search("rutabaga")] == ["Shopping"]
-    assert [n.title for n in store.search("shop")] == ["Shopping"]
-    assert len(store.search("")) == 2
-
-
-def test_deleting_removes_the_note_from_the_file(tmp_path):
-    path = tmp_path / "s.json"
-    store = NoteStore(path=path)
-    note = store.create(title="gone")
-    store.delete(note)
-    assert NoteStore(path=path).notes == []
-
-
-# -- the views ---------------------------------------------------------------
+# -- the widget --------------------------------------------------------------
 
 
 @needs_display
-def test_the_sidebar_lists_notes_and_the_overview_lists_the_same_ones(gtk_app):
-    """Two views of one thing: a note has to appear in both, or they drift the
-    way the context list already did once."""
-    from context.state.store import ContextStore
-    from context.ui.rows import NoteRow
-    from context.ui.window import LauncherWindow
+def test_typing_into_the_sidebar_saves_without_being_asked(gtk_app, isolated_store):
+    """The whole point of it being in the sidebar."""
+    from context.ui.scratchpad import ScratchpadView
 
     seen = {}
 
     def body(app):
-        notes = NoteStore()
-        notes.create(title="Shopping", body="- [ ] milk")
-        store = ContextStore()
-
-        window = LauncherWindow(app, store, lambda c: None, lambda c: None, notes=notes)
-        window.refresh()
-        seen["sidebar"] = [
-            row.note.title
-            for row in _rows(window.notes_listbox)
-            if isinstance(row, NoteRow)
-        ]
-
-        from context.ui.overview import OverviewWindow
-
-        overview = OverviewWindow(app, store, notes=notes)
-        seen["overview"] = [
-            row.note.title
-            for row in _rows(overview.notes_list)
-            if isinstance(row, NoteRow)
-        ]
-        overview.close()
+        store = NoteStore()
+        view = ScratchpadView(store, context_id="ctx-1")
+        view.buffer.set_text("- [ ] milk")
+        # The timer would fire on its own; flushing is what leaving does.
+        view.flush()
+        seen["stored"] = store.body("ctx-1")
         app.quit()
 
     run_app(gtk_app, body)
-    assert seen["sidebar"] == ["Shopping"]
-    assert seen["overview"] == ["Shopping"]
+    assert seen["stored"] == "- [ ] milk"
 
 
 @needs_display
-def test_the_sidebar_hides_notes_when_the_scratchpad_is_off(gtk_app):
-    from context.state import settings
+def test_the_sidebar_scratchpad_opens_on_the_context_you_are_in(
+    gtk_app, isolated_store
+):
+    from context.ui.scratchpad import ScratchpadView
+
+    seen = {}
+
+    def body(app):
+        store = NoteStore()
+        store.set_body(GLOBAL, "desk")
+        store.set_body("ctx-1", "this job")
+        view = ScratchpadView(store, context_id="ctx-1")
+        seen["showing"] = view.showing
+        seen["text"] = view.body
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["showing"] == "ctx-1"
+    assert seen["text"] == "this job"
+
+
+@needs_display
+def test_switching_to_the_global_pad_saves_the_one_being_left(
+    gtk_app, isolated_store
+):
+    """Switching is the one move that could quietly lose what was just typed."""
+    from context.ui.scratchpad import ScratchpadView
+
+    seen = {}
+
+    def body(app):
+        store = NoteStore()
+        view = ScratchpadView(store, context_id="ctx-1")
+        view.buffer.set_text("typed but not saved")
+        view._on_choice(1)
+        seen["left_behind"] = store.body("ctx-1")
+        seen["now_showing"] = view.showing
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["left_behind"] == "typed but not saved"
+    assert seen["now_showing"] == GLOBAL
+
+
+@needs_display
+def test_a_refresh_does_not_eat_what_is_being_typed(gtk_app, isolated_store):
+    """The sidebar refreshes on a poll timer. Reloading the buffer under the
+    cursor would take the word in progress with it."""
+    from context.ui.scratchpad import ScratchpadView
+
+    seen = {}
+
+    def body(app):
+        store = NoteStore()
+        store.set_body("ctx-1", "saved text")
+        view = ScratchpadView(store, context_id="ctx-1")
+        view.buffer.set_text("half a thoug")
+        # A save is pending, which is what "being typed" looks like.
+        view.refresh()
+        seen["text"] = view.body
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["text"] == "half a thoug"
+
+
+@needs_display
+def test_the_sidebar_shows_the_scratchpad_rather_than_a_list(gtk_app, isolated_store):
     from context.state.store import ContextStore
+    from context.ui.scratchpad import ScratchpadView
     from context.ui.window import LauncherWindow
 
     seen = {}
 
     def body(app):
         notes = NoteStore()
-        notes.create(title="Shopping")
         window = LauncherWindow(
             app, ContextStore(), lambda c: None, lambda c: None, notes=notes
         )
         window.refresh()
-        seen["on"] = window.notes_listbox.get_visible()
+        seen["is_a_pad"] = isinstance(window.scratchpad_view, ScratchpadView)
+        seen["visible"] = window.scratchpad_box.get_visible()
+        app.quit()
 
+    run_app(gtk_app, body)
+    assert seen["is_a_pad"] is True
+    assert seen["visible"] is True
+
+
+@needs_display
+def test_the_sidebar_hides_the_scratchpad_when_it_is_switched_off(
+    gtk_app, isolated_store
+):
+    from context.state import settings
+    from context.state.store import ContextStore
+    from context.ui.window import LauncherWindow
+
+    seen = {}
+
+    def body(app):
+        window = LauncherWindow(
+            app, ContextStore(), lambda c: None, lambda c: None, notes=NoteStore()
+        )
+        window.refresh()
+        seen["on"] = window.scratchpad_box.get_visible()
         settings.update(scratchpad=False)
         window.refresh()
-        seen["off"] = window.notes_listbox.get_visible()
+        seen["off"] = window.scratchpad_box.get_visible()
         app.quit()
 
     run_app(gtk_app, body)
@@ -352,40 +370,7 @@ def test_the_sidebar_hides_notes_when_the_scratchpad_is_off(gtk_app):
 
 
 @needs_display
-def test_editing_an_old_version_in_the_editor_appends_a_new_one(gtk_app):
-    """The store's guarantee, reached through the widgets that use it."""
-    from context.ui.note_editor import NoteEditorPage
-
-    seen = {}
-
-    def body(app):
-        notes = NoteStore()
-        note = notes.create(title="Shopping", body="one")
-        notes.revise(note, "two")
-        notes.revise(note, "three")
-
-        page = NoteEditorPage(notes, note, on_done=lambda n: None)
-        page._show_version(1)
-        seen["showing"] = page.body
-        page.buffer.set_text("one, edited")
-        page._commit()
-
-        seen["numbers"] = [v.number for v in note.versions]
-        seen["bases"] = [v.base for v in note.versions]
-        seen["survived"] = [note.version(2).body, note.version(3).body]
-        seen["tip"] = note.body
-        app.quit()
-
-    run_app(gtk_app, body)
-    assert seen["showing"] == "one"
-    assert seen["numbers"] == [1, 2, 3, 4]
-    assert seen["bases"][-1] == 1
-    assert seen["survived"] == ["two", "three"]
-    assert seen["tip"] == "one, edited"
-
-
-@needs_display
-def test_ticking_a_box_in_the_checklist_rewrites_the_body(gtk_app):
+def test_ticking_a_box_in_the_editor_rewrites_the_body(gtk_app, isolated_store):
     from gi.repository import Gtk
 
     from context.ui.note_editor import NoteEditorPage
@@ -393,15 +378,21 @@ def test_ticking_a_box_in_the_checklist_rewrites_the_body(gtk_app):
     seen = {}
 
     def body(app):
-        notes = NoteStore()
-        note = notes.create(title="Shopping", body="- [ ] milk\n- [ ] bread")
-        page = NoteEditorPage(notes, note, on_done=lambda n: None)
+        store = NoteStore()
+        store.set_body(GLOBAL, "- [ ] milk\n- [ ] bread")
+        page = NoteEditorPage(store, on_done=lambda: None)
         page._rebuild_checklist()
 
-        boxes = [w for w in _children(page.checklist) if isinstance(w, Gtk.CheckButton)]
+        rendered = page.checklist_box.get_first_child()
+        boxes = []
+        child = rendered.get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.CheckButton):
+                boxes.append(child)
+            child = child.get_next_sibling()
         seen["count"] = len(boxes)
         boxes[0].set_active(True)
-        seen["body"] = page.body
+        seen["body"] = page.pad.body
         app.quit()
 
     run_app(gtk_app, body)
@@ -410,40 +401,22 @@ def test_ticking_a_box_in_the_checklist_rewrites_the_body(gtk_app):
 
 
 @needs_display
-def test_the_editor_says_which_version_is_on_screen(gtk_app):
-    """Editing from history is safe but surprising, so the page has to say it is
-    happening rather than let it look like a rewind."""
+def test_the_editor_writes_what_the_sidebar_reads(gtk_app, isolated_store):
+    """One note, two views of it — there is no copy that can be behind."""
     from context.ui.note_editor import NoteEditorPage
+    from context.ui.scratchpad import ScratchpadView
 
     seen = {}
 
     def body(app):
-        notes = NoteStore()
-        note = notes.create(title="n", body="one")
-        notes.revise(note, "two")
-        notes.revise(note, "three")
+        store = NoteStore()
+        page = NoteEditorPage(store, on_done=lambda: None)
+        page.pad.buffer.set_text("written in the editor")
+        page._finish()
 
-        page = NoteEditorPage(notes, note, on_done=lambda n: None)
-        seen["at_tip"] = page.status.get_label()
-        page._show_version(1)
-        seen["in_history"] = page.status.get_label()
-        seen["restore_offered"] = page.restore_button.get_visible()
+        pad = ScratchpadView(store, context_id=None)
+        seen["sidebar"] = pad.body
         app.quit()
 
     run_app(gtk_app, body)
-    assert "current" in seen["at_tip"]
-    assert "version 1" in seen["in_history"].casefold()
-    assert seen["restore_offered"] is True
-
-
-def _children(box):
-    found = []
-    child = box.get_first_child()
-    while child is not None:
-        found.append(child)
-        child = child.get_next_sibling()
-    return found
-
-
-def _rows(listbox):
-    return _children(listbox)
+    assert seen["sidebar"] == "written in the editor"

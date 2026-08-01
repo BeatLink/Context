@@ -432,14 +432,13 @@ class SettingsPage(widgets.NavigationPage):
         live = settings.current()
         group = widgets.Group(
             title="Scratchpad",
-            description="Notes, kept as every version they have ever had. "
-            "Editing an old version adds a new one; nothing is overwritten and "
-            "nothing is thrown away.",
+            description="Somewhere to type. One scratchpad that is always "
+            "there, and one for each context, saved as you write.",
         )
         self.scratchpad_row = _row_switch(
-            "Notes",
-            "List notes in the sidebar and the overview, and let them be "
-            "written. Switching this off leaves what is written on disk.",
+            "Scratchpad",
+            "Somewhere to type in the sidebar and the overview. Switching this "
+            "off leaves what is written on disk.",
             live.scratchpad,
             lambda value: self._apply(scratchpad=value, resync=True),
         )
@@ -448,19 +447,19 @@ class SettingsPage(widgets.NavigationPage):
         self.scratchpad_rows = []
         for title, subtitle, field in (
             (
-                "Global notes",
-                "Notes that stand outside any context, listed wherever you are.",
+                "Global scratchpad",
+                "One scratchpad that is there wherever you are.",
                 "scratchpad_global",
             ),
             (
-                "Context notes",
-                "Notes owned by a context, listed only while you are in it. A "
-                "note can be moved between the two in its editor.",
+                "Context scratchpads",
+                "One for each context, shown while you are in it. With both on, "
+                "a switch above the scratchpad moves between them.",
                 "scratchpad_per_context",
             ),
             (
                 "In the sidebar",
-                "The Notes section in the narrow list. The overview shows notes "
+                "The scratchpad in the narrow list. The overview shows it "
                 "either way.",
                 "show_notes",
             ),

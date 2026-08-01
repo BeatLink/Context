@@ -19,13 +19,14 @@ from gi.repository import Gtk
 
 from context.system import backends
 from context.ui import sidebar, theme, widgets
-from context.state import scratchpad, settings, uistate
-from context.state.scratchpad import Note, NoteStore
+from context.state import settings, uistate
+from context.state.scratchpad import NoteStore
+from context.ui.scratchpad import ScratchpadView
 from context.system.apps import MAIN_CATEGORIES, SORTS, App, arrange_apps, categories_of
 from context.system.apps import in_category, installed_apps, search_apps
 from context.system.launcher import is_no_context, loose_context, read_live_state
 from context.system.logging_setup import get_logger
-from context.ui.rows import ContextRow, NoteRow, app_tile, context_for_app
+from context.ui.rows import ContextRow, app_tile, context_for_app
 
 log = get_logger("overview")
 
@@ -136,22 +137,14 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.saved_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.saved_list.add_css_class("boxed-list")
 
-        # Notes, under the contexts they sit beside in the sidebar. The overview
-        # lists all of them rather than the sidebar's first few — the room is
-        # the whole difference between the two views.
-        self.notes_label = Gtk.Label(label="Notes", xalign=0.0)
+        # The scratchpad, under the contexts it sits beside in the sidebar —
+        # the same widget, given the room that is the whole difference between
+        # the two views.
+        self.notes_label = Gtk.Label(label="Scratchpad", xalign=0.0)
         self.notes_label.add_css_class("heading")
         self.notes_label.add_css_class("dim-label")
-        self.notes_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        self.notes_list.add_css_class("boxed-list")
-
-        self.new_note_row = widgets.ActionRow(title="New note")
-        self.new_note_row.set_activatable(True)
-        self.new_note_row.add_prefix(
-            Gtk.Image.new_from_icon_name("document-new-symbolic")
-        )
-        self.new_note_row.set_subtitle("A blank note, in the scratchpad")
-        self.new_note_row.connect("activated", lambda _r: self._new_note())
+        self.scratchpad_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.scratchpad_view = None
 
         groups = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         groups.append(self.open_label)
@@ -159,7 +152,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
         groups.append(self.saved_label)
         groups.append(self.saved_list)
         groups.append(self.notes_label)
-        groups.append(self.notes_list)
+        groups.append(self.scratchpad_box)
 
         left_scroller = Gtk.ScrolledWindow(vexpand=True)
         left_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -262,19 +255,10 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self.saved_list.append(self._context_row(ctx, is_open=False))
 
         live_settings = settings.current()
-        notes = (
-            self.notes.search(query, self._active_id)
-            if live_settings.scratchpad
-            else []
-        )
-        self.notes_list.remove_all()
-        for note in notes:
-            self.notes_list.append(NoteRow(note, self._open_note, self._delete_note))
-        if live_settings.scratchpad and not query:
-            self.notes_list.append(self.new_note_row)
-        self.notes_label.set_visible(live_settings.scratchpad)
-        self.notes_list.set_visible(live_settings.scratchpad)
-        self.notes_label.set_label(f"Notes · {len(notes)}")
+        shown = live_settings.scratchpad
+        self._sync_scratchpad(self._active_id, shown)
+        self.notes_label.set_visible(shown)
+        self.scratchpad_box.set_visible(shown)
 
         self.open_label.set_visible(bool(opened or loose))
         self.open_list.set_visible(bool(opened or loose))
@@ -474,27 +458,34 @@ class OverviewWindow(Gtk.ApplicationWindow):
         self.close()
         return True
 
-    def _new_note(self) -> None:
-        live = settings.current()
-        owner = (
-            self._active_id
-            if (live.scratchpad_per_context and self._active_id)
-            else scratchpad.GLOBAL
+    def _sync_scratchpad(self, context_id, shown: bool) -> None:
+        if not shown:
+            return
+        if (
+            self.scratchpad_view is not None
+            and self.scratchpad_view.context_id == context_id
+        ):
+            self.scratchpad_view.refresh()
+            return
+        if self.scratchpad_view is not None:
+            self.scratchpad_view.flush()
+            self.scratchpad_box.remove(self.scratchpad_view)
+        active = next((c for c in self.store.contexts if c.id == context_id), None)
+        self.scratchpad_view = ScratchpadView(
+            self.notes,
+            context_id=context_id,
+            context_title=active.title if active is not None else "",
+            on_expand=self._open_note,
+            compact=True,
         )
-        self._open_note(self.notes.create(context_id=owner))
+        self.scratchpad_box.append(self.scratchpad_view)
 
-    def _open_note(self, note: Note) -> None:
+    def _open_note(self, showing=None) -> None:
         # Handed to the launcher rather than opened here, the same way editing a
-        # context is: the note editor is an overlay and so is this.
+        # context is: the scratchpad editor is an overlay and so is this.
         self._dismiss()
         if self.on_note is not None:
-            self.on_note(note)
-
-    def _delete_note(self, note: Note) -> None:
-        # Housekeeping done while you carry on looking, so the overview stays
-        # up and refreshes — the same exception closing a context makes.
-        self.notes.delete(note)
-        self.refresh()
+            self.on_note(showing)
 
     # Set by the application; opening goes through the launcher so a context
     # is launched rather than merely focused when its windows are gone.

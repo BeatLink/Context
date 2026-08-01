@@ -1,26 +1,21 @@
-"""Notes, and every version they have ever had.
+"""One note for the desk, and one for each context.
 
-A note is not a body of text with an undo stack — it is an append-only list of
-versions, and the body you see is the last one. Nothing is ever overwritten and
-nothing is ever dropped, so a note cannot be lost to a bad edit.
+Not a notes application. There is exactly one global scratchpad and exactly one
+per context, they have no names, and there is nothing to create or delete — a
+scratchpad you have to file something in is slower than the paper it replaces.
+Which note you are typing into is decided by where you are, so the answer to
+"where did I put that" is always "in the context I was in".
 
-The consequence worth understanding is what happens when you edit an old
-version. Writing from version 2 while version 5 exists does *not* truncate 3, 4
-and 5 the way a text editor's redo stack would: it appends version 6, recording
-that it was written from 2. The history is a tree stored as a flat list, and the
-list only ever grows.
+The body is plain text with line markers, saved as you type:
 
-    v1 ─ v2 ─ v3 ─ v4 ─ v5
-          └── v6              edited from v2; v3..v5 are still there
+    - milk          a bullet
+    - [ ] milk      an unticked checkbox
+    - [x] milk      a ticked one
+      - milk        two spaces per level of nesting
 
-That is what `base` on a version is for. `number` is the order the versions were
-written, which is also the order they are stored; `base` is what each was
-written *from*. The tip — the highest number — is always the current body,
-because appending is the only way to change anything.
-
-Notes belong to a context or to none. `context_id` is the owner and `GLOBAL`
-(the empty string) means the note stands outside any context, so one store holds
-both kinds and a note can be moved between them without migrating anything.
+Keeping the text as the stored form rather than a document model is what makes
+the file readable, the checklist a rendering rather than a second copy, and this
+module small.
 """
 
 from __future__ import annotations
@@ -29,7 +24,6 @@ import json
 import os
 import re
 import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,7 +34,7 @@ log = get_logger("scratchpad")
 
 ENV_PATH = "CONTEXT_SCRATCHPAD"
 
-# The context_id of a note that belongs to no context.
+# The key of the note that belongs to no context.
 GLOBAL = ""
 
 # What a line of a note is. Everything is TEXT unless it opens with a marker.
@@ -100,14 +94,13 @@ def parse(body: str) -> list[Line]:
         match = _MARKER.match(raw)
         if match is None:
             stripped = raw.rstrip()
-            indent = _indent_of(stripped)
-            lines.append(Line(kind=TEXT, text=stripped.strip(), indent=indent))
+            lines.append(
+                Line(kind=TEXT, text=stripped.strip(), indent=_indent_of(stripped))
+            )
             continue
         box = match.group("box")
         kind = (
-            BULLET
-            if box is None
-            else (UNCHECKED if box.strip() == "" else CHECKED)
+            BULLET if box is None else (UNCHECKED if box.strip() == "" else CHECKED)
         )
         lines.append(
             Line(
@@ -184,159 +177,26 @@ def progress(body: str) -> tuple[int, int]:
 
 
 def summary(body: str, limit: int = 80) -> str:
-    """The first line with something on it, for a row that has one line to give."""
+    """The first line with something on it, for anywhere with one line to give."""
     for line in parse(body):
         if line.text:
             return line.text if len(line.text) <= limit else line.text[: limit - 1] + "…"
     return ""
 
 
-@dataclass(frozen=True)
-class Version:
-    number: int
-    body: str
-    created_at: float = field(default_factory=time.time)
-    # The version this one was written from. 0 for the first, and for anything
-    # whose parent cannot be resolved.
-    base: int = 0
-
-    @classmethod
-    def from_dict(cls, raw: dict) -> "Version | None":
-        try:
-            number = int(raw["number"])
-        except (KeyError, TypeError, ValueError):
-            return None
-        if number < 1:
-            return None
-        try:
-            created_at = float(raw.get("created_at", 0.0))
-        except (TypeError, ValueError):
-            created_at = 0.0
-        try:
-            base = int(raw.get("base", 0))
-        except (TypeError, ValueError):
-            base = 0
-        return cls(
-            number=number,
-            body=str(raw.get("body", "")),
-            created_at=created_at,
-            base=max(0, base),
-        )
-
-    def to_dict(self) -> dict:
-        return {
-            "number": self.number,
-            "body": self.body,
-            "created_at": self.created_at,
-            "base": self.base,
-        }
-
-
 @dataclass
 class Note:
-    title: str = ""
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
     context_id: str = GLOBAL
-    versions: list[Version] = field(default_factory=list)
-    created_at: float = field(default_factory=time.time)
-
-    @property
-    def body(self) -> str:
-        return self.versions[-1].body if self.versions else ""
-
-    @property
-    def current(self) -> Version | None:
-        return self.versions[-1] if self.versions else None
-
-    @property
-    def updated_at(self) -> float:
-        tip = self.current
-        return tip.created_at if tip else self.created_at
+    body: str = ""
+    updated_at: float = field(default_factory=time.time)
 
     @property
     def is_global(self) -> bool:
         return self.context_id == GLOBAL
 
-    def version(self, number: int) -> Version | None:
-        for entry in self.versions:
-            if entry.number == number:
-                return entry
-        return None
-
-    def revise(self, body: str, base: int | None = None) -> Version:
-        """Append `body` as the newest version and return it.
-
-        `base` is the version it was written from, defaulting to the tip — the
-        ordinary case of editing what is on screen. Passing an older number is
-        editing from history, which appends just the same: nothing between that
-        version and the tip is touched.
-
-        Writing exactly what the tip already says appends nothing and gives the
-        tip back. Otherwise every focus-out would add a version identical to the
-        one before it, and the history would be mostly noise.
-        """
-        tip = self.current
-        if tip is not None and body == tip.body:
-            return tip
-        if base is None:
-            base = tip.number if tip else 0
-        elif self.version(base) is None:
-            base = 0
-        version = Version(
-            number=(tip.number + 1) if tip else 1,
-            body=body,
-            created_at=time.time(),
-            base=base,
-        )
-        self.versions.append(version)
-        return version
-
-    def restore(self, number: int) -> Version | None:
-        """Bring an old version back as the newest one.
-
-        The same append the editor does, so restoring is not a special kind of
-        change: it is writing what that version said, recorded as having come
-        from it.
-        """
-        wanted = self.version(number)
-        if wanted is None:
-            return None
-        return self.revise(wanted.body, base=number)
-
-    def children_of(self, number: int) -> list[Version]:
-        return [v for v in self.versions if v.base == number]
-
-    @classmethod
-    def from_dict(cls, raw: dict) -> "Note | None":
-        if not isinstance(raw, dict):
-            return None
-        versions = []
-        for entry in raw.get("versions") or []:
-            if isinstance(entry, dict):
-                parsed = Version.from_dict(entry)
-                if parsed is not None:
-                    versions.append(parsed)
-        versions.sort(key=lambda v: v.number)
-        try:
-            created_at = float(raw.get("created_at", 0.0))
-        except (TypeError, ValueError):
-            created_at = 0.0
-        return cls(
-            title=str(raw.get("title", "")),
-            id=str(raw.get("id") or uuid.uuid4()),
-            context_id=str(raw.get("context_id", GLOBAL)),
-            versions=versions,
-            created_at=created_at or time.time(),
-        )
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "title": self.title,
-            "context_id": self.context_id,
-            "created_at": self.created_at,
-            "versions": [v.to_dict() for v in self.versions],
-        }
+    @property
+    def is_empty(self) -> bool:
+        return not self.body.strip()
 
 
 def scratchpad_path() -> Path:
@@ -345,95 +205,119 @@ def scratchpad_path() -> Path:
 
 
 class NoteStore:
+    """Every scratchpad, keyed by the context it belongs to."""
+
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or scratchpad_path()
-        self.notes: list[Note] = []
+        self.notes: dict[str, Note] = {}
         self.load()
 
     def load(self) -> None:
         try:
             raw = json.loads(self.path.read_text())
         except FileNotFoundError:
-            self.notes = []
+            self.notes = {}
             return
         except (OSError, json.JSONDecodeError) as exc:
             # Unreadable notes must not stop the launcher starting, the same
             # rule the settings and the ui state follow.
             log.warning("ignoring %s: %s", self.path, exc)
-            self.notes = []
+            self.notes = {}
             return
-        entries = raw.get("notes", []) if isinstance(raw, dict) else raw
-        if not isinstance(entries, list):
-            log.warning("ignoring %s: expected a list of notes", self.path)
-            self.notes = []
+
+        entries = raw.get("notes") if isinstance(raw, dict) else None
+        if isinstance(entries, list):
+            # The first shape this took: a list of titled notes, each with a
+            # version history. Not read — a hard cutover, so anything written
+            # under it is left behind rather than guessed at.
+            log.warning("ignoring %s: written by the versioned scratchpad", self.path)
+            self.notes = {}
             return
-        found = []
-        for entry in entries:
-            note = Note.from_dict(entry)
-            if note is not None:
-                found.append(note)
+        if not isinstance(entries, dict):
+            log.warning("ignoring %s: expected notes to be an object", self.path)
+            self.notes = {}
+            return
+
+        found: dict[str, Note] = {}
+        for context_id, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                updated_at = float(entry.get("updated_at", 0.0))
+            except (TypeError, ValueError):
+                updated_at = 0.0
+            found[str(context_id)] = Note(
+                context_id=str(context_id),
+                body=str(entry.get("body", "")),
+                updated_at=updated_at or time.time(),
+            )
         self.notes = found
-        self._sort()
 
     def save(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"version": 1, "notes": [n.to_dict() for n in self.notes]}
+            payload = {
+                "version": 2,
+                "notes": {
+                    note.context_id: {
+                        "body": note.body,
+                        "updated_at": note.updated_at,
+                    }
+                    # An empty scratchpad is not worth a line in the file, and
+                    # writing one back is how a context that was never typed in
+                    # ends up looking like it was.
+                    for note in self.notes.values()
+                    if not note.is_empty
+                },
+            }
             tmp = self.path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(payload, indent=2))
             tmp.replace(self.path)
         except OSError as exc:
             log.warning("could not write %s: %s", self.path, exc)
 
-    def _sort(self) -> None:
-        self.notes.sort(key=lambda n: n.updated_at, reverse=True)
+    def get(self, context_id: str = GLOBAL) -> Note:
+        """The scratchpad for a context, or the global one.
 
-    def get(self, note_id: str) -> Note | None:
-        for note in self.notes:
-            if note.id == note_id:
-                return note
-        return None
+        Always a note: there is nothing to create, so an untyped-in context has
+        an empty scratchpad rather than no scratchpad.
+        """
+        note = self.notes.get(context_id)
+        if note is None:
+            note = Note(context_id=context_id)
+            self.notes[context_id] = note
+        return note
 
-    def create(self, title: str = "", context_id: str = GLOBAL, body: str = "") -> Note:
-        note = Note(title=title.strip(), context_id=context_id)
-        if body:
-            note.revise(body)
-        self.notes.append(note)
-        self._sort()
+    def body(self, context_id: str = GLOBAL) -> str:
+        return self.get(context_id).body
+
+    def set_body(self, context_id: str, body: str) -> Note:
+        """Write a scratchpad, if it says anything new.
+
+        Called from an autosave, so the no-op guard is what stops a timer that
+        fires on an unchanged buffer rewriting the file.
+        """
+        note = self.get(context_id)
+        if body == note.body:
+            return note
+        note.body = body
+        note.updated_at = time.time()
         self.save()
         return note
 
-    def revise(self, note: Note, body: str, base: int | None = None) -> Version:
-        version = note.revise(body, base=base)
-        self._sort()
-        self.save()
-        return version
+    def clear(self, context_id: str = GLOBAL) -> None:
+        self.set_body(context_id, "")
 
-    def rename(self, note: Note, title: str) -> None:
-        note.title = title.strip()
-        self.save()
+    def forget(self, context_id: str) -> None:
+        """Drop a context's scratchpad, for when the context itself is gone."""
+        if self.notes.pop(context_id, None) is not None:
+            self.save()
 
-    def move(self, note: Note, context_id: str) -> None:
-        note.context_id = context_id
-        self.save()
+    def available(self, context_id: str | None = None) -> list[str]:
+        """Which scratchpads the settings allow, in the order they are offered.
 
-    def delete(self, note: Note) -> None:
-        self.notes = [n for n in self.notes if n.id != note.id]
-        self.save()
-
-    def notes_for(self, context_id: str) -> list[Note]:
-        """Every note owned by one context, or the global ones for `GLOBAL`."""
-        return [n for n in self.notes if n.context_id == context_id]
-
-    def globals(self) -> list[Note]:
-        return self.notes_for(GLOBAL)
-
-    def visible(self, context_id: str | None = None) -> list[Note]:
-        """What the launcher should list, honouring the two settings.
-
-        Whether global notes and a context's own notes are shown are separate
-        choices, so this is the one place that reads both — a view asks for what
-        to draw rather than working it out.
+        The one place both settings are read, so every view agrees about what
+        exists — and the first entry is what a view should show by default.
         """
         from context.state import settings
 
@@ -441,18 +325,8 @@ class NoteStore:
         if not live.scratchpad:
             return []
         found = []
-        if live.scratchpad_global:
-            found.extend(self.globals())
         if live.scratchpad_per_context and context_id:
-            found.extend(self.notes_for(context_id))
-        found.sort(key=lambda n: n.updated_at, reverse=True)
+            found.append(context_id)
+        if live.scratchpad_global:
+            found.append(GLOBAL)
         return found
-
-    def search(self, query: str, context_id: str | None = None) -> list[Note]:
-        q = query.strip().casefold()
-        found = self.visible(context_id)
-        if not q:
-            return found
-        return [
-            n for n in found if q in n.title.casefold() or q in n.body.casefold()
-        ]

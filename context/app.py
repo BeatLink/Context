@@ -210,11 +210,11 @@ class ContextApplication(Gtk.Application):
         if window is not None:
             window.edit_context(ctx, is_new=is_new)
 
-    def edit_note(self, note) -> None:
-        """Open a note's editor, whichever view asked for it."""
+    def edit_note(self, showing=None) -> None:
+        """Open the scratchpad with room, whichever view asked for it."""
         window = self.ensure_window()
         if window is not None:
-            window._open_note(note)
+            window._open_note(showing)
 
     def open_settings(self) -> None:
         """The settings screen, replacing whatever picker is up.
