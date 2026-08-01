@@ -510,16 +510,6 @@ class EditorPage(widgets.NavigationPage):
         self.title_row.connect("changed", lambda _e: self._update_state())
         details.append(self.title_row)
 
-        ephemeral_row = widgets.ActionRow(
-            title="Ephemeral",
-            subtitle="Discard this context after use",
-        )
-        self.ephemeral_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-        self.ephemeral_switch.set_active(ctx.ephemeral)
-        ephemeral_row.add_suffix(self.ephemeral_switch)
-        ephemeral_row.set_activatable_widget(self.ephemeral_switch)
-        details.append(ephemeral_row)
-
         isolated_row = widgets.ActionRow(
             title="Isolated",
             subtitle=(
@@ -942,11 +932,13 @@ class EditorPage(widgets.NavigationPage):
             "saving context %s: %d windows, %d slots across %d screen(s)",
             title, len(self.entries), len(self.layout.slots), self.screen_count,
         )
+        # Saving here keeps the context, the same as saving from its row: a
+        # context is ephemeral until something says otherwise, and pressing
+        # Save on its definition is that.
         self.on_done(
             self.ctx,
             self._ordered_resources(),
             title,
-            self.ephemeral_switch.get_active(),
             self.layout,
             self.isolated_switch.get_active(),
         )

@@ -28,6 +28,14 @@ class Context:
     title: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     resources: list[Resource] = field(default_factory=list)
+    # Whether this context has never been kept. Not a choice — a state. Every
+    # context starts here; saving once, from the row or from the editor, is
+    # what makes it permanent, and closing one that is still ephemeral throws
+    # the definition away with the windows.
+    #
+    # False by default so that a context loaded from a file written before this
+    # existed, and one taken in from a declaration, are both already kept.
+    # `create` is the only thing that starts one ephemeral.
     ephemeral: bool = False
     # Launch this context's apps under a private session bus, so they cannot
     # find a running copy of themselves and hand off to it. Off by default: two
@@ -333,8 +341,14 @@ class ContextStore:
         self,
         title: str,
         resources: list[Resource] | None = None,
-        ephemeral: bool = False,
+        ephemeral: bool = True,
     ) -> Context:
+        """A new context, unkept until something keeps it.
+
+        Declared contexts do not come through here — `seed_declared` appends
+        them itself — so a declaration is kept from the moment it is taken in,
+        which is what makes it a declaration rather than a suggestion.
+        """
         ctx = Context(title=title.strip(), resources=resources or [], ephemeral=ephemeral)
         self.contexts.append(ctx)
         self._sort()

@@ -129,7 +129,10 @@ class ContextRow(widgets.ActionRow):
                     f"{len(ctx.apps)} app{'s' if len(ctx.apps) != 1 else ''}"
                 )
             if ctx.ephemeral:
-                subtitle.append("ephemeral")
+                # "unsaved" rather than "ephemeral": it says what to do about
+                # it. Ephemeral was a property you chose; this is a state you
+                # leave by pressing the button next to the word.
+                subtitle.append("unsaved")
         self.set_subtitle(" · ".join(subtitle))
 
         icon = Gtk.Image.new_from_icon_name(
@@ -161,9 +164,16 @@ class ContextRow(widgets.ActionRow):
         self.save.set_tooltip_text(
             "Gather these windows into a context of their own"
             if self.is_virtual
+            else "Keep this context"
+            if ctx.ephemeral
             else "Save these windows as this context's layout"
         )
-        self.save.set_visible(bool(is_drifted and on_save is not None))
+        # Always offered while a context is unkept, not only once it has
+        # drifted: an unsaved context has nothing to compare against, and the
+        # button is the only way it stops being thrown away when it closes.
+        self.save.set_visible(
+            bool(on_save is not None and (is_drifted or ctx.ephemeral))
+        )
         self.save.connect("clicked", lambda _b: on_save and on_save(ctx))
 
         # Beside the save, and shown under the same condition: they are the two
@@ -186,6 +196,8 @@ class ContextRow(widgets.ActionRow):
         self.close.set_tooltip_text(
             "Close these windows"
             if self.is_virtual
+            else "Close and discard — this context has not been saved"
+            if ctx.ephemeral
             else "Close this context, keeping it for later"
         )
         self.close.set_visible(bool(is_open and on_close is not None))
@@ -228,16 +240,25 @@ class ContextRow(widgets.ActionRow):
             item("add-app", "Open app here…", self._menu(self.on_add_app))
         if self.on_edit is not None:
             item("edit", "Edit…", self._menu(self.on_edit))
-        if self.on_save is not None and self.is_drifted:
+        if self.on_save is not None and (self.is_drifted or self.ctx.ephemeral):
             item(
                 "save",
-                "Save as a context" if self.is_virtual else "Save these windows",
+                "Save as a context"
+                if self.is_virtual
+                else "Keep this context"
+                if self.ctx.ephemeral
+                else "Save these windows",
                 self._menu(self.on_save),
             )
         if self.on_restore is not None and self.is_drifted and not self.is_virtual:
             item("restore", "Put the windows back", self._menu(self.on_restore))
         if self.is_open and self.on_close is not None:
-            item("close", "Close", self._menu(self.on_close))
+            item(
+                "close",
+                "Close and discard" if self.ctx.ephemeral else "Close",
+                self._menu(self.on_close),
+                destructive=bool(self.ctx.ephemeral),
+            )
         if self.on_delete is not None:
             # Two steps, the way the editor asks: the menu is deliberate, but
             # one click either side of "Close" should not lose the context.

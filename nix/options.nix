@@ -64,11 +64,6 @@ rec {
         };
         description = "What each application opens, by desktop entry id.";
       };
-      ephemeral = lib.mkOption {
-        type = t.bool;
-        default = false;
-        description = "Discard this context after use.";
-      };
       isolated = lib.mkOption {
         type = t.bool;
         default = false;
@@ -246,7 +241,7 @@ rec {
     contexts:
     (pkgs.formats.json { }).generate "context-contexts.json" {
       contexts = map (ctx: {
-        inherit (ctx) title ephemeral isolated;
+        inherit (ctx) title isolated;
         resources = map (app: {
           app_id = app;
           urls = ctx.urls.${app} or [ ];

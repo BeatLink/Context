@@ -650,3 +650,57 @@ def test_standing_in_a_context_still_means_that_context(backend, isolated_store)
     uistate.note_visit(other.id)
 
     assert launcher.current_context([work, other], backend=backend) is work
+
+
+# -- ephemeral as a state --------------------------------------------------
+
+
+def test_a_new_context_is_not_kept_until_something_keeps_it(isolated_store):
+    """Ephemeral stopped being a toggle and became a state: unsaved. Declared
+    contexts do not come through `create`, so a declaration is kept from the
+    moment it is taken in."""
+    from context.state.store import ContextStore
+
+    store = ContextStore()
+    fresh = store.create("Surf reddit")
+
+    assert fresh.ephemeral is True
+    # A context loaded from a file written before this existed is already kept.
+    assert Context(title="old").ephemeral is False
+
+
+def test_an_emptied_context_is_the_one_being_stood_in(backend):
+    """Standing on an empty workspace is the state a context-oriented shell
+    should never leave you in — but only the one you are *in* counts, or every
+    closed context would report itself emptied on every poll."""
+    work = Context(title="work")
+    work.set_handle("fake", "ctx-work")
+    other = Context(title="other")
+    other.set_handle("fake", "ctx-other")
+    backend.place_windows("ctx-other", "a.desktop")
+    backend.geometry["ctx-other"] = [
+        {"id": "0x1", "app_id": "a.desktop", "title": "a",
+         "x": 0, "y": 0, "width": 100, "height": 100}
+    ]
+
+    # Standing in the empty one.
+    backend.current = "ctx-work"
+    live = launcher.read_live_state([work, other], backend=backend)
+    assert live.emptied_id == work.id
+
+    # Standing in the full one: nothing is emptied, though `work` is still bare.
+    backend.current = "ctx-other"
+    live = launcher.read_live_state([work, other], backend=backend)
+    assert live.emptied_id is None
+
+
+def test_nothing_open_anywhere_still_reports_the_one_being_stood_in(backend):
+    """The no-geometry path returns early, and returning None there meant the
+    last window closing was never noticed."""
+    work = Context(title="work")
+    work.set_handle("fake", "ctx-work")
+    backend.current = "ctx-work"
+
+    live = launcher.read_live_state([work], backend=backend)
+
+    assert live.emptied_id == work.id

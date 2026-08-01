@@ -117,6 +117,11 @@ class ContextApplication(Gtk.Application):
         # Whether anything was open last time it was looked at, so the overview
         # appears when the last context closes rather than on every check.
         self._had_open = True
+        # Contexts seen with a live window this run. An emptied context is only
+        # acted on if it once had something in it, so a launch that opened
+        # nothing — every application failed, or none has mapped yet — is not
+        # mistaken for one whose last window was closed.
+        self._had_windows: set[str] = set()
 
     def do_command_line(self, command_line) -> int:
         """Entry point for every launch, first or subsequent.
@@ -443,6 +448,46 @@ class ContextApplication(Gtk.Application):
         self.add_app_to_context(current, info)
         return True
 
+    def note_emptied(self, live) -> None:
+        """Leave a context whose last window has gone.
+
+        Standing on an empty workspace is the one state a shell built around
+        contexts should never leave you in: there is nothing there, and the
+        context is not doing anything. So it hands you back to the context you
+        were in before — or home, which is what an empty desktop looks like —
+        and then puts the emptied one away.
+
+        Away means two different things. A context that has been kept is closed
+        and stays in the list. One that never was is discarded, which is the
+        whole of what "unsaved" means: its Save button was on offer for as long
+        as it was open.
+        """
+        emptied = live.emptied_id
+        if emptied is None:
+            return
+        # Not while it is starting: a context whose applications have not mapped
+        # yet is empty in exactly the same way, and this would delete it out
+        # from under its own launch.
+        if emptied in self.launching or emptied not in self._had_windows:
+            return
+        ctx = next((c for c in self.store.contexts if c.id == emptied), None)
+        if ctx is None:
+            return
+
+        self._had_windows.discard(emptied)
+        self.log.info("%s has no windows left", ctx.title)
+        # Somewhere to stand, before the workspace underneath is taken apart.
+        previous = uistate.previous_context(ctx.id)
+        target = next(
+            (c for c in self.store.contexts if c.id == previous and c.id != ctx.id),
+            None,
+        )
+        if target is not None and context_is_open(target, backend=self.backend):
+            self.go_to_context(target)
+        else:
+            self.open_overview()
+        self.close_context(ctx)
+
     def note_open_contexts(self, count: int) -> None:
         """Go home when the last context closes, and only then.
 
@@ -463,6 +508,10 @@ class ContextApplication(Gtk.Application):
             return
         self.log.info("nothing is open; going home")
         self.open_overview()
+
+    def note_live_windows(self, open_ids) -> None:
+        """Remember which contexts have actually had something in them."""
+        self._had_windows |= set(open_ids)
 
     def _covered(self) -> bool:
         """Whether an editor or a picker is on screen.
@@ -878,6 +927,11 @@ class ContextApplication(Gtk.Application):
         if is_no_context(ctx):
             self.save_loose(ctx)
             return
+        # Keeping it is the first half, and works whether or not it is open —
+        # capturing an unopened context finds no windows and would otherwise
+        # make Save do nothing at all on one.
+        kept = ctx.ephemeral
+        ctx.ephemeral = False
         windows, screens = capture_arrangement(ctx, backend=self.backend)
         self.store.save()
         self.asked_about.discard(ctx.id)
@@ -885,6 +939,8 @@ class ContextApplication(Gtk.Application):
         message = (
             f"Saved {windows} window{'s' if windows != 1 else ''} for “{ctx.title}”"
             if windows
+            else f"“{ctx.title}” will be kept"
+            if kept
             else f"Nothing open to save for “{ctx.title}”"
         )
         self.log.info("saved %s: %d window(s), %d screen(s)", ctx.title, windows, screens)
@@ -932,6 +988,18 @@ class ContextApplication(Gtk.Application):
         # close_context may drop the workspace handle.
         self.store.save()
         self.log.info("closed %d window(s) for %s", result.closed, ctx.title)
+        if ctx.ephemeral:
+            # Never kept, so closing is the end of it. The Save beside this
+            # button is what a context that should outlive its windows is
+            # given, and it is offered for as long as the context is unsaved.
+            self.log.info("discarding %s: it was never saved", ctx.title)
+            self.store.delete(ctx)
+            notify.send(
+                self,
+                "close",
+                f"Discarded “{ctx.title}”",
+                "It was never saved. Keep a context with the save button.",
+            )
         if self.window is not None:
             self.window.report_close(ctx, result)
         self.refresh_all()

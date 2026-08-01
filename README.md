@@ -146,8 +146,8 @@ searchable, filtered by kind and ordered the same four ways. Click a row to add
 it to the layout; add one twice to give it two windows, and the row says how
 many it has put there.
 
-**Details.** The context's name, an ephemeral toggle and an isolated toggle.
-Deleting is in the header, beside Cancel.
+**Details.** The context's name and an isolated toggle. Deleting is in the
+header, beside Cancel.
 
 Layouts are stored as fractions of the monitor, so they carry between displays.
 The preview is drawn at the shape of the screen the launcher is on.
@@ -266,10 +266,21 @@ alongside the open ones. Closing it closes those windows; saving it gathers
 them into a workspace of their own, captures where they landed, and opens the
 editor to name what they have become.
 
-**Closing** a context shuts its windows but keeps the context itself, so opening
-it again rebuilds it. **Deleting** a context removes the definition; it is in the
-editor's header and in a context's own menu, behind a confirmation either way,
-and the windows it opened are left alone.
+**Saving.** A context you have just started is **unsaved** — its row says so,
+and carries a save button. Pressing it keeps the context; until you do, closing
+it throws the definition away with the windows. Saving from its editor keeps it
+too. Nothing else has to be decided in advance: a context is a thing you tried,
+and keeping it is the deliberate act rather than discarding it.
+
+**Closing** a context that has been kept shuts its windows and leaves it in the
+list, so opening it again rebuilds it. **Deleting** one removes the definition;
+it is in the editor's header and in a context's own menu, behind a confirmation
+either way, and the windows it opened are left alone.
+
+**You are never left on an empty context.** Closing the last window in one hands
+you back to the context you were in before — or to the overview, if there is
+nothing to go back to — and the emptied context is closed, or discarded if it
+was never saved.
 
 Right-clicking a context in the sidebar opens its menu: open it, open an app
 inside it, edit it, close it, or delete it. "Open app here" shows the same

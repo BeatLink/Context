@@ -2332,6 +2332,9 @@ def test_a_drifted_context_offers_to_be_saved(gtk_app, isolated_store, backend):
         resources=[Resource(app_id="a.desktop"), Resource(app_id="b.desktop")],
     )
     ctx.set_handle("fake", "ctx-work")
+    # Kept, so the save button's presence is about drift alone — an unsaved
+    # context offers it whether or not anything has moved.
+    ctx.ephemeral = False
     ctx.layout = Layout(slots=[Slot(0.0, 0.0, 0.5, 1.0), Slot(0.5, 0.0, 0.5, 1.0)])
     backend.workspaces["ctx-work"] = 2
     seen = {"saved": []}
@@ -3198,3 +3201,178 @@ def test_settings_asks_to_float_before_its_window_exists(
     assert seen["ruled_first"] is True
     assert seen["closed"] is True
     assert seen["installs"] == 1
+
+
+def test_an_emptied_context_hands_you_back_and_is_discarded(
+    gtk_app, isolated_store, backend
+):
+    """Closing the last window should not leave you standing on an empty
+    workspace. You go back to the context you came from, and the emptied one is
+    discarded if it was never kept."""
+    import logging
+
+    from context.app import ContextApplication
+    from context.state.store import ContextStore
+
+    seen = {"went": [], "closed": []}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.emptied")
+        holder.backend = backend
+        holder.store = ContextStore()
+        holder.launching = set()
+        holder._had_windows = set()
+
+        kept = holder.store.create("kept")
+        kept.ephemeral = False
+        kept.set_handle("fake", "ctx-kept")
+        backend.place_windows("ctx-kept", "a.desktop")
+        fresh = holder.store.create("fresh")
+        fresh.set_handle("fake", "ctx-fresh")
+
+        holder.go_to_context = lambda c: seen["went"].append(c.title)
+        holder.open_overview = lambda: seen["went"].append("home")
+        holder.close_context = lambda c: seen["closed"].append(c.title)
+
+        from context.state import uistate
+        from context.system.launcher import LiveState
+
+        uistate.note_visit(kept.id)
+        uistate.note_visit(fresh.id)
+
+        # Not acted on until it has actually held a window: a launch that has
+        # not mapped yet looks exactly the same.
+        holder.note_emptied(LiveState(emptied_id=fresh.id))
+        seen["while_starting"] = list(seen["went"])
+
+        holder.note_live_windows({fresh.id})
+        holder.note_emptied(LiveState(emptied_id=fresh.id))
+        seen["after"] = list(seen["went"])
+
+        # And only once — the next poll must not fire it again.
+        holder.note_emptied(LiveState(emptied_id=fresh.id))
+        seen["again"] = list(seen["went"])
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["while_starting"] == []
+    # Back to the last context that is still open, then the empty one put away.
+    assert seen["after"] == ["kept"]
+    assert seen["closed"] == ["fresh"]
+    assert seen["again"] == ["kept"]
+
+
+def test_an_emptied_context_falls_back_to_home(gtk_app, isolated_store, backend):
+    """With nowhere to go back to, an empty desktop is what home is for."""
+    import logging
+
+    from context.app import ContextApplication
+    from context.state.store import ContextStore
+
+    seen = {"went": [], "closed": []}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.emptied-home")
+        holder.backend = backend
+        holder.store = ContextStore()
+        holder.launching = set()
+        holder._had_windows = set()
+        only = holder.store.create("only")
+        only.set_handle("fake", "ctx-only")
+
+        holder.go_to_context = lambda c: seen["went"].append(c.title)
+        holder.open_overview = lambda: seen["went"].append("home")
+        holder.close_context = lambda c: seen["closed"].append(c.title)
+
+        from context.system.launcher import LiveState
+
+        holder.note_live_windows({only.id})
+        holder.note_emptied(LiveState(emptied_id=only.id))
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["went"] == ["home"]
+    assert seen["closed"] == ["only"]
+
+
+def test_closing_discards_only_what_was_never_kept(gtk_app, isolated_store, backend, monkeypatch):
+    """A kept context closes and stays in the list; an unsaved one goes with
+    its windows, which is the whole of what unsaved means."""
+    import logging
+
+    from context.app import ContextApplication
+    from context.state.store import ContextStore
+    from context.system import notify
+
+    # `notify.send` wants a started GApplication; the bare holder is not one.
+    monkeypatch.setattr(notify, "send", lambda *a, **k: False)
+    monkeypatch.setattr(notify, "withdraw", lambda *a, **k: None)
+    seen = {}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.close-discard")
+        holder.backend = backend
+        holder.store = ContextStore()
+        holder.window = None
+        holder.extra_windows = []
+        holder.asked_about = set()
+        holder.offer_to_save = lambda _moment, leaving=None: False
+        holder.refresh_all = lambda: None
+
+        kept = holder.store.create("kept")
+        kept.ephemeral = False
+        kept.set_handle("fake", "ctx-kept")
+        backend.place_windows("ctx-kept", "a.desktop")
+        fresh = holder.store.create("fresh")
+        fresh.set_handle("fake", "ctx-fresh")
+        backend.place_windows("ctx-fresh", "b.desktop")
+
+        holder.close_context(kept)
+        holder.close_context(fresh)
+        seen["left"] = sorted(c.title for c in holder.store.contexts)
+        seen["stored"] = sorted(c.title for c in ContextStore().contexts)
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["left"] == ["kept"]
+    # And gone from the file, not merely from the list in memory.
+    assert seen["stored"] == ["kept"]
+
+
+def test_saving_keeps_a_context_even_with_nothing_open(
+    gtk_app, isolated_store, backend, monkeypatch
+):
+    """Capturing an unopened context finds no windows, so a Save that only
+    captured would do nothing at all on one."""
+    import logging
+
+    from context.app import ContextApplication
+    from context.state.store import ContextStore
+    from context.system import notify
+
+    monkeypatch.setattr(notify, "send", lambda *a, **k: False)
+    monkeypatch.setattr(notify, "withdraw", lambda *a, **k: None)
+    seen = {}
+
+    def body(app):
+        holder = ContextApplication.__new__(ContextApplication)
+        holder.log = logging.getLogger("test.save-keeps")
+        holder.backend = backend
+        holder.store = ContextStore()
+        holder.asked_about = set()
+        holder.refresh_all = lambda: None
+        fresh = holder.store.create("fresh")
+
+        holder.save_context(fresh)
+        seen["kept"] = fresh.ephemeral
+        seen["stored"] = [
+            c.ephemeral for c in ContextStore().contexts if c.title == "fresh"
+        ]
+        app.quit()
+
+    run_app(gtk_app, body)
+    assert seen["kept"] is False
+    assert seen["stored"] == [False]

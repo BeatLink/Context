@@ -383,6 +383,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
         app = self.get_application()
         if app is not None and hasattr(app, "offer_to_save"):
             app.offer_to_save("change")
+        # `open_ids` counts the context being stood in as open even with
+        # nothing in it — that is what stops a context you are looking straight
+        # at reading as closed — so the one that is empty is taken back out
+        # before recording which have actually held a window.
+        if app is not None and hasattr(app, "note_live_windows"):
+            app.note_live_windows(self._live.open_ids - {self._live.emptied_id})
+        if app is not None and hasattr(app, "note_emptied"):
+            app.note_emptied(self._live)
         if app is not None and hasattr(app, "note_open_contexts"):
             app.note_open_contexts(len(self._open_ids))
         return True
@@ -1320,14 +1328,16 @@ class LauncherWindow(Gtk.ApplicationWindow):
         ctx: Context,
         resources: list[Resource],
         title: str,
-        ephemeral: bool,
         layout: Layout,
         isolated: bool = False,
     ) -> None:
         was_new = getattr(self.editor, "is_new", False)
         ctx.resources = resources
         ctx.title = title
-        ctx.ephemeral = ephemeral
+        # Saving a definition keeps the context. There is no toggle for this:
+        # every context starts unkept, and the two ways to keep one are this
+        # and the Save on its row.
+        ctx.ephemeral = False
         ctx.layout = layout
         ctx.isolated = isolated
         self.store.save()

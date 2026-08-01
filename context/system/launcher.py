@@ -293,6 +293,10 @@ class LiveState:
     current_id: str | None = None
     # Whether the overview's own workspace is the one being looked at.
     at_home: bool = False
+    # The context being stood in that has no windows left. Standing on an empty
+    # workspace is the one state a context-oriented shell should never leave
+    # you in: there is nothing there and nothing to do with it.
+    emptied_id: str | None = None
 
     @property
     def signature(self) -> tuple:
@@ -302,6 +306,7 @@ class LiveState:
             self.active_id,
             frozenset(self.drifted_ids),
             tuple(sorted(w.get("id", "") for w in self.loose)),
+            self.emptied_id,
             # Arriving on or leaving home changes what the rows offer: "open
             # this app here" names the context you came from, and there is
             # none until you are standing on home.
@@ -329,11 +334,14 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
     reader = getattr(wm, "geometry_by_handle", None)
     geometry = reader() if reader is not None else {}
     if not geometry:
+        # Nothing is open anywhere, so the context being stood in — if any — is
+        # an empty workspace.
         return LiveState(
             open_ids=open_ids,
             active_id=active_id,
             current_id=current_id,
             at_home=at_home,
+            emptied_id=active_id,
         )
 
     claimed = _claimed_handles(contexts, wm)
@@ -343,6 +351,14 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
         if handle not in claimed
         for window in windows
     ]
+
+    emptied_id = None
+    if active_id is not None:
+        standing_in = next((c for c in contexts if c.id == active_id), None)
+        if standing_in is not None and not any(
+            geometry.get(h) for h in standing_in.handles_for(wm.name)
+        ):
+            emptied_id = active_id
 
     drifted = set()
     for ctx in contexts:
@@ -361,6 +377,7 @@ def read_live_state(contexts, backend: Backend | None = None) -> LiveState:
         loose=loose,
         current_id=current_id,
         at_home=at_home,
+        emptied_id=emptied_id,
     )
 
 

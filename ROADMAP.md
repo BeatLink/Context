@@ -593,12 +593,40 @@ completed by the time the next test builds a window.
 
 ## Next
 
-### 11. Ephemeral teardown
+### 11. Ephemeral teardown — *done, by making it a state*
 
-`ephemeral` is stored and editable but nothing acts on it. Closing an ephemeral
-context should remove its workspace, delete its browser profile, and drop it from
-the list — carefully, since "throw this away" must never eat real work. Needs a
-confirmation path and a definition of what counts as unsaved.
+`ephemeral` was a toggle that nothing acted on, and the open question was "a
+definition of what counts as unsaved". The answer was to stop it being a choice:
+**every context starts unsaved, and saving once keeps it.** Unsaved is then not
+a judgement about a context's contents but a fact about whether anybody ever
+said to keep it.
+
+Closing an unsaved context discards the definition with the windows; closing a
+kept one leaves it in the list, as before. The confirmation the old plan needed
+is the Save button being on offer for the whole time the context is open — the
+row says "unsaved", and the button beside the word is how that stops being true.
+
+The editor's ephemeral toggle is gone, and so is the per-context `ephemeral`
+option in the Nix module: a declaration is kept from the moment it is taken in.
+
+**Still to do — the rest of teardown.** Discarding drops the definition and
+nothing else. `adapters/base.py` declares `discard()` for per-context state, no
+adapter implements it, and a context with its own Firefox profile still leaves
+the profile directory behind. That is the part where "throw this away" can eat
+real work, so it stays deliberate and separate.
+
+### 11b. No blank contexts — *done*
+
+Closing the last window in a context left you standing on an empty workspace
+with a context that was not doing anything. `LiveState.emptied_id` is the
+context being stood in that has no windows left, and the poll hands you back to
+the last context you were in — or home, which is what an empty desktop looks
+like — before putting the emptied one away.
+
+Two guards, both of which are the same mistake from different directions: a
+context that is still launching is empty in exactly the same way, and so is one
+whose applications all failed. So it only fires for a context seen with a live
+window earlier in the run, and never while a launch is in flight.
 
 ### 12. Session restore
 

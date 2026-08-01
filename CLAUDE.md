@@ -274,6 +274,31 @@ list has to rebuild on arriving and leaving.
 - **The scratchpad is the sidebar's alone.** It was in both, and with the
   sidebar standing open beside home it would have been on screen twice.
 
+## Ephemeral is a state, not a choice
+
+Every context starts unsaved and saving once keeps it — from its row, or by
+saving its definition in the editor. Closing an unsaved context discards it;
+closing a kept one leaves it in the list. There is no toggle, and there is no
+per-context `ephemeral` option in the Nix module: a declaration is kept from the
+moment it is taken in, and `seed_declared` appends declared contexts itself
+rather than going through `create`, which is the only thing that starts one
+unsaved.
+
+`Context.ephemeral` still defaults to **False** on the dataclass, deliberately —
+a context loaded from a file written before this existed is already kept, and so
+is a declared one. Only `create` starts one at True.
+
+**An emptied context is the one you are standing in.** `LiveState.emptied_id`,
+and the poll hands you back to the last context you were in before putting it
+away. Two guards, both the same mistake from different directions: a context
+that is still launching has no windows yet, and neither has one whose
+applications all failed. So it fires only for a context seen with a live window
+earlier in the run (`_had_windows`) and never while a launch is in flight.
+
+`open_ids` counts the context being stood in as open even when it is empty —
+that is what stops a context you are looking straight at reading as closed — so
+`_had_windows` is fed `open_ids - {emptied_id}` rather than `open_ids`.
+
 ## One catalogue, two questions
 
 `ui/catalogue.py` is the application list — search, category filter, ordering,
