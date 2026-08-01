@@ -21,7 +21,7 @@ from context.system import backends
 from context.ui import sidebar, theme, widgets
 from context.state import settings, uistate
 from context.state.scratchpad import NoteStore
-from context.ui.scratchpad import ScratchpadView
+from context.ui.scratchpad import ScratchpadSection
 from context.system.apps import MAIN_CATEGORIES, SORTS, App, arrange_apps, categories_of
 from context.system.apps import in_category, installed_apps, search_apps
 from context.system.launcher import is_no_context, loose_context, read_live_state
@@ -461,9 +461,8 @@ class OverviewWindow(Gtk.ApplicationWindow):
     def _sync_scratchpad(self, context_id, shown: bool) -> None:
         if not shown:
             return
-        if (
-            self.scratchpad_view is not None
-            and self.scratchpad_view.context_id == context_id
+        if self.scratchpad_view is not None and self.scratchpad_view.matches(
+            context_id
         ):
             self.scratchpad_view.refresh()
             return
@@ -471,7 +470,7 @@ class OverviewWindow(Gtk.ApplicationWindow):
             self.scratchpad_view.flush()
             self.scratchpad_box.remove(self.scratchpad_view)
         active = next((c for c in self.store.contexts if c.id == context_id), None)
-        self.scratchpad_view = ScratchpadView(
+        self.scratchpad_view = ScratchpadSection(
             self.notes,
             context_id=context_id,
             context_title=active.title if active is not None else "",

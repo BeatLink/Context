@@ -518,6 +518,14 @@ list/empty stack, so it vanished exactly when there were no contexts — which i
 when somewhere to jot something is worth most. It sits below the stack now and
 is not part of what decides between the two.
 
+Since: Global holds the first position in the switch whether or not you are in
+a context, so the buttons stay still as you move between them — which meant
+splitting "the order they are offered in" (`available`) from "the one that
+opens" (`preferred`), because the context's is still what you land on. Each pad
+says when it has been written, an autosave being exactly the kind of thing that
+has to show its working. **Show both at once** stacks the two instead of
+switching, and the writing area's height is a setting.
+
 Left for later: nothing prunes a context's scratchpad when the context is
 forgotten (`NoteStore.forget` exists and nothing calls it), and there is no
 search across scratchpads.

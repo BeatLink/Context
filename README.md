@@ -248,11 +248,16 @@ click into it and write.
 
 There is **one global scratchpad** and **one for each context**, and that is
 all of them. They have no names and there is nothing to create or delete, so
-where something went is answered by where you were when you wrote it. In a
-context you get that context's; with both switched on, a switch above the box
-moves between them.
+where something went is answered by where you were when you wrote it.
 
-It saves as you type. There is no save button and nothing to confirm.
+With both switched on you get a switch above the box — **Global** on the left,
+where it stays whichever context you are in, and the context's own beside it,
+which is the one that opens. **Show both at once** in settings stacks them
+instead, so neither needs reaching for.
+
+It saves as you type, and says so: the box reads *Saving…* while you write and
+*Saved* once it has been written. There is no save button and nothing to
+confirm. **Writing area height** sets how tall the box is in the sidebar.
 
 The button beside it opens the same scratchpad full-screen, which is the only
 difference between the two — more room, plus the checklist view and the buttons
@@ -303,6 +308,8 @@ need a restart say so.
 | Global scratchpad | The one that is there wherever you are |
 | Context scratchpads | One for each context, shown while you are in it |
 | Scratchpad in the sidebar | Show it in the narrow list |
+| Show both at once | Stack the two rather than switching between them |
+| Writing area height | How tall the box is, per scratchpad |
 | Log level | How much detail is written to the log |
 
 Settings that do nothing in the current collapse mode are not shown: the

@@ -463,6 +463,12 @@ class SettingsPage(widgets.NavigationPage):
                 "either way.",
                 "show_notes",
             ),
+            (
+                "Show both at once",
+                "With a global scratchpad and a context one, show them stacked "
+                "rather than one at a time behind a switch.",
+                "scratchpad_show_both",
+            ),
         ):
             row = _row_switch(
                 title,
@@ -472,6 +478,18 @@ class SettingsPage(widgets.NavigationPage):
             )
             group.add(row)
             self.scratchpad_rows.append(row)
+        self.scratchpad_height_row = _row_spin(
+            "Writing area height",
+            "How tall the box is in the sidebar, in pixels. Per scratchpad, so "
+            "showing both is twice this.",
+            live.scratchpad_height,
+            settings.MIN_SCRATCHPAD_HEIGHT,
+            settings.MAX_SCRATCHPAD_HEIGHT,
+            10,
+            lambda v: self._apply(scratchpad_height=v, resync=True),
+        )
+        group.add(self.scratchpad_height_row)
+        self.scratchpad_rows.append(self.scratchpad_height_row)
         self._sync_scratchpad_rows()
         return group
 

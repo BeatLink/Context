@@ -317,7 +317,9 @@ class NoteStore:
         """Which scratchpads the settings allow, in the order they are offered.
 
         The one place both settings are read, so every view agrees about what
-        exists — and the first entry is what a view should show by default.
+        exists. Global comes first and stays first: it is the one that is always
+        there, so a switch that puts it on the left keeps its buttons in the
+        same place as you move between contexts, rather than shuffling them.
         """
         from context.state import settings
 
@@ -325,8 +327,20 @@ class NoteStore:
         if not live.scratchpad:
             return []
         found = []
-        if live.scratchpad_per_context and context_id:
-            found.append(context_id)
         if live.scratchpad_global:
             found.append(GLOBAL)
+        if live.scratchpad_per_context and context_id:
+            found.append(context_id)
         return found
+
+    def preferred(self, context_id: str | None = None) -> str:
+        """Which scratchpad a view should open on.
+
+        Where you are, when there is a scratchpad for it. Kept apart from the
+        order the two are offered in, so the buttons can sit still while the
+        one you land on still follows the context.
+        """
+        offered = self.available(context_id)
+        if context_id and context_id in offered:
+            return context_id
+        return offered[0] if offered else GLOBAL

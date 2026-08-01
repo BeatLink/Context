@@ -86,6 +86,12 @@ MAX_SIDEBAR_WIDTH = 1200
 MIN_RAIL_WIDTH = 36
 MAX_RAIL_WIDTH = 160
 
+# How tall the sidebar's writing area may be. Below the floor there is not room
+# for a line and its scrollbar; above the ceiling it has eaten the sidebar,
+# which is the list it is meant to sit beside.
+MIN_SCRATCHPAD_HEIGHT = 60
+MAX_SCRATCHPAD_HEIGHT = 600
+
 # How many screen modes a context can hold a layout for. More than this and the
 # editor stops being readable, and nobody arranges windows across that many.
 MIN_SCREENS = 1
@@ -242,6 +248,14 @@ class Settings:
     # for the desk and a scratchpad for the job are both reasonable, and so is
     # either one alone.
     scratchpad_per_context: bool = True
+    # Show the global scratchpad and the context's at once, rather than one at
+    # a time behind a switch. Off by default: two boxes in a 380px sidebar is
+    # half the height each, and most of the time you want the one you are in.
+    scratchpad_show_both: bool = False
+    # How tall the writing area is, in pixels. Per scratchpad, so showing both
+    # is twice this rather than this split in half — a box that shrank because
+    # a second one appeared would be a setting that stopped meaning anything.
+    scratchpad_height: int = 132
     # The Notes section in the sidebar's list. The overview shows notes
     # whenever the scratchpad is on; this is only about the narrow view, where
     # every section costs the others room.
@@ -324,6 +338,10 @@ class Settings:
             scratchpad=bool(self.scratchpad),
             scratchpad_global=bool(self.scratchpad_global),
             scratchpad_per_context=bool(self.scratchpad_per_context),
+            scratchpad_show_both=bool(self.scratchpad_show_both),
+            scratchpad_height=_clamp(
+                self.scratchpad_height, MIN_SCRATCHPAD_HEIGHT, MAX_SCRATCHPAD_HEIGHT, 132
+            ),
             show_notes=bool(self.show_notes),
             poll_seconds=_clamp(self.poll_seconds, 1, 60, 2),
             log_level=(

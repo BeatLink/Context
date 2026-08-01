@@ -22,7 +22,7 @@ from context.system.logging_setup import get_logger
 from context.state.resources import Resource
 from context.ui.rows import AppRow, ContextRow, context_for_app, relative_time
 from context.state.scratchpad import NoteStore
-from context.ui.scratchpad import ScratchpadView
+from context.ui.scratchpad import ScratchpadSection
 from context.state.store import Context, ContextStore
 
 log = get_logger("window")
@@ -222,7 +222,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.notes_label = Gtk.Label(label="Scratchpad", xalign=0.0)
         self.notes_label.add_css_class("heading")
         self.notes_label.add_css_class("dim-label")
-        self.scratchpad_view: ScratchpadView | None = None
+        self.scratchpad_view: ScratchpadSection | None = None
 
         self.scratchpad_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
@@ -1163,15 +1163,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
     def _sync_scratchpad(self, context_id: str | None, shown: bool) -> None:
         """Put the right scratchpad in the sidebar, building it only when needed.
 
-        The view owns a text buffer and an unsaved-changes timer, so rebuilding
+        The section owns text buffers and unsaved-changes timers, so rebuilding
         it on the poll timer would drop the cursor and could lose the last word.
-        It is replaced only when the context it belongs to actually changes.
+        It is replaced only when what it should be showing actually changes —
+        the context, which scratchpads exist, or whether both are shown at once.
         """
         if not shown:
             return
-        if (
-            self.scratchpad_view is not None
-            and self.scratchpad_view.context_id == context_id
+        if self.scratchpad_view is not None and self.scratchpad_view.matches(
+            context_id
         ):
             self.scratchpad_view.refresh()
             return
@@ -1181,7 +1181,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.scratchpad_box.remove(self.scratchpad_view)
 
         active = self._active_context()
-        self.scratchpad_view = ScratchpadView(
+        self.scratchpad_view = ScratchpadSection(
             self.notes,
             context_id=context_id,
             context_title=active.title if active is not None else "",

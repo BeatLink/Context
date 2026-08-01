@@ -145,16 +145,25 @@ rec {
       search_apps_target = setting (t.enum [ "new" "current" ]) "`new`"
         "Where an app started from the search results lands.";
 
-      scratchpad = setting t.bool "true" "List notes, and let them be written.";
+      scratchpad = setting t.bool "true"
+        "Somewhere to type in the sidebar and the overview.";
 
       scratchpad_global = setting t.bool "true"
-        "List notes that stand outside any context.";
+        "One scratchpad that is there wherever you are.";
 
       scratchpad_per_context = setting t.bool "true"
-        "List the current context's own notes.";
+        "One scratchpad for each context, shown while you are in it.";
 
       show_notes = setting t.bool "true"
-        "Show the Notes section in the sidebar's narrow list.";
+        "Show the scratchpad in the sidebar's narrow list.";
+
+      scratchpad_show_both = setting t.bool "false" ''
+        Show the global scratchpad and the context's stacked, rather than one
+        at a time behind a switch.
+      '';
+
+      scratchpad_height = setting (t.ints.between 60 600) "132"
+        "How tall the sidebar's writing area is, in pixels, per scratchpad.";
 
       poll_seconds = setting (t.ints.between 1 60) "2"
         "How often the open list is re-checked against the compositor.";
